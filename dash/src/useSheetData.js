@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
-
+ 
 const SHEETS_ID = import.meta.env.VITE_SHEETS_ID
 const API_KEY = import.meta.env.VITE_GOOGLE_API_KEY
-
+ 
 function parseSheet(values, skip = 2) {
   if (!values || values.length <= skip) return []
   const headers = values[skip - 1]
@@ -12,7 +12,7 @@ function parseSheet(values, skip = 2) {
     return obj
   })
 }
-
+ 
 async function fetchSheet(name) {
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEETS_ID}/values/${encodeURIComponent(name)}?key=${API_KEY}`
   const res = await fetch(url)
@@ -20,13 +20,13 @@ async function fetchSheet(name) {
   if (data.error) throw new Error(data.error.message)
   return data.values || []
 }
-
+ 
 export function useSheetData() {
   const [data, setData] = useState({ facturas: [], articulos: [], proveedores: [] })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [lastUpdate, setLastUpdate] = useState(null)
-
+ 
   const load = async () => {
     try {
       setLoading(true)
@@ -39,26 +39,25 @@ export function useSheetData() {
     } catch (e) { setError(e.message) }
     finally { setLoading(false) }
   }
-
+ 
   useEffect(() => { load(); const t = setInterval(load, 60000); return () => clearInterval(t) }, [])
   return { ...data, loading, error, lastUpdate, reload: load }
 }
-
+ 
 export function parseNum(str) {
   if (!str) return 0
-  let s = String(str).replace(/[^0-9.,-]/g, '').trim()
-  // Formato argentino: puntos como miles, coma como decimal (1.234,56)
-  if (s.match(/^\d{1,3}(\.\d{3})*(,\d+)?$/)) {
+  // Limpiar $ y espacios
+  let s = String(str).replace(/\$/g, '').replace(/\s/g, '').trim()
+  // Formato argentino con puntos como miles y coma decimal: 601.182,00
+  if (/^\d{1,3}(\.\d{3})+(,\d*)?$/.test(s)) {
     s = s.replace(/\./g, '').replace(',', '.')
-  } else if (s.match(/^\d{1,3}(,\d{3})*(\.\d+)?$/)) {
-    // Formato con comas como miles y punto como decimal
-    s = s.replace(/,/g, '')
   } else {
+    // Solo coma como decimal: 727430,22
     s = s.replace(',', '.')
   }
   return parseFloat(s) || 0
 }
-
+ 
 export function fmt(n) { return '$' + Math.round(parseNum(n)).toLocaleString('es-AR') }
 export function fmtK(n) {
   const v = Math.round(parseNum(n))
@@ -66,3 +65,4 @@ export function fmtK(n) {
   if (v >= 1000) return '$' + Math.round(v/1000) + 'K'
   return '$' + v
 }
+ 
