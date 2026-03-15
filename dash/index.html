@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#C4A882" />
+  <title>Lharmonie</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginScreen" class="login-screen">
+  <div class="login-box">
+    <div class="login-logo">
+  <svg width="80" height="80" viewBox="0 0 100 100" fill="none" stroke="#2C2420" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+    <ellipse cx="50" cy="42" rx="22" ry="18"/>
+    <ellipse cx="22" cy="48" rx="12" ry="8" transform="rotate(-20 22 48)"/>
+    <ellipse cx="78" cy="48" rx="12" ry="8" transform="rotate(20 78 48)"/>
+    <line x1="43" y1="58" x2="41" y2="74"/>
+    <line x1="41" y1="74" x2="38" y2="74"/>
+    <line x1="57" y1="58" x2="59" y2="74"/>
+    <line x1="59" y1="74" x2="62" y2="74"/>
+    <circle cx="44" cy="40" r="2.5" fill="#2C2420" stroke="none"/>
+    <circle cx="56" cy="40" r="2.5" fill="#2C2420" stroke="none"/>
+    <path d="M44 48 Q50 53 56 48" stroke-width="3"/>
+  </svg>
+</div>
+    <div class="login-tagline">Sistema de gestión</div>
+    <div class="login-field">
+      <input type="text" id="loginUser" placeholder="Usuario" autocomplete="off" autocapitalize="none" />
+    </div>
+    <div class="login-field">
+      <input type="password" id="loginPass" placeholder="Contraseña" />
+    </div>
+    <button class="login-submit" onclick="doLogin()">Ingresar</button>
+    <div class="login-error" id="loginError"></div>
+  </div>
+</div>
+
+<!-- MODAL PAGO -->
+<div class="modal-overlay" id="modalOverlay" onclick="cerrarModal(event)">
+  <div class="modal" id="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="modalProveedor">—</div>
+    <div class="modal-sub" id="modalNro">—</div>
+    <div class="modal-monto" id="modalMonto">—</div>
+    <div id="modalDetalles"></div>
+    <div class="modal-actions">
+      <button class="btn-cancelar" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn-confirmar" id="btnConfirmar" onclick="confirmarPago()">✓ Marcar como pagada</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<!-- APP -->
+<div class="app" id="appShell" style="display:none;">
+
+  <div class="topbar">
+    <div class="topbar-brand"><div style="width:38px;height:38px;background:#EDEBE4;border-radius:10px;display:flex;align-items:center;justify-content:center;overflow:hidden;"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAG4AAABQCAIAAAB3SddxAAAFY0lEQVR42u3caU8bRxgH8J3Z2dnLayBgQtNC2jQtYCAHIWoaQhIpH6BK1apVjw9Y9VCqSFWrRkXNQQ6uJpBAwGAghjS+MN619/AcfWGVRkr6IlJUr9Tn/8qy34x+nmfmmVlpUamQUyCvIxgIgBIogRIClEAJlEAJAUqgBEoIUAIlUAIlBCiBEighQAmUQAmUEKAESqCEACVQAiVQQoASKIESApRACZRACQFKoARKCFACJVACJQQogRIoIUAJlEAJlBCgBEqgBErIawqJ7ciklFJKRUGKIhFCCCGgfOUIIQghlGpNUIQw5zyKophrkpghSoQU0zQrlb2V1R3XdTkXhJA3eg729fWGYSiljC0ois/br6SUpmlyzu8/WCiXyj09BzsOdGhEC8Jgc2OLcX5+YlxRlDAMMcZA+a+IGGOMcTa7sfhwKYqiL7/4jDEmBOdcYIx1nS4uPlpbz54eG02lUmEYKooSt+kZi7+3ifLb5O+VveqlSxfTg/03bk4pigyCUNOIlLJe90+dPm2Z5q/XJmdm5izTjOHEbP2AhBC2bd++c+/dI++cO3vG1PUTJ47V6/VCoWjZ9vLySqlU2trK3b41NTY2mh4ccJzEN99+H8MVE7e8tHVdX13NbG5uMcb8wG8wxjnv6+vd3MpZVuL+g8V8vogxqlQqyWSyWCoNDaU9rzY1ddcwDCEEUP5T2mEUraxmvv7q860nuXJ5l1Kt0WCdnQfq9brn7n36yeWurk6E8djYKGMNjZAoioaHh6puNQiCWJV5i4eiqqrnuknHMQyjr7f36Z/PTNMUQiRsGylKFEWc80KxmM1uKIqiEU3TtJ2dp57n2bbNOY9VmZOWF7hhGL7vKwrq7u6aun337cOHFUUSQjyvFkVRW1vy1OhJjJHretOz85m19WKx1GCNoXTaMIxY9e0tboaklIau37k3Q1SVcVYuVzo62gM/oFR7li8IIVRVJURVpGIn7Pb2tv733zMMIwgCXdc559BXvqTMM5k1BaH0QD8XotFomKaRzW7u7VUza+vJZFLFeHz8DKU0DEMhBMZYCBG3TTwWB0fO+MBAv6IotXodISSlZIw1+3DLsmzbUjHmnPu+37zXiOfxMR47IFKCIGjuyOi5SCnr9boQIggCQkjMrzPi0ky8eI3GOU8k7O5UVxSGyWTy8cqqrlMpJVC+8hWRZVmPlpYxxoViqVQuq6oaY8aY3Qy9OE+rVZcx1t7eJqWklDYajTjXOGndvBPNot7/8GKf1N7ehhBijCGEYu7YygK3LJMQIqWwTFPTtJcugoyxRqPx/O3RSztTjLGqqi1fRltDiTF+sPBwd7dimPb07Fwut63r+v70bD7V2Z+qGKNmL7n/vfL3kx+EEMbYdb3d3V2MMcaohaC4JaVtGsbVqz/l80U74SwsPMxk1jRCKKWMsShqUEo1TWOMYYwJIUEQmqbp+z6llFIahpGUUqeUUur7vuMk1rPZufn7Scdx3ZppGP+7tdJxHEo1Kbht209y29/98GM6Pbi9vVOreSMjw3Oz86VyOek4YRSlUl2BH+iGnnScQ28eymY3KpW9keH09Ru3envfUqRMdaeops3O/7G9veN53seXPwqC4L9fWFu2VgohpBAIE8bY8WMj3d2p6ekZx3GqVffmzSnX8yYmxgcHB3w/OPvhB0vLjy9emJiZnb9y5eroyeNHjx75+ZdrtVr9wvlz69nNXG7n0dLjycnrXV2dCTvRqrN5Kyk1Sp9sbeTzBZWobUknny8sLCycPHGsWq1qmkY1zbJMXacIIdM0VVXVdd227Wx209D1np6DzZ8MQw+DoLs7tVup6FQfHOwPw7Ale/1fiz2z2qMp2JgAAAAASUVORK5CYII=" alt="Lharmonie" style="width:34px;height:auto;" /></div></div>
+    <div class="topbar-right">
+      <span class="topbar-user" id="topbarUser"></span>
+      <button class="btn-refresh" id="btnRefresh" onclick="loadAll()" title="Actualizar">↻</button>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- INICIO -->
+    <div class="page active" id="page-inicio">
+      <div class="summary-header">
+        <div class="summary-total-label">Total a pagar</div>
+        <div class="summary-total-value" id="summaryTotal">—</div>
+        <div class="summary-total-sub" id="summaryCount">cargando…</div>
+      </div>
+
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-label">Pendientes</div>
+          <div class="stat-value" id="statPendCount">—</div>
+          <div class="stat-sub">facturas a pagar</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Cargadas hoy</div>
+          <div class="stat-value" id="statHoyCount">—</div>
+          <div class="stat-sub" id="statHoyMonto">—</div>
+        </div>
+      </div>
+
+      <div class="ultima-carga" id="ultimaCarga"></div>
+
+      <div class="section-title">Deuda por proveedor</div>
+      <div class="prov-list" id="provDeudaList">
+        <div class="loading-state">Cargando…</div>
+      </div>
+
+      <div class="section-title" id="hoyTitle" style="display:none">Cargadas hoy</div>
+      <div class="facturas-list" id="hoyList" style="display:none"></div>
+    </div>
+
+    <!-- A PAGAR -->
+    <div class="page" id="page-apagar">
+      <div class="section-title" id="apagarTitle">Facturas pendientes</div>
+      <div class="facturas-list" id="apagarList">
+        <div class="loading-state">Cargando…</div>
+      </div>
+    </div>
+
+    <!-- HISTORIAL -->
+    <div class="page" id="page-historial">
+      <div class="section-title">Facturas pagadas</div>
+      <div class="historial-list" id="historialList">
+        <div class="loading-state">Cargando…</div>
+      </div>
+    </div>
+
+    <!-- PROVEEDORES -->
+    <div class="page" id="page-proveedores">
+      <div class="filter-bar" style="padding:16px 16px 8px; border:none; background:transparent;">
+        <select id="provMesFiltro" onchange="onMesFiltroChange()" style="flex:1; font-size:14px; padding:10px 12px; border-radius:10px; border:1px solid rgba(74,48,32,0.18); background:#fff; color:#1A0F08; font-family:'DM Sans',sans-serif;">
+          <option value="">Todos los meses</option>
+        </select>
+      </div>
+      <div class="kpi-prov-grid" id="kpiProvGrid"></div>
+      <div class="section-title">Ranking por gasto</div>
+      <div class="search-bar-wrap" style="padding-bottom:8px;">
+        <input class="search-bar" type="search" id="provSearch" placeholder="Buscar proveedor…" oninput="renderProveedoresTab()" autocomplete="off" />
+      </div>
+      <div class="search-results" id="provTabList"><div class="loading-state">Cargando…</div></div>
+    </div>
+
+    <!-- ARTICULOS -->
+    <div class="page" id="page-articulos">
+      <div class="filter-bar" style="padding:16px 16px 8px; border:none; background:transparent; gap:8px;">
+        <input class="search-bar" type="search" id="artSearch" placeholder="Buscar artículo o proveedor…" oninput="renderArticulosTab()" autocomplete="off" style="flex:1;" />
+        <select id="artOrden" onchange="renderArticulosTab()" style="padding:10px 12px; border-radius:10px; border:1px solid rgba(74,48,32,0.18); background:#fff; color:#1A0F08; font-family:'DM Sans',sans-serif; font-size:13px;">
+          <option value="precio">Mayor precio</option>
+          <option value="frecuencia">Más frecuentes</option>
+          <option value="alfa">A → Z</option>
+        </select>
+      </div>
+      <div class="section-title" id="artCount"></div>
+      <div class="search-results" id="artTabList"><div class="loading-state">Cargando…</div></div>
+    </div>
+
+    <!-- BUSCAR -->
+    <div class="page" id="page-buscar">
+      <div class="search-bar-wrap">
+        <input class="search-bar" type="search" id="searchInput" placeholder="Buscar en todas las facturas…" oninput="renderBuscar()" autocomplete="off" />
+      </div>
+      <div class="search-results" id="searchResults">
+        <div class="empty-state"><div class="empty-icon">🔍</div>Escribí para buscar</div>
+      </div>
+    </div>
+
+  </div>
+
+  <nav class="bottom-nav">
+    <button class="nav-tab active" onclick="showPage('inicio',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      Inicio
+    </button>
+    <button class="nav-tab" onclick="showPage('apagar',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg>
+      A pagar
+      <span class="nav-badge" id="navBadge"></span>
+    </button>
+    <button class="nav-tab" onclick="showPage('historial',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+      Pagadas
+    </button>
+    <button class="nav-tab" onclick="showPage('proveedores',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-4 0v2"/><path d="M8 7V5a2 2 0 0 1 4 0"/></svg>
+      Proveedores
+    </button>
+    <button class="nav-tab" onclick="showPage('articulos',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1"/><circle cx="3" cy="12" r="1"/><circle cx="3" cy="18" r="1"/></svg>
+      Artículos
+    </button>
+  </nav>
+
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
