@@ -812,8 +812,12 @@ async function loadFoodCost() {
       const colB = get(row, IDX.codigo);
       const colC = get(row, IDX.articulo);
 
-      // Fila de categoría: col A tiene texto, col C vacía
-      if (colA && !colC) {
+      // Saltar fila de header "Categoria" y filas de label de sección
+      if (colA && (colA === 'Categoria' || colA === 'Categoría')) continue;
+
+      // Fila de categoría: col A tiene texto, col B (código) vacía o no numérica
+      const esCatRow = colA && (!colB || isNaN(parseFloat(colB.replace(/[^0-9.]/g,'')))) && !colC;
+      if (esCatRow) {
         currentCat = colA;
         continue;
       }
@@ -867,9 +871,10 @@ function poblarFiltrosFoodCost() {
 function esRevisar(row) { return !!row._revisar; }
 
 function getMargenActual(row) {
-  const s = String(row._margenActual || '').replace('%','').replace(',','.').trim();
-  const n = parseFloat(s);
-  return isNaN(n) ? null : n;
+  const v = row._margenActual;
+  if (v === null || v === undefined || v === '') return null;
+  const n = typeof v === 'number' ? v : parseFloat(String(v).replace('%','').replace(',','.').trim());
+  return isNaN(n) ? null : Math.round(n);
 }
 
 function getCostoActual(row) { return parseNum(row._costoIVA || row._costoUN || '0'); }
@@ -950,7 +955,8 @@ function renderFoodCost() {
         catHeader = `<div style="padding:10px 16px 4px; font-size:9px; letter-spacing:0.15em; text-transform:uppercase; color:var(--muted); border-top:1px solid var(--border); background:var(--surface);">${cat}</div>`;
       }
 
-      const margenColor = revisar ? '#C0392B' : (margen !== null && margen < margenIdeal - 3 ? '#8B6340' : '#3B6D11');
+      const margenIdeal2 = getMargenIdeal(r);
+  const margenColor = revisar ? '#C0392B' : (margen !== null && margen < margenIdeal2 - 3 ? '#8B6340' : '#3B6D11');
       const badge = revisar
         ? `<span style="background:#FCF0EE;color:#C0392B;font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;">⚠ Revisar</span>`
         : `<span style="background:#EAF3DE;color:#3B6D11;font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;">✓ OK</span>`;
