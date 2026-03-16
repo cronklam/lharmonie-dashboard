@@ -27,6 +27,7 @@ const CHART_COLORS = ['#C9A87C','#8B6340','#4A3020','#D4B896','#6B4C30','#E8D5BA
 let state = {
   user: null,
   data: { facturas: [], proveedores: [], articulos: [], foodcost: [] },
+  aliasProveedores: {},
   modalFactura: null,
   _pendientesActuales: [],
   charts: {},
@@ -319,7 +320,10 @@ function renderHistorial(pagadas) {
         <button class="btn-desmarcar" onclick="desmarcarPagada(${i})">↩ Desmarcar</button>
       </div>
       <div style="text-align:right">
+        <div style="text-align:right">
         <div class="historial-monto">${fmtMoney(parseNum(f[COL.total]))}</div>
+        ${getAlias(f[COL.proveedor]) ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;">${getAlias(f[COL.proveedor])}</div>` : ''}
+      </div>
         ${f[COL.imagen] ? `<a href="${f[COL.imagen]}" target="_blank" style="font-size:10px;color:var(--brown-light);text-decoration:none;">🖼 ver</a>` : ''}
       </div>
     </div>`).join('');
