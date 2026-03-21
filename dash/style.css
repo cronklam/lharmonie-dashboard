@@ -384,8 +384,10 @@ html, body {
   transition: all var(--transition);
   animation: fadeInUp 0.3s ease-out both;
 }
-.historial-card.bistrosoft { border-left: 4px solid #6366F1; background: linear-gradient(135deg, #F5F3FF 0%, #fff 100%); }
-.bistro-badge { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 10px; font-size: 9px; background: #EDE9FE; color: #4F46E5; font-weight: 600; vertical-align: middle; }
+.historial-card.bistrosoft {
+  border-left: 4px solid #6366F1;
+  background: linear-gradient(135deg, #F5F3FF 0%, #fff 100%);
+}
 .historial-card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
 .historial-info { flex: 1; min-width: 0; }
 .historial-prov {

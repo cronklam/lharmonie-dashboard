@@ -235,47 +235,18 @@ function poblarFiltroLocal() {
   });
 }
 
-function _parseFecha(str) {
-  if (!str) return null;
-  const p = str.split('/');
-  if (p.length < 3) return null;
-  return new Date(parseInt(p[2].slice(0,4)), parseInt(p[1])-1, parseInt(p[0]));
-}
-
-function poblarFiltroFechas() {
-  const pendientes = state.data.facturas.filter(esAPagar);
-  const pagadas = state.data.facturas.filter(esPagado);
-  function fechasUnicas(lista) {
-    const fechas = new Set();
-    lista.forEach(f => { if (f[COL.fecha]) fechas.add(f[COL.fecha].trim()); });
-    return [...fechas].sort((a, b) => {
-      const da = _parseFecha(a), db = _parseFecha(b);
-      if (!da || !db) return 0;
-      return db - da;
-    });
-  }
-  const fechasPend = fechasUnicas(pendientes);
-  const fechasPag = fechasUnicas(pagadas);
-  const selPend = document.getElementById('apagarFechaFiltro');
-  if (selPend) {
-    selPend.innerHTML = '<option value="">Todas las fechas</option>' +
-      fechasPend.map(f => '<option value="' + f + '">' + f + '</option>').join('');
-  }
-  const selPag = document.getElementById('historialFechaFiltro');
-  if (selPag) {
-    selPag.innerHTML = '<option value="">Todas las fechas</option>' +
-      fechasPag.map(f => '<option value="' + f + '">' + f + '</option>').join('');
-  }
-}
-
 function getLocalFiltro(id) {
   const sel = document.getElementById(id);
   return sel ? sel.value : '';
 }
 
 function getFechaFiltro(id) {
-  const sel = document.getElementById(id);
-  return sel ? sel.value : '';
+  /* input type=date devuelve YYYY-MM-DD, las facturas usan DD/MM/YYYY */
+  const inp = document.getElementById(id);
+  if (!inp || !inp.value) return '';
+  const p = inp.value.split('-');  /* ['2026','03','20'] */
+  if (p.length !== 3) return '';
+  return p[2] + '/' + p[1] + '/' + p[0];  /* '20/03/2026' */
 }
 
 function renderAll() {
@@ -328,7 +299,6 @@ function renderAll() {
 
   document.getElementById('navBadge').textContent = pendientes.length > 0 ? pendientes.length : '';
   renderAlertaDuplicados(detectarDuplicados(facturas));
-  poblarFiltroFechas();
   renderProvDeudaList(pendientes);
   renderAPagar(pendientes);
   renderHistorial(pagadas);
@@ -434,9 +404,12 @@ function renderHistorial(pagadas) {
   state._pagadasActuales = filtradas.slice(0, 60);
   el.innerHTML = resumenHTML + filtradas.slice(0, 60).map((f, i) => {
     const fId = storeFactura(f);
-    return `<div class="historial-card" onclick="abrirDetalle(getStoredFactura('${fId}'))">
+    const bistro = esBistrosoft(f);
+    const bistroClass = bistro ? ' bistrosoft' : '';
+    const bistroBadge = bistro ? '<span class="factura-estado bistrosoft" style="font-size:10px;padding:2px 6px;margin-left:4px;">🤖</span>' : '';
+    return `<div class="historial-card${bistroClass}" onclick="abrirDetalle(getStoredFactura('${fId}'))">
       <div class="historial-info">
-        <div class="historial-prov">${esc(f[COL.proveedor] || '—')}</div>
+        <div class="historial-prov">${esc(f[COL.proveedor] || '—')}${bistroBadge}</div>
         <div class="historial-meta">Nº ${esc(f[COL.nroFac] || '—')} · ${esc(f[COL.fecha] || '—')} · ${esc(f[COL.local] || '—')}</div>
         <button class="btn-desmarcar" onclick="event.stopPropagation();desmarcarPagada(${i})">↩ Desmarcar</button>
       </div>
