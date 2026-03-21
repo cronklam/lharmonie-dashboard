@@ -117,9 +117,12 @@
 
     <!-- A PAGAR -->
     <div class="page" id="page-apagar">
-      <div style="padding:12px 16px 0;display:flex;gap:8px;">
-        <select id="apagarLocalFiltro" class="local-filtro" onchange="renderAPagar()" style="flex:1;font-size:13px;padding:9px 10px;border-radius:10px;border:1px solid rgba(74,48,32,0.18);background:#fff;color:#1A0F08;font-family:'DM Sans',sans-serif;">
+      <div style="padding:12px 16px 0;display:flex;gap:8px;flex-wrap:wrap;">
+        <select id="apagarLocalFiltro" class="local-filtro" onchange="renderAPagar()" style="flex:1;min-width:120px;font-size:13px;padding:9px 10px;border-radius:10px;border:1px solid rgba(74,48,32,0.18);background:#fff;color:#1A0F08;font-family:'DM Sans',sans-serif;">
           <option value="">Todos los locales</option>
+        </select>
+        <select id="apagarFechaFiltro" class="local-filtro" onchange="renderAPagar()" style="flex:1;min-width:120px;font-size:13px;padding:9px 10px;border-radius:10px;border:1px solid rgba(74,48,32,0.18);background:#fff;color:#1A0F08;font-family:'DM Sans',sans-serif;">
+          <option value="">Todas las fechas</option>
         </select>
       </div>
       <div class="section-title" id="apagarTitle">Facturas pendientes</div>
@@ -130,10 +133,13 @@
 
     <!-- HISTORIAL -->
     <div class="page" id="page-historial">
-      <div style="padding:12px 16px 0;display:flex;gap:8px;">
-        <input class="search-bar" type="search" id="historialSearch" placeholder="Buscar en pagadas…" oninput="renderHistorial()" autocomplete="off" style="flex:1;" />
+      <div style="padding:12px 16px 0;display:flex;gap:8px;flex-wrap:wrap;">
+        <input class="search-bar" type="search" id="historialSearch" placeholder="Buscar en pagadas…" oninput="renderHistorial()" autocomplete="off" style="flex:2;min-width:140px;" />
         <select id="historialLocalFiltro" class="local-filtro" onchange="renderHistorial()" style="font-size:13px;padding:9px 10px;border-radius:10px;border:1px solid rgba(74,48,32,0.18);background:#fff;color:#1A0F08;font-family:'DM Sans',sans-serif;min-width:100px;">
           <option value="">Todos</option>
+        </select>
+        <select id="historialFechaFiltro" class="local-filtro" onchange="renderHistorial()" style="flex:1;min-width:120px;font-size:13px;padding:9px 10px;border-radius:10px;border:1px solid rgba(74,48,32,0.18);background:#fff;color:#1A0F08;font-family:'DM Sans',sans-serif;">
+          <option value="">Todas las fechas</option>
         </select>
       </div>
       <div class="section-title">Facturas pagadas</div>

@@ -229,10 +229,51 @@ function poblarFiltroLocal() {
   state.data.facturas.forEach(f => { if (f[COL.local]) locales.add(f[COL.local]); });
   const opciones = '<option value="">Todos los locales</option>' +
     [...locales].sort().map(l => `<option value="${l}">${l.replace('Lharmonie ', 'LH ')}</option>`).join('');
-  document.querySelectorAll('.local-filtro').forEach(sel => { sel.innerHTML = opciones; });
+  document.querySelectorAll('.local-filtro').forEach(sel => {
+    if (sel.id && sel.id.includes('Fecha')) return;
+    sel.innerHTML = opciones;
+  });
+}
+
+function _parseFecha(str) {
+  if (!str) return null;
+  const p = str.split('/');
+  if (p.length < 3) return null;
+  return new Date(parseInt(p[2].slice(0,4)), parseInt(p[1])-1, parseInt(p[0]));
+}
+
+function poblarFiltroFechas() {
+  const pendientes = state.data.facturas.filter(esAPagar);
+  const pagadas = state.data.facturas.filter(esPagado);
+  function fechasUnicas(lista) {
+    const fechas = new Set();
+    lista.forEach(f => { if (f[COL.fecha]) fechas.add(f[COL.fecha].trim()); });
+    return [...fechas].sort((a, b) => {
+      const da = _parseFecha(a), db = _parseFecha(b);
+      if (!da || !db) return 0;
+      return db - da;
+    });
+  }
+  const fechasPend = fechasUnicas(pendientes);
+  const fechasPag = fechasUnicas(pagadas);
+  const selPend = document.getElementById('apagarFechaFiltro');
+  if (selPend) {
+    selPend.innerHTML = '<option value="">Todas las fechas</option>' +
+      fechasPend.map(f => '<option value="' + f + '">' + f + '</option>').join('');
+  }
+  const selPag = document.getElementById('historialFechaFiltro');
+  if (selPag) {
+    selPag.innerHTML = '<option value="">Todas las fechas</option>' +
+      fechasPag.map(f => '<option value="' + f + '">' + f + '</option>').join('');
+  }
 }
 
 function getLocalFiltro(id) {
+  const sel = document.getElementById(id);
+  return sel ? sel.value : '';
+}
+
+function getFechaFiltro(id) {
   const sel = document.getElementById(id);
   return sel ? sel.value : '';
 }
@@ -287,6 +328,7 @@ function renderAll() {
 
   document.getElementById('navBadge').textContent = pendientes.length > 0 ? pendientes.length : '';
   renderAlertaDuplicados(detectarDuplicados(facturas));
+  poblarFiltroFechas();
   renderProvDeudaList(pendientes);
   renderAPagar(pendientes);
   renderHistorial(pagadas);
@@ -322,28 +364,43 @@ function renderAPagar(pendientes) {
   const title = document.getElementById('apagarTitle');
   if (!pendientes) pendientes = state.data.facturas.filter(esAPagar);
   const localFiltro = getLocalFiltro('apagarLocalFiltro');
+  const fechaFiltro = getFechaFiltro('apagarFechaFiltro');
   let filtradas = localFiltro ? pendientes.filter(f => f[COL.local] === localFiltro) : pendientes;
+  if (fechaFiltro) filtradas = filtradas.filter(f => (f[COL.fecha] || '').trim() === fechaFiltro);
   state._pendientesActuales = filtradas;
-  title.textContent = `${filtradas.length} factura${filtradas.length !== 1 ? 's' : ''} pendiente${filtradas.length !== 1 ? 's' : ''}`;
+
+  const totalFiltrado = filtradas.reduce((s, f) => s + parseNum(f[COL.total]), 0);
+  const subtitulo = fechaFiltro ? ' del ' + fechaFiltro : '';
+  title.textContent = filtradas.length + ' factura' + (filtradas.length !== 1 ? 's' : '') + ' pendiente' + (filtradas.length !== 1 ? 's' : '') + subtitulo;
+
   if (!filtradas.length) {
-    el.innerHTML = '<div class="empty-state"><div class="empty-icon">🎉</div>Todo al día</div>';
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">🎉</div>Todo al día' + (fechaFiltro ? ' para ' + fechaFiltro : '') + '</div>';
     return;
   }
-  el.innerHTML = filtradas.map((f, i) =>
-    renderFacturaCard(f, i, 'apagar', {
+
+  const resumenDia = '<div class="semana-card" style="background:linear-gradient(135deg,#FFF3E0 0%,#FFE8CC 100%);border-color:rgba(122,61,0,0.15);">' +
+    '<div class="semana-label" style="color:#7A3D00;">Total a pagar' + subtitulo + '</div>' +
+    '<div class="semana-monto" style="color:#7A3D00;">' + fmtMoney(totalFiltrado) + '</div>' +
+    '<div class="semana-sub" style="color:#7A3D00;">' + filtradas.length + ' factura' + (filtradas.length !== 1 ? 's' : '') + '</div>' +
+    '</div>';
+
+  el.innerHTML = resumenDia + filtradas.map(function(f, i) {
+    return renderFacturaCard(f, i, 'apagar', {
       showPayBtn: true,
       metaExtra: '<br>' + esc(f[COL.local] || '') + (f[COL.categoria] ? ' · ' + esc(f[COL.categoria]) : '')
-    })
-  ).join('');
+    });
+  }).join('');
 }
 
 function renderHistorial(pagadas) {
   const el = document.getElementById('historialList');
   if (!pagadas) pagadas = state.data.facturas.filter(esPagado);
   const localFiltro = getLocalFiltro('historialLocalFiltro');
+  const fechaFiltro = getFechaFiltro('historialFechaFiltro');
   const q = (document.getElementById('historialSearch') || {}).value || '';
   let filtradas = [...pagadas].reverse();
   if (localFiltro) filtradas = filtradas.filter(f => f[COL.local] === localFiltro);
+  if (fechaFiltro) filtradas = filtradas.filter(f => (f[COL.fecha] || '').trim() === fechaFiltro);
   if (q) filtradas = filtradas.filter(r => Object.values(r).some(v => String(v).toLowerCase().includes(q.toLowerCase())));
 
   const hoy = new Date();
@@ -358,19 +415,28 @@ function renderHistorial(pagadas) {
     return d2 >= lunes;
   });
   const totalSemana = estaSemana.reduce((s,f) => s + parseNum(f[COL.total]), 0);
-  const resumenHTML = estaSemana.length > 0 ? `
-    <div class="semana-card">
-      <div class="semana-label">Pagado esta semana</div>
-      <div class="semana-monto">${fmtMoney(totalSemana)}</div>
-      <div class="semana-sub">${estaSemana.length} factura${estaSemana.length !== 1 ? 's' : ''}</div>
-    </div>` : '';
+  const totalFiltrado = filtradas.reduce((s,f) => s + parseNum(f[COL.total]), 0);
+  let resumenHTML = '';
+  if (fechaFiltro) {
+    resumenHTML = '<div class="semana-card">' +
+      '<div class="semana-label">Pagado el ' + fechaFiltro + '</div>' +
+      '<div class="semana-monto">' + fmtMoney(totalFiltrado) + '</div>' +
+      '<div class="semana-sub">' + filtradas.length + ' factura' + (filtradas.length !== 1 ? 's' : '') + '</div>' +
+      '</div>';
+  } else if (estaSemana.length > 0) {
+    resumenHTML = '<div class="semana-card">' +
+      '<div class="semana-label">Pagado esta semana</div>' +
+      '<div class="semana-monto">' + fmtMoney(totalSemana) + '</div>' +
+      '<div class="semana-sub">' + estaSemana.length + ' factura' + (estaSemana.length !== 1 ? 's' : '') + '</div>' +
+      '</div>';
+  }
 
   state._pagadasActuales = filtradas.slice(0, 60);
   el.innerHTML = resumenHTML + filtradas.slice(0, 60).map((f, i) => {
     const fId = storeFactura(f);
-    return `<div class="historial-card${esBistrosoft(f) ? ' bistrosoft' : ''}" onclick="abrirDetalle(getStoredFactura('${fId}'))">
+    return `<div class="historial-card" onclick="abrirDetalle(getStoredFactura('${fId}'))">
       <div class="historial-info">
-        <div class="historial-prov">${esc(f[COL.proveedor] || '—')}${esBistrosoft(f) ? ' <span class="bistro-badge">Bistrosoft</span>' : ''}</div>
+        <div class="historial-prov">${esc(f[COL.proveedor] || '—')}</div>
         <div class="historial-meta">Nº ${esc(f[COL.nroFac] || '—')} · ${esc(f[COL.fecha] || '—')} · ${esc(f[COL.local] || '—')}</div>
         <button class="btn-desmarcar" onclick="event.stopPropagation();desmarcarPagada(${i})">↩ Desmarcar</button>
       </div>
