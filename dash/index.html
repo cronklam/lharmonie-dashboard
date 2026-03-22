@@ -94,6 +94,10 @@
         <div class="summary-total-value" id="summaryTotal">—</div>
         <div class="summary-total-sub" id="summaryCount">cargando…</div>
       </div>
+      <div class="kpi-grid" id="kpiGrid"></div>
+      <div class="period-chips-wrap">
+        <div class="period-chips" id="inicioChips"></div>
+      </div>
       <div class="stats-row">
         <div class="stat-card">
           <div class="stat-label">Pendientes</div>
@@ -107,6 +111,23 @@
         </div>
       </div>
       <div class="ultima-carga" id="ultimaCarga"></div>
+      <div class="section-title">Análisis de gasto</div>
+      <div class="charts-container">
+        <div class="chart-section">
+          <div class="chart-section-title">Evolución mensual</div>
+          <canvas id="chartEvolución" class="chart-canvas"></canvas>
+        </div>
+        <div class="chart-section">
+          <div class="chart-section-title">Gasto por categoría</div>
+          <canvas id="chartCategoria" class="chart-canvas"></canvas>
+        </div>
+        <div class="chart-section">
+          <div class="chart-section-title">Gasto por local</div>
+          <canvas id="chartLocal" class="chart-canvas"></canvas>
+        </div>
+      </div>
+      <div class="section-title">Comparativa por local</div>
+      <div class="local-comparison-section" id="localComparison"></div>
       <div class="section-title">Deuda por proveedor</div>
       <div class="prov-list" id="provDeudaList">
         <div class="loading-state">Cargando…</div>
@@ -146,6 +167,9 @@
 
     <!-- PROVEEDORES -->
     <div class="page" id="page-proveedores">
+      <div class="period-chips-wrap">
+        <div class="period-chips" id="proveedoresChips"></div>
+      </div>
       <div class="filter-bar" style="padding:16px 16px 8px; border:none; background:transparent; gap:8px; flex-wrap:wrap;">
         <select id="provMesFiltro" onchange="onMesFiltroChange()" style="flex:1; min-width:110px; font-size:13px; padding:9px 10px; border-radius:10px; border:1px solid rgba(74,48,32,0.18); background:#fff; color:#1A0F08; font-family:'DM Sans',sans-serif;">
           <option value="">Todos los meses</option>

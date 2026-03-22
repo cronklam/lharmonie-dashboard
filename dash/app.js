@@ -33,6 +33,9 @@ const state = {
   _detalleFactura: null,
 };
 
+const MESES_ES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const PALETTE = ['#C9A87C', '#8B6340', '#3B6D11', '#C0392B', '#5B4A3F', '#D4B896'];
+
 /* ---- SHARED HELPERS ---- */
 let _facturaStore = {};
 let _facturaId = 0;
@@ -299,11 +302,15 @@ function renderAll() {
 
   document.getElementById('navBadge').textContent = pendientes.length > 0 ? pendientes.length : '';
   renderAlertaDuplicados(detectarDuplicados(facturas));
+  renderKPIInicio(facturas);
+  renderChartsInicio(facturas);
+  renderLocalComparison(facturas);
   renderProvDeudaList(pendientes);
   renderAPagar(pendientes);
   renderHistorial(pagadas);
   renderProveedoresTab();
   renderArticulosTab();
+  renderPeriodChips();
 }
 
 function renderProvDeudaList(pendientes) {
@@ -685,6 +692,261 @@ function renderChartsProveedores() {
 }
 
 function renderChartsArticulos() { renderArticulosTab(); }
+
+/* ===================== INICIO PAGE - CHARTS & KPIs ===================== */
+function renderKPIInicio(facturas) {
+  const el = document.getElementById('kpiGrid');
+  if (!el) return;
+
+  // Get all months from data and find current/previous
+  const monthMap = {};
+  facturas.forEach(f => {
+    const mes = (f['Mes'] || '').toLowerCase().trim();
+    const año = f['Año'] || '';
+    const key = mes && año ? `${mes} ${año}` : '';
+    if (key) {
+      monthMap[key] = (monthMap[key] || 0) + parseNum(f[COL.total]);
+    }
+  });
+
+  const sortedMonths = Object.entries(monthMap).sort((a, b) => {
+    const [mA, yA] = a[0].split(' ');
+    const [mB, yB] = b[0].split(' ');
+    if (yA !== yB) return parseInt(yA) - parseInt(yB);
+    return MESES_ES.indexOf(mA) - MESES_ES.indexOf(mB);
+  });
+
+  const currentMonthTotal = sortedMonths.length > 0 ? sortedMonths[sortedMonths.length - 1][1] : 0;
+  const prevMonthTotal = sortedMonths.length > 1 ? sortedMonths[sortedMonths.length - 2][1] : 0;
+
+  // Calculate change
+  const change = prevMonthTotal > 0 ? ((currentMonthTotal - prevMonthTotal) / prevMonthTotal) * 100 : 0;
+  const isLessSpending = change <= 0;
+  const changeText = Math.abs(Math.round(change)) + '%';
+  const arrow = change > 0 ? '↑' : '↓';
+
+  // Daily average - use actual days with data or estimate
+  const daysWithData = [...new Set(facturas.map(f => f[COL.fecha] || '').filter(x => x))].length || 1;
+  const dailyAvg = currentMonthTotal / Math.max(daysWithData, 1);
+
+  el.innerHTML = `
+    <div class="kpi-card">
+      <div class="kpi-label">Gasto este mes</div>
+      <div class="kpi-value">${fmtMoney(currentMonthTotal)}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">vs mes anterior</div>
+      <div class="kpi-change ${isLessSpending ? 'positive' : 'negative'}">
+        <span class="arrow">${arrow}</span>
+        <span>${changeText}</span>
+      </div>
+      <div class="kpi-sub">${prevMonthTotal > 0 ? fmtMoney(prevMonthTotal) + ' el mes pasado' : 'Sin datos mes anterior'}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Promedio diario</div>
+      <div class="kpi-value">${fmtMoney(dailyAvg)}</div>
+    </div>
+  `;
+}
+
+function renderChartsInicio(facturas) {
+  if (!window.Chart) return;
+
+  // Destroy existing charts
+  if (state.charts.inicioEvolución) state.charts.inicioEvolución.destroy();
+  if (state.charts.inicioCategoria) state.charts.inicioCategoria.destroy();
+  if (state.charts.inicioLocal) state.charts.inicioLocal.destroy();
+
+  if (!state.charts) state.charts = {};
+
+  // Chart A: Evolution by month
+  const monthMap = {};
+  facturas.forEach(f => {
+    const mes = (f['Mes'] || '').toLowerCase().trim();
+    const año = f['Año'] || '';
+    const key = mes && año ? `${mes} ${año}` : '';
+    if (key) {
+      monthMap[key] = (monthMap[key] || 0) + parseNum(f[COL.total]);
+    }
+  });
+
+  const sortedMonths = Object.entries(monthMap).sort((a, b) => {
+    const [mA, yA] = a[0].split(' ');
+    const [mB, yB] = b[0].split(' ');
+    if (yA !== yB) return parseInt(yA) - parseInt(yB);
+    return MESES_ES.indexOf(mA) - MESES_ES.indexOf(mB);
+  });
+
+  const canvasEv = document.getElementById('chartEvolución');
+  if (canvasEv && sortedMonths.length > 0) {
+    const ctxEv = canvasEv.getContext('2d');
+    const d = new Date();
+    const currentMonth = MESES_ES[d.getMonth()] + ' ' + d.getFullYear();
+
+    state.charts.inicioEvolución = new Chart(ctxEv, {
+      type: 'bar',
+      data: {
+        labels: sortedMonths.map(([k]) => k.split(' ')[0].charAt(0).toUpperCase() + k.split(' ')[0].slice(1)),
+        datasets: [{
+          label: 'Gasto',
+          data: sortedMonths.map(([, v]) => v),
+          backgroundColor: sortedMonths.map(([k]) => k === currentMonth ? '#C9A87C' : 'rgba(201,168,124,0.4)'),
+          borderRadius: 6,
+          borderSkipped: false,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        indexAxis: 'x',
+        plugins: { legend: { display: false } },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: { callback: v => v > 0 ? '$' + (v/1000).toFixed(0) + 'k' : '$0', font: { size: 10 } },
+            grid: { color: 'rgba(0,0,0,0.05)' }
+          },
+          x: { grid: { display: false }, ticks: { font: { size: 11 } } }
+        }
+      }
+    });
+  }
+
+  // Chart B: Category breakdown
+  const catMap = {};
+  facturas.forEach(f => {
+    const cat = (f[COL.categoria] || 'Sin cat').replace(/^[^\w\s]+\s*/,'').trim().split('/')[0].trim();
+    catMap[cat] = (catMap[cat] || 0) + parseNum(f[COL.total]);
+  });
+
+  const topCats = Object.entries(catMap).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const canvasCat = document.getElementById('chartCategoria');
+  if (canvasCat && topCats.length > 0) {
+    const ctxCat = canvasCat.getContext('2d');
+    const totalCat = topCats.reduce((s, [, v]) => s + v, 0);
+
+    state.charts.inicioCategoria = new Chart(ctxCat, {
+      type: 'doughnut',
+      data: {
+        labels: topCats.map(([cat, val]) => cat + ' (' + Math.round(val/totalCat*100) + '%)'),
+        datasets: [{
+          data: topCats.map(([, v]) => v),
+          backgroundColor: PALETTE,
+          borderColor: '#fff',
+          borderWidth: 2,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        cutout: '65%',
+        plugins: {
+          legend: { position: 'bottom', labels: { font: { size: 10 }, padding: 12 } }
+        }
+      }
+    });
+  }
+
+  // Chart C: Spending by local
+  const localMap = {};
+  facturas.forEach(f => {
+    const loc = f[COL.local] || 'Sin local';
+    localMap[loc] = (localMap[loc] || 0) + parseNum(f[COL.total]);
+  });
+
+  const sortedLocals = Object.entries(localMap).sort((a, b) => b[1] - a[1]);
+  const canvasLoc = document.getElementById('chartLocal');
+  if (canvasLoc && sortedLocals.length > 0) {
+    const ctxLoc = canvasLoc.getContext('2d');
+
+    state.charts.inicioLocal = new Chart(ctxLoc, {
+      type: 'bar',
+      data: {
+        labels: sortedLocals.map(([loc]) => loc.replace('Lharmonie ', 'LH ')),
+        datasets: [{
+          label: 'Gasto',
+          data: sortedLocals.map(([, v]) => v),
+          backgroundColor: 'rgba(201,168,124,0.7)',
+          borderColor: '#C9A87C',
+          borderWidth: 1,
+          borderRadius: 4,
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: {
+            beginAtZero: true,
+            ticks: { callback: v => v > 0 ? '$' + (v/1000).toFixed(0) + 'k' : '$0', font: { size: 10 } },
+            grid: { color: 'rgba(0,0,0,0.05)' }
+          },
+          y: { grid: { display: false }, ticks: { font: { size: 11 } } }
+        }
+      }
+    });
+  }
+}
+
+function renderLocalComparison(facturas) {
+  const el = document.getElementById('localComparison');
+  if (!el) return;
+
+  const localMap = {};
+  facturas.forEach(f => {
+    const loc = f[COL.local] || 'Sin local';
+    localMap[loc] = (localMap[loc] || 0) + parseNum(f[COL.total]);
+  });
+
+  const sorted = Object.entries(localMap).sort((a, b) => b[1] - a[1]);
+  const maxVal = sorted.length > 0 ? sorted[0][1] : 1;
+
+  el.innerHTML = sorted.map(([loc, val]) => {
+    const pct = (val / maxVal) * 100;
+    return `
+      <div class="local-comparison-item">
+        <div class="local-comparison-header">
+          <span class="local-comparison-name">${loc.replace('Lharmonie ', 'LH ')}</span>
+          <span class="local-comparison-amount">${fmtMoney(val)}</span>
+        </div>
+        <div class="local-comparison-bar">
+          <div class="local-comparison-bar-fill" style="width: ${pct}%"></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderPeriodChips() {
+  const periods = [
+    { label: '7 días', days: 7 },
+    { label: '30 días', days: 30 },
+    { label: 'Este mes', days: null },
+    { label: 'Todo', days: Infinity },
+  ];
+
+  const renderChips = (containerId) => {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    container.innerHTML = periods.map(({ label, days }) =>
+      `<button class="period-chip" onclick="filterByPeriod('${label}', ${days})">
+        ${label}
+      </button>`
+    ).join('');
+  };
+
+  renderChips('inicioChips');
+  renderChips('proveedoresChips');
+}
+
+function filterByPeriod(label, days) {
+  // This is a placeholder for period filtering logic
+  // Can be expanded later to filter facturas data
+  console.log('Filter by period:', label, days);
+}
 
 /* ---- PROVEEDORES TAB ---- */
 function renderProveedoresTab() {
