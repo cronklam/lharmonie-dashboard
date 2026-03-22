@@ -562,7 +562,7 @@ function renderHistorial(pagadas) {
   const el = document.getElementById('historialList');
   if (!pagadas) pagadas = state.data.facturas.filter(esPagado);
   const localFiltro = getLocalFiltro('historialLocalFiltro');
-  const fechaFiltro = getFechaFiltro('historialFechaFiltro');
+  const fechaFiltro = null;
   const q = (document.getElementById('historialSearch') || {}).value || '';
   let filtradas = [...pagadas].reverse();
   if (localFiltro) filtradas = filtradas.filter(f => f[COL.local] === localFiltro);
@@ -897,7 +897,7 @@ function renderKPIInicio(facturas) {
 
   // For comparison: calculate previous equivalent period total from ALL data
   const allFacturas = state.data.facturas;
-  const activePeriod = state._periodoActivo || 'todo';
+  const activePeriod = state._periodoActivo || 'mes';
   let prevMonthTotal = 0;
   const now = new Date();
 
@@ -932,8 +932,8 @@ function renderKPIInicio(facturas) {
   const dailyAvg = currentMonthTotal / dayCount;
 
   // Period-aware label
-  const periodo = state._periodoActivo || 'todo';
-  const periodoLabel = periodo === 'semana' ? 'Gasto esta semana' : periodo === 'mes' ? 'Gasto este mes' : 'Gasto total';
+  const periodo = state._periodoActivo || 'mes';
+  const periodoLabel = periodo === 'semana' ? 'Gasto esta semana' : 'Gasto este mes';
 
   const changeHTML = prevMonthTotal > 0
     ? `<span class="kpi-inline-change ${isLessSpending ? 'positive' : 'negative'}">${arrow} ${changeText} vs anterior</span>`
@@ -1083,24 +1083,18 @@ function renderPeriodChips() {
   const periods = [
     { label: 'Semana', id: 'semana' },
     { label: 'Este mes', id: 'mes' },
-    { label: 'Todo', id: 'todo' },
   ];
 
-  const active = state._periodoActivo || 'todo';
+  const active = state._periodoActivo || 'mes';
 
-  const renderChips = (containerId) => {
-    const container = document.getElementById(containerId);
-    if (!container) return;
+  const container = document.getElementById('inicioChips');
+  if (!container) return;
 
-    container.innerHTML = periods.map(({ label, id }) =>
-      `<button class="period-chip${active === id ? ' active' : ''}" onclick="filterByPeriod('${id}')">
-        ${label}
-      </button>`
-    ).join('');
-  };
-
-  renderChips('inicioChips');
-  renderChips('proveedoresChips');
+  container.innerHTML = periods.map(({ label, id }) =>
+    `<button class="period-chip${active === id ? ' active' : ''}" onclick="filterByPeriod('${id}')">
+      ${label}
+    </button>`
+  ).join('');
 }
 
 function parseFechaFC(str) {
@@ -1117,7 +1111,7 @@ function filterByPeriod(id) {
 }
 
 function getFacturasFiltradasPeriodo(facturas) {
-  const id = state._periodoActivo || 'todo';
+  const id = state._periodoActivo || 'mes';
   if (id === 'todo') return facturas;
 
   const now = new Date();
