@@ -888,27 +888,39 @@ function renderKPIInicio(facturas) {
   const el = document.getElementById('kpiGrid');
   if (!el) return;
 
-  // Get current month totals using actual date
-  const now = new Date();
-  const curMonthIdx = now.getMonth();
-  const curYear = String(now.getFullYear());
-  const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const prevMonthIdx = prevDate.getMonth();
-  const prevYear = String(prevDate.getFullYear());
-
-  let currentMonthTotal = 0, prevMonthTotal = 0, daysThisMonth = new Set();
+  // Sum all facturas in the filtered set (already filtered by period)
+  let currentMonthTotal = 0, daysInPeriod = new Set();
   facturas.forEach(f => {
-    const mIdx = mesIndex(f['Mes'] || '');
-    const año = (f['Año'] || '').trim();
-    const total = parseNum(f[COL.total]);
-    if (mIdx === curMonthIdx && año === curYear) {
-      currentMonthTotal += total;
-      const fecha = f[COL.fecha] || '';
-      if (fecha) daysThisMonth.add(fecha);
-    } else if (mIdx === prevMonthIdx && año === prevYear) {
-      prevMonthTotal += total;
-    }
+    currentMonthTotal += parseNum(f[COL.total]);
+    const fecha = f[COL.fecha] || '';
+    if (fecha) daysInPeriod.add(fecha);
   });
+
+  // For comparison: calculate previous equivalent period total from ALL data
+  const allFacturas = state.data.facturas;
+  const activePeriod = state._periodoActivo || 'todo';
+  let prevMonthTotal = 0;
+  const now = new Date();
+
+  if (activePeriod === 'semana') {
+    // Previous week
+    const weekAgo = new Date(now); weekAgo.setDate(weekAgo.getDate() - 7);
+    const twoWeeksAgo = new Date(now); twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+    allFacturas.forEach(f => {
+      const d = parseFechaFC(f[COL.fecha]);
+      if (d && d >= twoWeeksAgo && d < weekAgo) prevMonthTotal += parseNum(f[COL.total]);
+    });
+  } else if (activePeriod === 'mes') {
+    // Previous month
+    const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const prevMonthIdx = prevDate.getMonth();
+    const prevYear = String(prevDate.getFullYear());
+    allFacturas.forEach(f => {
+      const mIdx = mesIndex(f['Mes'] || '');
+      const año = (f['Año'] || '').trim();
+      if (mIdx === prevMonthIdx && año === prevYear) prevMonthTotal += parseNum(f[COL.total]);
+    });
+  }
 
   // Calculate change
   const change = prevMonthTotal > 0 ? ((currentMonthTotal - prevMonthTotal) / prevMonthTotal) * 100 : 0;
@@ -916,26 +928,27 @@ function renderKPIInicio(facturas) {
   const changeText = Math.abs(Math.round(change)) + '%';
   const arrow = change > 0 ? '↑' : '↓';
 
-  // Daily average for current month
-  const dayCount = daysThisMonth.size || 1;
+  // Daily average
+  const dayCount = daysInPeriod.size || 1;
   const dailyAvg = currentMonthTotal / dayCount;
 
+  // Period-aware label
+  const periodo = state._periodoActivo || 'todo';
+  const periodoLabel = periodo === 'semana' ? 'Gasto esta semana' : periodo === 'mes' ? 'Gasto este mes' : 'Gasto total';
+
+  const changeHTML = prevMonthTotal > 0
+    ? `<span class="kpi-inline-change ${isLessSpending ? 'positive' : 'negative'}">${arrow} ${changeText} vs anterior</span>`
+    : '';
+
   el.innerHTML = `
-    <div class="kpi-card">
-      <div class="kpi-label">Gasto este mes</div>
+    <div class="kpi-card kpi-card-main">
+      <div class="kpi-label">${periodoLabel}</div>
       <div class="kpi-value">${fmtMoney(currentMonthTotal)}</div>
+      ${changeHTML}
     </div>
-    <div class="kpi-card">
-      <div class="kpi-label">vs mes anterior</div>
-      <div class="kpi-change ${isLessSpending ? 'positive' : 'negative'}">
-        <span class="arrow">${arrow}</span>
-        <span>${changeText}</span>
-      </div>
-      <div class="kpi-sub">${prevMonthTotal > 0 ? fmtMoney(prevMonthTotal) + ' el mes pasado' : 'Sin datos mes anterior'}</div>
-    </div>
-    <div class="kpi-card">
+    <div class="kpi-card kpi-card-secondary">
       <div class="kpi-label">Promedio diario</div>
-      <div class="kpi-value">${fmtMoney(dailyAvg)}</div>
+      <div class="kpi-value-sm">${fmtMoney(dailyAvg)}</div>
     </div>
   `;
 }
@@ -1238,14 +1251,10 @@ function detectarDuplicados(facturas) {
 }
 
 function renderAlertaDuplicados(dupes) {
-  let el = document.getElementById('alertaDuplicados');
-  if (!el) {
-    el = document.createElement('div'); el.id = 'alertaDuplicados';
-    const header = document.querySelector('.summary-header') || document.getElementById('page-inicio');
-    header.appendChild(el);
-  }
+  const el = document.getElementById('alertaDuplicados');
+  if (!el) return;
   if (!dupes.length) { el.innerHTML=''; el.style.cssText=''; return; }
-  el.style.cssText = 'display:flex;align-items:center;gap:8px;background:rgba(26,15,8,0.12);border-radius:8px;padding:8px 14px;margin:8px 16px 0;color:#1A0F08;cursor:pointer;';
+  el.style.cssText = 'display:flex;align-items:center;gap:8px;background:rgba(26,15,8,0.12);border-radius:8px;padding:8px 14px;margin:4px 16px 0;color:#1A0F08;cursor:pointer;';
   el.onclick = () => {
     document.getElementById('searchInput').value = dupes[0].prov || '';
     renderBuscar();
