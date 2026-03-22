@@ -34,6 +34,14 @@ const state = {
 };
 
 const MESES_ES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const MESES_EN = ['january','february','march','april','may','june','july','august','september','october','november','december'];
+function mesIndex(name) {
+  const n = (name||'').toLowerCase().trim();
+  let idx = MESES_ES.indexOf(n);
+  if (idx >= 0) return idx;
+  idx = MESES_EN.indexOf(n);
+  return idx;
+}
 const PALETTE = ['#C9A87C', '#8B6340', '#3B6D11', '#C0392B', '#5B4A3F', '#D4B896'];
 
 /* ---- SHARED HELPERS ---- */
@@ -201,6 +209,8 @@ function initBiometricLoginUI() {
   if (hasAnyBiometric()) {
     btn.style.display = 'flex';
     divider.style.display = 'flex';
+    // Auto-trigger biometric login after a short delay
+    setTimeout(() => biometricLogin(), 400);
   } else {
     btn.style.display = 'none';
     divider.style.display = 'none';
@@ -481,9 +491,10 @@ function renderAll() {
 
   document.getElementById('navBadge').textContent = pendientes.length > 0 ? pendientes.length : '';
   renderAlertaDuplicados(detectarDuplicados(facturas));
-  renderKPIInicio(facturas);
-  renderChartsInicio(facturas);
-  renderLocalComparison(facturas);
+  const facturasP = getFacturasFiltradasPeriodo(facturas);
+  renderKPIInicio(facturasP);
+  renderChartsInicio(facturasP);
+  renderLocalComparison(facturasP);
   renderProvDeudaList(pendientes);
   renderAPagar(pendientes);
   renderHistorial(pagadas);
@@ -879,22 +890,22 @@ function renderKPIInicio(facturas) {
 
   // Get current month totals using actual date
   const now = new Date();
-  const curMonthName = MESES_ES[now.getMonth()];
+  const curMonthIdx = now.getMonth();
   const curYear = String(now.getFullYear());
   const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const prevMonthName = MESES_ES[prevDate.getMonth()];
+  const prevMonthIdx = prevDate.getMonth();
   const prevYear = String(prevDate.getFullYear());
 
   let currentMonthTotal = 0, prevMonthTotal = 0, daysThisMonth = new Set();
   facturas.forEach(f => {
-    const mes = (f['Mes'] || '').toLowerCase().trim();
+    const mIdx = mesIndex(f['Mes'] || '');
     const año = (f['Año'] || '').trim();
     const total = parseNum(f[COL.total]);
-    if (mes === curMonthName && año === curYear) {
+    if (mIdx === curMonthIdx && año === curYear) {
       currentMonthTotal += total;
       const fecha = f[COL.fecha] || '';
       if (fecha) daysThisMonth.add(fecha);
-    } else if (mes === prevMonthName && año === prevYear) {
+    } else if (mIdx === prevMonthIdx && año === prevYear) {
       prevMonthTotal += total;
     }
   });
@@ -953,23 +964,22 @@ function renderChartsInicio(facturas) {
     const [mA, yA] = a[0].split(' ');
     const [mB, yB] = b[0].split(' ');
     if (yA !== yB) return parseInt(yA) - parseInt(yB);
-    return MESES_ES.indexOf(mA) - MESES_ES.indexOf(mB);
+    return mesIndex(mA) - mesIndex(mB);
   });
 
   const canvasEv = document.getElementById('chartEvolución');
   if (canvasEv && sortedMonths.length > 0) {
     const ctxEv = canvasEv.getContext('2d');
     const d = new Date();
-    const currentMonth = MESES_ES[d.getMonth()] + ' ' + d.getFullYear();
 
     state.charts.inicioEvolución = new Chart(ctxEv, {
       type: 'bar',
       data: {
-        labels: sortedMonths.map(([k]) => k.split(' ')[0].charAt(0).toUpperCase() + k.split(' ')[0].slice(1)),
+        labels: sortedMonths.map(([k]) => { const idx = mesIndex(k.split(' ')[0]); return idx >= 0 ? MESES_ES[idx].charAt(0).toUpperCase() + MESES_ES[idx].slice(1) : k.split(' ')[0]; }),
         datasets: [{
           label: 'Gasto',
           data: sortedMonths.map(([, v]) => v),
-          backgroundColor: sortedMonths.map(([k]) => k === currentMonth ? '#C9A87C' : 'rgba(201,168,124,0.4)'),
+          backgroundColor: sortedMonths.map(([k]) => { const parts = k.split(' '); return mesIndex(parts[0]) === d.getMonth() && parts[1] === String(d.getFullYear()) ? '#C9A87C' : 'rgba(201,168,124,0.4)'; }),
           borderRadius: 6,
           borderSkipped: false,
         }]
@@ -1060,18 +1070,19 @@ function renderLocalComparison(facturas) {
 
 function renderPeriodChips() {
   const periods = [
-    { label: '7 días', days: 7 },
-    { label: '30 días', days: 30 },
-    { label: 'Este mes', days: null },
-    { label: 'Todo', days: Infinity },
+    { label: 'Semana', id: 'semana' },
+    { label: 'Este mes', id: 'mes' },
+    { label: 'Todo', id: 'todo' },
   ];
+
+  const active = state._periodoActivo || 'todo';
 
   const renderChips = (containerId) => {
     const container = document.getElementById(containerId);
     if (!container) return;
 
-    container.innerHTML = periods.map(({ label, days }) =>
-      `<button class="period-chip" onclick="filterByPeriod('${label}', ${days})">
+    container.innerHTML = periods.map(({ label, id }) =>
+      `<button class="period-chip${active === id ? ' active' : ''}" onclick="filterByPeriod('${id}')">
         ${label}
       </button>`
     ).join('');
@@ -1081,10 +1092,45 @@ function renderPeriodChips() {
   renderChips('proveedoresChips');
 }
 
-function filterByPeriod(label, days) {
-  // This is a placeholder for period filtering logic
-  // Can be expanded later to filter facturas data
-  console.log('Filter by period:', label, days);
+function parseFechaFC(str) {
+  // Parse DD/MM/YYYY to Date
+  if (!str) return null;
+  const p = str.split('/');
+  if (p.length !== 3) return null;
+  return new Date(parseInt(p[2]), parseInt(p[1]) - 1, parseInt(p[0]));
+}
+
+function filterByPeriod(id) {
+  state._periodoActivo = id;
+  renderAll();
+}
+
+function getFacturasFiltradasPeriodo(facturas) {
+  const id = state._periodoActivo || 'todo';
+  if (id === 'todo') return facturas;
+
+  const now = new Date();
+  now.setHours(23, 59, 59, 999);
+
+  if (id === 'semana') {
+    const weekAgo = new Date(now);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    weekAgo.setHours(0, 0, 0, 0);
+    return facturas.filter(f => {
+      const d = parseFechaFC(f[COL.fecha]);
+      return d && d >= weekAgo && d <= now;
+    });
+  }
+
+  if (id === 'mes') {
+    const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    return facturas.filter(f => {
+      const d = parseFechaFC(f[COL.fecha]);
+      return d && d >= firstOfMonth && d <= now;
+    });
+  }
+
+  return facturas;
 }
 
 /* ---- PROVEEDORES TAB ---- */
