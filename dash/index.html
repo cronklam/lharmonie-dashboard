@@ -5,10 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="theme-color" content="#C4A882" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="theme-color" content="#F5F0E8" />
   <meta name="apple-mobile-web-app-title" content="Lharmonie" />
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icon-192.png" />
@@ -33,7 +31,39 @@
       <input type="password" id="loginPass" placeholder="Contraseña" />
     </div>
     <button class="login-submit" onclick="doLogin()">Ingresar</button>
+    <button class="login-biometric" id="btnBiometricLogin" style="display:none" onclick="biometricLogin()">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2a10 10 0 0 1 10 10"/>
+        <path d="M12 2a10 10 0 0 0-10 10"/>
+        <path d="M12 6a6 6 0 0 1 6 6"/>
+        <path d="M12 6a6 6 0 0 0-6 6"/>
+        <path d="M12 10a2 2 0 0 1 2 2v4"/>
+        <path d="M12 10a2 2 0 0 0-2 2v1a5 5 0 0 0 5 5"/>
+      </svg>
+      <span>Ingresar con biométrico</span>
+    </button>
+    <div class="login-divider" id="loginDivider" style="display:none"><span>o ingresá con usuario</span></div>
     <div class="login-error" id="loginError"></div>
+  </div>
+</div>
+
+<!-- BIOMETRIC SETUP PROMPT (post-login) -->
+<div class="biometric-prompt-overlay" id="biometricPromptOverlay" style="display:none">
+  <div class="biometric-prompt-card">
+    <div class="biometric-prompt-icon">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#C9A87C" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2a10 10 0 0 1 10 10"/>
+        <path d="M12 2a10 10 0 0 0-10 10"/>
+        <path d="M12 6a6 6 0 0 1 6 6"/>
+        <path d="M12 6a6 6 0 0 0-6 6"/>
+        <path d="M12 10a2 2 0 0 1 2 2v4"/>
+        <path d="M12 10a2 2 0 0 0-2 2v1a5 5 0 0 0 5 5"/>
+      </svg>
+    </div>
+    <div class="biometric-prompt-title">Acceso rápido</div>
+    <div class="biometric-prompt-text">Activá Face ID o huella digital para ingresar sin contraseña la próxima vez.</div>
+    <button class="biometric-prompt-btn-primary" onclick="biometricRegister()">Activar biométrico</button>
+    <button class="biometric-prompt-btn-secondary" onclick="dismissBiometricPrompt()">Ahora no</button>
   </div>
 </div>
 
@@ -111,6 +141,10 @@
         </div>
       </div>
       <div class="ultima-carga" id="ultimaCarga"></div>
+      <div class="section-title">Deuda por proveedor</div>
+      <div class="prov-list" id="provDeudaList">
+        <div class="loading-state">Cargando…</div>
+      </div>
       <div class="section-title">Análisis de gasto</div>
       <div class="charts-container">
         <div class="chart-section">
@@ -121,17 +155,10 @@
           <div class="chart-section-title">Gasto por categoría</div>
           <canvas id="chartCategoria" class="chart-canvas"></canvas>
         </div>
-        <div class="chart-section">
-          <div class="chart-section-title">Gasto por local</div>
-          <canvas id="chartLocal" class="chart-canvas"></canvas>
-        </div>
+
       </div>
       <div class="section-title">Comparativa por local</div>
       <div class="local-comparison-section" id="localComparison"></div>
-      <div class="section-title">Deuda por proveedor</div>
-      <div class="prov-list" id="provDeudaList">
-        <div class="loading-state">Cargando…</div>
-      </div>
       <div class="section-title" id="hoyTitle" style="display:none">Cargadas hoy</div>
       <div class="facturas-list" id="hoyList" style="display:none"></div>
     </div>
@@ -142,7 +169,7 @@
         <select id="apagarLocalFiltro" class="local-filtro" onchange="renderAPagar()" style="flex:1;min-width:120px;font-size:13px;padding:9px 10px;border-radius:10px;border:1px solid rgba(74,48,32,0.18);background:#fff;color:#1A0F08;font-family:'DM Sans',sans-serif;">
           <option value="">Todos los locales</option>
         </select>
-        <input type="date" id="apagarFechaFiltro" onchange="renderAPagar()" style="flex:1;min-width:130px;font-size:13px;padding:9px 10px;border-radius:10px;border:1px solid rgba(74,48,32,0.18);background:#fff;color:#1A0F08;font-family:'DM Sans',sans-serif;" />
+        <input type="date" id="apagarFechaFiltro" onchange="renderAPagar()" placeholder="Filtrar por fecha" title="Filtrar por fecha de factura" style="flex:1;min-width:130px;font-size:13px;padding:9px 10px;border-radius:10px;border:1px solid rgba(74,48,32,0.18);background:#fff;color:#1A0F08;font-family:'DM Sans',sans-serif;" />
       </div>
       <div class="section-title" id="apagarTitle">Facturas pendientes</div>
       <div class="facturas-list" id="apagarList">
@@ -157,7 +184,7 @@
         <select id="historialLocalFiltro" class="local-filtro" onchange="renderHistorial()" style="font-size:13px;padding:9px 10px;border-radius:10px;border:1px solid rgba(74,48,32,0.18);background:#fff;color:#1A0F08;font-family:'DM Sans',sans-serif;min-width:100px;">
           <option value="">Todos</option>
         </select>
-        <input type="date" id="historialFechaFiltro" onchange="renderHistorial()" style="flex:1;min-width:130px;font-size:13px;padding:9px 10px;border-radius:10px;border:1px solid rgba(74,48,32,0.18);background:#fff;color:#1A0F08;font-family:'DM Sans',sans-serif;" />
+        <input type="date" id="historialFechaFiltro" onchange="renderHistorial()" placeholder="Filtrar por fecha" title="Filtrar por fecha de pago" style="flex:1;min-width:130px;font-size:13px;padding:9px 10px;border-radius:10px;border:1px solid rgba(74,48,32,0.18);background:#fff;color:#1A0F08;font-family:'DM Sans',sans-serif;" />
       </div>
       <div class="section-title">Facturas pagadas</div>
       <div class="historial-list" id="historialList">

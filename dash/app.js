@@ -128,6 +128,8 @@ function doLogin() {
     document.getElementById('appShell').style.display = 'flex';
     document.getElementById('topbarUser').textContent = user.name;
     loadAll();
+    // Offer biometric setup if not already registered
+    setTimeout(() => showBiometricPrompt(), 1200);
   } else {
     if (err) err.textContent = 'Usuario o contraseña incorrectos';
   }
@@ -136,6 +138,183 @@ function doLogin() {
 document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && document.getElementById('loginScreen').style.display !== 'none') doLogin();
 });
+
+/* ---- WEBAUTHN / BIOMETRIC AUTH ---- */
+const WEBAUTHN_STORAGE_KEY = 'lharmonie_webauthn_credentials';
+const WEBAUTHN_RP = { name: 'Lharmonie Dashboard', id: location.hostname || 'localhost' };
+
+function webauthnSupported() {
+  return !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.create);
+}
+
+function getStoredCredentials() {
+  try {
+    const raw = localStorage.getItem(WEBAUTHN_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch(e) { return {}; }
+}
+
+function saveCredential(username, credentialId, publicKey) {
+  const creds = getStoredCredentials();
+  creds[username] = { credentialId, publicKey, registeredAt: Date.now() };
+  localStorage.setItem(WEBAUTHN_STORAGE_KEY, JSON.stringify(creds));
+}
+
+function removeCredential(username) {
+  const creds = getStoredCredentials();
+  delete creds[username];
+  localStorage.setItem(WEBAUTHN_STORAGE_KEY, JSON.stringify(creds));
+}
+
+function hasAnyBiometric() {
+  const creds = getStoredCredentials();
+  return Object.keys(creds).length > 0;
+}
+
+function userHasBiometric(username) {
+  const creds = getStoredCredentials();
+  return !!creds[username];
+}
+
+function bufToBase64(buf) {
+  return btoa(String.fromCharCode(...new Uint8Array(buf)));
+}
+
+function base64ToBuf(b64) {
+  const bin = atob(b64);
+  const buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  return buf.buffer;
+}
+
+function generateChallenge() {
+  const arr = new Uint8Array(32);
+  crypto.getRandomValues(arr);
+  return arr;
+}
+
+// Show biometric login button on login screen if credentials exist
+function initBiometricLoginUI() {
+  if (!webauthnSupported()) return;
+  const btn = document.getElementById('btnBiometricLogin');
+  const divider = document.getElementById('loginDivider');
+  if (hasAnyBiometric()) {
+    btn.style.display = 'flex';
+    divider.style.display = 'flex';
+  } else {
+    btn.style.display = 'none';
+    divider.style.display = 'none';
+  }
+}
+
+// Register biometric for current user
+async function biometricRegister() {
+  if (!state.user || !webauthnSupported()) return;
+  const username = state.user.username;
+
+  try {
+    const challenge = generateChallenge();
+    const userId = new TextEncoder().encode(username);
+
+    const credential = await navigator.credentials.create({
+      publicKey: {
+        rp: WEBAUTHN_RP,
+        user: {
+          id: userId,
+          name: username,
+          displayName: state.user.name
+        },
+        challenge: challenge,
+        pubKeyCredParams: [
+          { alg: -7, type: 'public-key' },   // ES256
+          { alg: -257, type: 'public-key' }   // RS256
+        ],
+        authenticatorSelection: {
+          authenticatorAttachment: 'platform',
+          userVerification: 'required',
+          residentKey: 'preferred',
+          requireResidentKey: false,
+        },
+        timeout: 60000,
+        attestation: 'none',
+      }
+    });
+
+    if (credential) {
+      const credId = bufToBase64(credential.rawId);
+      const pubKey = bufToBase64(credential.response.getPublicKey ? credential.response.getPublicKey() : new ArrayBuffer(0));
+      saveCredential(username, credId, pubKey);
+      dismissBiometricPrompt();
+    }
+  } catch (err) {
+    console.warn('WebAuthn registration cancelled or failed:', err);
+    dismissBiometricPrompt();
+  }
+}
+
+// Authenticate with biometric
+async function biometricLogin() {
+  if (!webauthnSupported()) return;
+  const creds = getStoredCredentials();
+  const usernames = Object.keys(creds);
+  if (!usernames.length) return;
+
+  try {
+    const challenge = generateChallenge();
+    const allowCredentials = usernames.map(u => ({
+      type: 'public-key',
+      id: base64ToBuf(creds[u].credentialId),
+      transports: ['internal'],
+    }));
+
+    const assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge: challenge,
+        rpId: WEBAUTHN_RP.id,
+        allowCredentials: allowCredentials,
+        userVerification: 'required',
+        timeout: 60000,
+      }
+    });
+
+    if (assertion) {
+      const usedCredId = bufToBase64(assertion.rawId);
+      const matchedUser = usernames.find(u => creds[u].credentialId === usedCredId);
+      if (matchedUser && USERS[matchedUser]) {
+        const user = USERS[matchedUser];
+        state.user = { username: matchedUser, ...user };
+        document.getElementById('loginScreen').style.display = 'none';
+        document.getElementById('appShell').style.display = 'flex';
+        document.getElementById('topbarUser').textContent = user.name;
+        loadAll();
+      } else {
+        const err = document.getElementById('loginError');
+        if (err) err.textContent = 'Credencial biométrica no reconocida';
+      }
+    }
+  } catch (err) {
+    console.warn('WebAuthn auth cancelled or failed:', err);
+    if (err.name !== 'NotAllowedError') {
+      const errEl = document.getElementById('loginError');
+      if (errEl) errEl.textContent = 'Error de autenticación biométrica';
+    }
+  }
+}
+
+// Show biometric setup prompt after successful password login
+function showBiometricPrompt() {
+  if (!webauthnSupported()) return;
+  if (!state.user) return;
+  if (userHasBiometric(state.user.username)) return;
+  document.getElementById('biometricPromptOverlay').style.display = 'flex';
+}
+
+function dismissBiometricPrompt() {
+  document.getElementById('biometricPromptOverlay').style.display = 'none';
+}
+
+// Initialize biometric UI on page load
+document.addEventListener('DOMContentLoaded', initBiometricLoginUI);
 
 function showPage(name, el) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -698,26 +877,27 @@ function renderKPIInicio(facturas) {
   const el = document.getElementById('kpiGrid');
   if (!el) return;
 
-  // Get all months from data and find current/previous
-  const monthMap = {};
+  // Get current month totals using actual date
+  const now = new Date();
+  const curMonthName = MESES_ES[now.getMonth()];
+  const curYear = String(now.getFullYear());
+  const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const prevMonthName = MESES_ES[prevDate.getMonth()];
+  const prevYear = String(prevDate.getFullYear());
+
+  let currentMonthTotal = 0, prevMonthTotal = 0, daysThisMonth = new Set();
   facturas.forEach(f => {
     const mes = (f['Mes'] || '').toLowerCase().trim();
-    const año = f['Año'] || '';
-    const key = mes && año ? `${mes} ${año}` : '';
-    if (key) {
-      monthMap[key] = (monthMap[key] || 0) + parseNum(f[COL.total]);
+    const año = (f['Año'] || '').trim();
+    const total = parseNum(f[COL.total]);
+    if (mes === curMonthName && año === curYear) {
+      currentMonthTotal += total;
+      const fecha = f[COL.fecha] || '';
+      if (fecha) daysThisMonth.add(fecha);
+    } else if (mes === prevMonthName && año === prevYear) {
+      prevMonthTotal += total;
     }
   });
-
-  const sortedMonths = Object.entries(monthMap).sort((a, b) => {
-    const [mA, yA] = a[0].split(' ');
-    const [mB, yB] = b[0].split(' ');
-    if (yA !== yB) return parseInt(yA) - parseInt(yB);
-    return MESES_ES.indexOf(mA) - MESES_ES.indexOf(mB);
-  });
-
-  const currentMonthTotal = sortedMonths.length > 0 ? sortedMonths[sortedMonths.length - 1][1] : 0;
-  const prevMonthTotal = sortedMonths.length > 1 ? sortedMonths[sortedMonths.length - 2][1] : 0;
 
   // Calculate change
   const change = prevMonthTotal > 0 ? ((currentMonthTotal - prevMonthTotal) / prevMonthTotal) * 100 : 0;
@@ -725,9 +905,9 @@ function renderKPIInicio(facturas) {
   const changeText = Math.abs(Math.round(change)) + '%';
   const arrow = change > 0 ? '↑' : '↓';
 
-  // Daily average - use actual days with data or estimate
-  const daysWithData = [...new Set(facturas.map(f => f[COL.fecha] || '').filter(x => x))].length || 1;
-  const dailyAvg = currentMonthTotal / Math.max(daysWithData, 1);
+  // Daily average for current month
+  const dayCount = daysThisMonth.size || 1;
+  const dailyAvg = currentMonthTotal / dayCount;
 
   el.innerHTML = `
     <div class="kpi-card">
@@ -755,7 +935,6 @@ function renderChartsInicio(facturas) {
   // Destroy existing charts
   if (state.charts.inicioEvolución) state.charts.inicioEvolución.destroy();
   if (state.charts.inicioCategoria) state.charts.inicioCategoria.destroy();
-  if (state.charts.inicioLocal) state.charts.inicioLocal.destroy();
 
   if (!state.charts) state.charts = {};
 
@@ -847,47 +1026,7 @@ function renderChartsInicio(facturas) {
     });
   }
 
-  // Chart C: Spending by local
-  const localMap = {};
-  facturas.forEach(f => {
-    const loc = f[COL.local] || 'Sin local';
-    localMap[loc] = (localMap[loc] || 0) + parseNum(f[COL.total]);
-  });
 
-  const sortedLocals = Object.entries(localMap).sort((a, b) => b[1] - a[1]);
-  const canvasLoc = document.getElementById('chartLocal');
-  if (canvasLoc && sortedLocals.length > 0) {
-    const ctxLoc = canvasLoc.getContext('2d');
-
-    state.charts.inicioLocal = new Chart(ctxLoc, {
-      type: 'bar',
-      data: {
-        labels: sortedLocals.map(([loc]) => loc.replace('Lharmonie ', 'LH ')),
-        datasets: [{
-          label: 'Gasto',
-          data: sortedLocals.map(([, v]) => v),
-          backgroundColor: 'rgba(201,168,124,0.7)',
-          borderColor: '#C9A87C',
-          borderWidth: 1,
-          borderRadius: 4,
-        }]
-      },
-      options: {
-        indexAxis: 'y',
-        responsive: true,
-        maintainAspectRatio: true,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: {
-            beginAtZero: true,
-            ticks: { callback: v => v > 0 ? '$' + (v/1000).toFixed(0) + 'k' : '$0', font: { size: 10 } },
-            grid: { color: 'rgba(0,0,0,0.05)' }
-          },
-          y: { grid: { display: false }, ticks: { font: { size: 11 } } }
-        }
-      }
-    });
-  }
 }
 
 function renderLocalComparison(facturas) {
@@ -1043,8 +1182,9 @@ function renderBuscar() {
 function detectarDuplicados(facturas) {
   const visto = {}, dupes = [];
   facturas.forEach(f => {
-    const key = (f[COL.proveedor]||'') + '|' + (f[COL.nroFac]||'');
-    if (!key || key==='|') return;
+    const total = parseNum(f[COL.total]);
+    const key = (f[COL.proveedor]||'') + '|' + (f[COL.nroFac]||'') + '|' + total;
+    if (!f[COL.proveedor] || !f[COL.nroFac]) return;
     if (visto[key]) { if (!dupes.find(d=>d.key===key)) dupes.push({key, prov:f[COL.proveedor], nro:f[COL.nroFac]}); }
     else visto[key] = true;
   });
