@@ -83,7 +83,7 @@ html, body {
 /* ===================== LOGIN ===================== */
 .login-screen {
   position: fixed; inset: 0;
-  background: #F5F0E8;
+  background: #EDEBE4;
   display: flex; align-items: center; justify-content: center;
   z-index: 200;
 }
