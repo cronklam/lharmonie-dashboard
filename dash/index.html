@@ -256,6 +256,33 @@
       <div class="search-results" id="foodCostList"><div class="loading-state">Cargando…</div></div>
     </div>
 
+    <!-- P&L (Admin only) -->
+    <div class="page" id="page-pyl">
+      <div class="summary-header" style="padding-bottom:12px;">
+        <div class="summary-total-label">Estado de Resultados</div>
+        <div class="summary-total-value" id="pylMargen">—</div>
+        <div class="summary-total-sub" id="pylMargenSub">margen neto</div>
+      </div>
+      <div class="period-chips-wrap">
+        <div class="period-chips" id="pylPeriodChips"></div>
+      </div>
+      <div class="kpi-grid" id="pylKpiGrid"></div>
+      <div class="section-title">Evolución mensual</div>
+      <div class="charts-container">
+        <div class="chart-section">
+          <canvas id="chartPYL" class="chart-canvas"></canvas>
+        </div>
+      </div>
+      <div class="section-title">Detalle por categoría</div>
+      <div class="prov-list" id="pylCatList">
+        <div class="loading-state">Cargando…</div>
+      </div>
+      <div class="section-title">Detalle por local</div>
+      <div class="prov-list" id="pylLocalList">
+        <div class="loading-state">Cargando…</div>
+      </div>
+    </div>
+
     <!-- BUSCAR -->
     <div class="page" id="page-buscar">
       <div class="search-bar-wrap">
@@ -285,6 +312,10 @@
     <button class="nav-tab" onclick="showPage('proveedores',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-4 0v2"/><path d="M8 7V5a2 2 0 0 1 4 0"/></svg>
       Proveedores
+    </button>
+    <button class="nav-tab" id="navPyl" onclick="showPage('pyl',this)" style="display:none;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2v20M2 12h20"/><path d="M17 7l-5 5-3-3-5 5"/></svg>
+      P&L
     </button>
     <button class="nav-tab" onclick="showPage('foodcost',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/><path d="M12 6v6l4 2"/></svg>

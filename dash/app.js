@@ -135,6 +135,7 @@ function doLogin() {
     document.getElementById('loginScreen').style.display = 'none';
     document.getElementById('appShell').style.display = 'flex';
     document.getElementById('topbarUser').textContent = user.name;
+    showPYLNav();
     loadAll();
     // Biometric setup available via manual button only
   } else {
@@ -295,6 +296,7 @@ async function biometricLogin() {
         document.getElementById('loginScreen').style.display = 'none';
         document.getElementById('appShell').style.display = 'flex';
         document.getElementById('topbarUser').textContent = user.name;
+        showPYLNav();
         loadAll();
       } else {
         const err = document.getElementById('loginError');
@@ -334,6 +336,7 @@ function showPage(name, el) {
   if (name === 'proveedores') renderChartsProveedores();
   if (name === 'articulos')   renderChartsArticulos();
   if (name === 'foodcost')    { if (!state.data.foodcost.length) loadFoodCost(); else renderFoodCost(); }
+  if (name === 'pyl')         renderPYL();
 }
 
 async function fetchTab(tab) {
@@ -921,8 +924,9 @@ function renderKPIInicio(facturas) {
     });
   }
 
-  // Calculate change
-  const change = prevMonthTotal > 0 ? ((currentMonthTotal - prevMonthTotal) / prevMonthTotal) * 100 : 0;
+  // Calculate change (capped at 999% to avoid absurd display)
+  let change = prevMonthTotal > 0 ? ((currentMonthTotal - prevMonthTotal) / prevMonthTotal) * 100 : 0;
+  if (Math.abs(change) > 999) change = change > 0 ? 999 : -999;
   const isLessSpending = change <= 0;
   const changeText = Math.abs(Math.round(change)) + '%';
   const arrow = change > 0 ? '↑' : '↓';
@@ -1381,6 +1385,247 @@ function renderFoodCost() {
     const badge=revisar?`<span style="background:#FCF0EE;color:#C0392B;font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;">⚠ Revisar</span>`:`<span style="background:#EAF3DE;color:#3B6D11;font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;">✓ OK</span>`;
     return `${catHeader}<div class="art-list-row"><div class="art-list-info"><div class="art-list-nombre">${r._articulo||'—'}</div><div class="art-list-meta">${costo>0?'Costo c/IVA: '+fmtMoney(costo):''}${pv>0?' · Venta: '+fmtMoney(pv):''}</div></div><div style="text-align:right;flex-shrink:0;"><div style="font-size:16px;font-weight:700;color:${mc};line-height:1;">${margen!==null?'FC '+margen+'%':'—'}</div><div style="margin-top:4px;">${badge}</div></div></div>`;
   }).join('')+'</div>';
+}
+
+/* ---- P&L (Admin only) ---- */
+let _pylPeriod = 'mes'; // 'mes', 'trimestre', 'año'
+
+function renderPYLPeriodChips() {
+  const el = document.getElementById('pylPeriodChips');
+  if (!el) return;
+  const chips = [
+    { id: 'mes', label: 'Este mes' },
+    { id: 'trimestre', label: 'Trimestre' },
+    { id: 'año', label: 'Año' },
+  ];
+  el.innerHTML = chips.map(c =>
+    `<button class="period-chip${_pylPeriod === c.id ? ' active' : ''}" onclick="_pylPeriod='${c.id}';renderPYL();">${c.label}</button>`
+  ).join('');
+}
+
+function getPYLFacturas() {
+  const facturas = state.data.facturas || [];
+  const now = new Date();
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+
+  return facturas.filter(f => {
+    const fechaStr = f[COL.fecha] || '';
+    const parts = fechaStr.split('/');
+    if (parts.length < 3) return false;
+    const fMonth = parseInt(parts[1], 10) - 1;
+    const fYear = parseInt(parts[2], 10);
+    if (isNaN(fMonth) || isNaN(fYear)) return false;
+
+    if (_pylPeriod === 'mes') {
+      return fMonth === currentMonth && fYear === currentYear;
+    } else if (_pylPeriod === 'trimestre') {
+      const qStart = currentMonth - 2;
+      if (fYear === currentYear) {
+        return fMonth >= Math.max(0, qStart) && fMonth <= currentMonth;
+      }
+      return false;
+    } else { // año
+      return fYear === currentYear;
+    }
+  });
+}
+
+function renderPYL() {
+  renderPYLPeriodChips();
+  const facturas = getPYLFacturas();
+  const allFacturas = state.data.facturas || [];
+
+  // Separate by tipo: egresos = facturas de proveedores (most), ingresos would need separate data
+  // Since all facturas data are expenses (compras a proveedores), we show expense analysis
+  // For a basic P&L: we categorize by category and show totals
+
+  const totalEgresos = facturas.reduce((s, f) => s + parseNum(f[COL.total]), 0);
+  const totalNeto = facturas.reduce((s, f) => s + parseNum(f[COL.importeNeto]), 0);
+  const totalIVA = facturas.reduce((s, f) => s + parseNum(f[COL.iva21]) + parseNum(f[COL.iva105]), 0);
+  const pendientes = facturas.filter(f => !esPagado(f));
+  const pagadas = facturas.filter(esPagado);
+  const totalPend = pendientes.reduce((s, f) => s + parseNum(f[COL.total]), 0);
+  const totalPagado = pagadas.reduce((s, f) => s + parseNum(f[COL.total]), 0);
+
+  // Header
+  document.getElementById('pylMargen').textContent = fmtMoney(totalEgresos);
+  const periodLabel = _pylPeriod === 'mes' ? 'este mes' : _pylPeriod === 'trimestre' ? 'últimos 3 meses' : 'este año';
+  document.getElementById('pylMargenSub').textContent = `total egresos ${periodLabel}`;
+
+  // KPIs
+  const kpiEl = document.getElementById('pylKpiGrid');
+  // Calculate month-over-month change
+  const now = new Date();
+  const prevFacturas = allFacturas.filter(f => {
+    const parts = (f[COL.fecha] || '').split('/');
+    if (parts.length < 3) return false;
+    const m = parseInt(parts[1], 10) - 1;
+    const y = parseInt(parts[2], 10);
+    if (_pylPeriod === 'mes') {
+      const pm = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+      const py = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+      return m === pm && y === py;
+    }
+    return false;
+  });
+  const prevTotal = prevFacturas.reduce((s, f) => s + parseNum(f[COL.total]), 0);
+  let changeStr = '';
+  if (_pylPeriod === 'mes' && prevTotal > 0) {
+    let pct = ((totalEgresos - prevTotal) / prevTotal) * 100;
+    if (Math.abs(pct) > 999) pct = pct > 0 ? 999 : -999;
+    const arrow = pct > 0 ? '↑' : pct < 0 ? '↓' : '→';
+    const color = pct > 5 ? '#C0392B' : pct < -5 ? '#3B6D11' : '#8B6340';
+    changeStr = `<span style="color:${color};font-size:11px;">${arrow} ${Math.abs(Math.round(pct))}% vs mes anterior</span>`;
+  }
+
+  kpiEl.innerHTML = `
+    <div class="kpi-card">
+      <div class="kpi-label">Total bruto</div>
+      <div class="kpi-value">${fmtMoney(totalEgresos)}</div>
+      <div class="kpi-sub">${facturas.length} factura${facturas.length !== 1 ? 's' : ''} ${changeStr}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Neto (sin IVA)</div>
+      <div class="kpi-value">${fmtMoney(totalNeto)}</div>
+      <div class="kpi-sub">IVA: ${fmtMoney(totalIVA)}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Pagado</div>
+      <div class="kpi-value" style="color:#3B6D11;">${fmtMoney(totalPagado)}</div>
+      <div class="kpi-sub">${pagadas.length} factura${pagadas.length !== 1 ? 's' : ''}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Pendiente</div>
+      <div class="kpi-value" style="color:#C0392B;">${fmtMoney(totalPend)}</div>
+      <div class="kpi-sub">${pendientes.length} factura${pendientes.length !== 1 ? 's' : ''}</div>
+    </div>
+  `;
+
+  // Chart: monthly evolution (last 6 months)
+  renderPYLChart(allFacturas);
+
+  // Category breakdown
+  renderPYLCategories(facturas);
+
+  // Local breakdown
+  renderPYLLocales(facturas);
+}
+
+function renderPYLChart(allFacturas) {
+  const canvas = document.getElementById('chartPYL');
+  if (!canvas) return;
+  if (state.charts.pyl) state.charts.pyl.destroy();
+
+  const now = new Date();
+  const months = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push({ month: d.getMonth(), year: d.getFullYear(), label: MESES_ES[d.getMonth()].substring(0, 3) + ' ' + String(d.getFullYear()).slice(2) });
+  }
+
+  const data = months.map(m => {
+    const total = allFacturas.filter(f => {
+      const parts = (f[COL.fecha] || '').split('/');
+      if (parts.length < 3) return false;
+      return (parseInt(parts[1], 10) - 1) === m.month && parseInt(parts[2], 10) === m.year;
+    }).reduce((s, f) => s + parseNum(f[COL.total]), 0);
+    return total;
+  });
+
+  const pagadoData = months.map(m => {
+    return allFacturas.filter(f => {
+      const parts = (f[COL.fecha] || '').split('/');
+      if (parts.length < 3) return false;
+      return (parseInt(parts[1], 10) - 1) === m.month && parseInt(parts[2], 10) === m.year && esPagado(f);
+    }).reduce((s, f) => s + parseNum(f[COL.total]), 0);
+  });
+
+  state.charts.pyl = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: months.map(m => m.label),
+      datasets: [
+        { label: 'Total egresos', data: data, backgroundColor: 'rgba(201,168,124,0.7)', borderRadius: 6, borderSkipped: false },
+        { label: 'Pagado', data: pagadoData, backgroundColor: 'rgba(59,109,17,0.5)', borderRadius: 6, borderSkipped: false },
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: true, position: 'bottom', labels: { font: { size: 11, family: "'DM Sans',sans-serif" }, usePointStyle: true, padding: 12 } } },
+      scales: {
+        y: { beginAtZero: true, ticks: { callback: v => '$ ' + (v / 1000).toFixed(0) + 'k', font: { size: 10 } }, grid: { color: 'rgba(0,0,0,0.04)' } },
+        x: { ticks: { font: { size: 10 } }, grid: { display: false } }
+      }
+    }
+  });
+}
+
+function renderPYLCategories(facturas) {
+  const el = document.getElementById('pylCatList');
+  if (!el) return;
+  const catMap = {};
+  facturas.forEach(f => {
+    const cat = f[COL.categoria] || 'Sin categoría';
+    if (!catMap[cat]) catMap[cat] = { total: 0, count: 0 };
+    catMap[cat].total += parseNum(f[COL.total]);
+    catMap[cat].count++;
+  });
+  const total = facturas.reduce((s, f) => s + parseNum(f[COL.total]), 0);
+  const sorted = Object.entries(catMap).sort((a, b) => b[1].total - a[1].total);
+
+  if (!sorted.length) { el.innerHTML = '<div class="empty-state"><div class="empty-icon">📊</div>Sin datos</div>'; return; }
+
+  el.innerHTML = '<div class="list-panel">' + sorted.map(([cat, d]) => {
+    const pct = total > 0 ? Math.round((d.total / total) * 100) : 0;
+    return `<div class="prov-row">
+      <div class="prov-info">
+        <div class="prov-name">${cat}</div>
+        <div class="prov-meta">${d.count} factura${d.count !== 1 ? 's' : ''} · ${pct}% del total</div>
+        <div style="margin-top:4px;height:4px;background:rgba(201,168,124,0.15);border-radius:2px;overflow:hidden;">
+          <div style="width:${pct}%;height:100%;background:var(--accent);border-radius:2px;"></div>
+        </div>
+      </div>
+      <div class="prov-amount">${fmtMoney(d.total)}</div>
+    </div>`;
+  }).join('') + '</div>';
+}
+
+function renderPYLLocales(facturas) {
+  const el = document.getElementById('pylLocalList');
+  if (!el) return;
+  const localMap = {};
+  facturas.forEach(f => {
+    const loc = f[COL.local] || 'Sin local';
+    if (!localMap[loc]) localMap[loc] = { total: 0, count: 0 };
+    localMap[loc].total += parseNum(f[COL.total]);
+    localMap[loc].count++;
+  });
+  const total = facturas.reduce((s, f) => s + parseNum(f[COL.total]), 0);
+  const sorted = Object.entries(localMap).sort((a, b) => b[1].total - a[1].total);
+
+  if (!sorted.length) { el.innerHTML = '<div class="empty-state"><div class="empty-icon">🏪</div>Sin datos</div>'; return; }
+
+  el.innerHTML = '<div class="list-panel">' + sorted.map(([loc, d]) => {
+    const pct = total > 0 ? Math.round((d.total / total) * 100) : 0;
+    return `<div class="prov-row">
+      <div class="prov-info">
+        <div class="prov-name">${loc}</div>
+        <div class="prov-meta">${d.count} factura${d.count !== 1 ? 's' : ''} · ${pct}% del total</div>
+        <div style="margin-top:4px;height:4px;background:rgba(201,168,124,0.15);border-radius:2px;overflow:hidden;">
+          <div style="width:${pct}%;height:100%;background:#5B4A3F;border-radius:2px;"></div>
+        </div>
+      </div>
+      <div class="prov-amount">${fmtMoney(d.total)}</div>
+    </div>`;
+  }).join('') + '</div>';
+}
+
+function showPYLNav() {
+  const navPyl = document.getElementById('navPyl');
+  if (navPyl && state.user && state.user.role === 'Administrador') {
+    navPyl.style.display = '';
+  }
 }
 
 /* ---- DEBOUNCED SEARCH ---- */
