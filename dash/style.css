@@ -258,7 +258,7 @@ html, body {
 
 /* ---- BOTTOM NAV ---- */
 .bottom-nav {
-  background: linear-gradient(180deg, #B08F68 0%, #B8956F 100%);
+  background: linear-gradient(180deg, #B8956F 0%, #B08F68 100%);
   border-top: 1px solid rgba(255,255,255,0.15);
   display: flex;
   flex-shrink: 0;
@@ -322,8 +322,8 @@ html, body {
 
 /* ===================== RESUMEN PAGE ===================== */
 .summary-header {
-  background: linear-gradient(135deg, #B8956F 0%, #B3906A 100%);
-  padding: 28px 20px 32px;
+  background: linear-gradient(180deg, #B8956F 0%, #B08F68 100%);
+  padding: 20px 20px 22px;
   text-align: center;
   position: relative;
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
@@ -352,12 +352,12 @@ html, body {
 
 .stats-row {
   display: grid; grid-template-columns: 1fr 1fr;
-  gap: 12px; padding: 20px 16px 0;
+  gap: 8px; padding: 10px 16px 0;
 }
 .stat-card {
   background: #fff; border-radius: var(--radius-md);
   border: 1px solid var(--border);
-  padding: 18px 20px;
+  padding: 12px 14px;
   position: relative; overflow: hidden;
   box-shadow: var(--shadow-sm);
   transition: all var(--transition);
@@ -374,15 +374,15 @@ html, body {
 .stat-card.alert { border-color: #C85A54; }
 .stat-card.alert::before { display: none; }
 .stat-label {
-  font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase;
-  color: var(--muted); margin-bottom: 10px; font-weight: 500;
+  font-size: 8px; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 6px; font-weight: 500;
 }
 .stat-value {
-  font-size: 30px; font-weight: 700; color: var(--espresso); line-height: 1;
+  font-size: 22px; font-weight: 700; color: var(--espresso); line-height: 1;
   letter-spacing: -0.02em;
 }
 .stat-card.alert .stat-value { color: #C85A54; }
-.stat-sub { font-size: 10px; color: var(--muted); margin-top: 5px; font-weight: 500; }
+.stat-sub { font-size: 9px; color: var(--muted); margin-top: 3px; font-weight: 500; }
 
 .section-title {
   font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
@@ -637,12 +637,12 @@ html, body {
 
 /* ---- ULTIMA CARGA ---- */
 .ultima-carga {
-  margin: 16px 16px 0;
+  margin: 8px 16px 0;
   background: linear-gradient(135deg, #FDFBF8 0%, #FAF8F4 100%);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: 15px 18px;
-  display: flex; align-items: center; gap: 14px;
+  padding: 10px 14px;
+  display: flex; align-items: center; gap: 10px;
   box-shadow: var(--shadow-sm);
   transition: all var(--transition);
   animation: fadeInUp 0.4s ease-out 0.2s both;
@@ -658,6 +658,17 @@ html, body {
 }
 .ultima-carga-label { font-size: 11px; color: var(--muted); font-weight: 500; }
 .ultima-carga-value { font-size: 13px; font-weight: 600; color: var(--espresso); }
+
+/* ---- PRODUCTOS TOGGLE ---- */
+.productos-toggle {
+  flex: 1; padding: 10px 0; border: none; background: none;
+  font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 600;
+  color: var(--muted); cursor: pointer; transition: all var(--transition);
+  border-bottom: 2px solid transparent; letter-spacing: 0.02em;
+}
+.productos-toggle.active {
+  color: var(--espresso); border-bottom-color: var(--accent);
+}
 
 /* ---- CHART CARD ---- */
 .chart-card {
