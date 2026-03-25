@@ -83,7 +83,7 @@ html, body {
 /* ===================== LOGIN ===================== */
 .login-screen {
   position: fixed; inset: 0;
-  background: linear-gradient(135deg, #FAF8F4 0%, #F5F1EB 50%, #F0EBE1 100%);
+  background: var(--surface);
   display: flex; align-items: center; justify-content: center;
   z-index: 200;
 }
@@ -323,18 +323,15 @@ html, body {
 /* ===================== RESUMEN PAGE ===================== */
 .summary-header {
   background: #B3906A;
-  padding: 20px 20px 22px;
+  padding: 14px 20px 18px;
   text-align: center;
   position: relative;
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
-  margin-bottom: 4px;
-  box-shadow: 0 4px 16px rgba(31,20,16,0.10);
+  border-radius: 0;
+  margin-bottom: 0;
+  box-shadow: none;
 }
 .summary-header::after {
-  content: '';
-  position: absolute; bottom: -12px; left: 0; right: 0; height: 12px;
-  background: linear-gradient(to bottom, rgba(212,165,116,0.10), transparent);
-  pointer-events: none;
+  display: none;
 }
 .summary-total-label {
   font-size: 9px; letter-spacing: 0.22em; text-transform: uppercase;
@@ -351,37 +348,30 @@ html, body {
 }
 
 .stats-row {
-  display: grid; grid-template-columns: 1fr 1fr;
-  gap: 6px; padding: 6px 16px 0;
+  display: flex; gap: 6px; padding: 4px 16px 0;
 }
 .stat-card {
-  background: #fff; border-radius: 10px;
+  flex: 1; border-radius: 8px;
   border: 1px solid var(--border);
-  padding: 8px 12px;
+  padding: 6px 10px;
   position: relative; overflow: hidden;
   box-shadow: none;
-  transition: all var(--transition);
-  animation: fadeInUp 0.3s ease-out both;
-  background: linear-gradient(135deg, #FDFBF8 0%, #FAF8F4 100%);
+  background: rgba(255,255,255,0.6);
 }
-.stat-card:nth-child(2) { animation-delay: 0.05s; }
-.stat-card:hover {
-  box-shadow: var(--shadow-sm);
-  border-color: var(--brown-light);
-}
+.stat-card:nth-child(2) { }
+.stat-card:hover { }
 .stat-card::before { display: none; }
 .stat-card.alert { border-color: #C85A54; }
 .stat-card.alert::before { display: none; }
 .stat-label {
-  font-size: 8px; letter-spacing: 0.14em; text-transform: uppercase;
-  color: var(--muted); margin-bottom: 3px; font-weight: 500;
+  font-size: 7px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 1px; font-weight: 600;
 }
 .stat-value {
-  font-size: 18px; font-weight: 700; color: var(--espresso); line-height: 1.1;
-  letter-spacing: -0.02em;
+  font-size: 15px; font-weight: 700; color: var(--espresso); line-height: 1.1;
 }
 .stat-card.alert .stat-value { color: #C85A54; }
-.stat-sub { font-size: 8px; color: var(--muted); margin-top: 2px; font-weight: 500; }
+.stat-sub { font-size: 7px; color: var(--muted); margin-top: 1px; font-weight: 500; }
 
 .section-title {
   font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
@@ -636,27 +626,21 @@ html, body {
 
 /* ---- ULTIMA CARGA ---- */
 .ultima-carga {
-  margin: 4px 16px 0;
-  background: linear-gradient(135deg, #FDFBF8 0%, #FAF8F4 100%);
+  margin: 3px 16px 0;
+  background: rgba(255,255,255,0.5);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 7px 12px;
-  display: flex; align-items: center; gap: 8px;
+  border-radius: 8px;
+  padding: 5px 10px;
+  display: flex; align-items: center; gap: 6px;
   box-shadow: none;
-  transition: all var(--transition);
-  animation: fadeInUp 0.3s ease-out 0.1s both;
 }
-.ultima-carga:hover {
-  box-shadow: var(--shadow-sm);
-  border-color: var(--brown-light);
-}
+.ultima-carga:hover { }
 .ultima-carga-dot {
-  width: 7px; height: 7px; border-radius: 50%;
+  width: 6px; height: 6px; border-radius: 50%;
   background: var(--paid); flex-shrink: 0;
-  animation: pulseGlow 2.5s ease-in-out infinite;
 }
-.ultima-carga-label { font-size: 9px; color: var(--muted); font-weight: 500; }
-.ultima-carga-value { font-size: 11px; font-weight: 600; color: var(--espresso); }
+.ultima-carga-label { font-size: 8px; color: var(--muted); font-weight: 500; }
+.ultima-carga-value { font-size: 10px; font-weight: 600; color: var(--espresso); }
 
 /* ---- PRODUCTOS TOGGLE ---- */
 .productos-toggle {
