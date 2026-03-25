@@ -185,6 +185,10 @@
           <option value="">Todos</option>
         </select>
       </div>
+      <div style="padding:6px 16px 0;display:flex;gap:8px;align-items:center;">
+        <input type="date" id="historialFechaFiltro" onchange="onHistorialFechaChange()" style="flex:1;font-size:12px;padding:7px 10px;border-radius:8px;border:1px solid rgba(74,48,32,0.12);background:rgba(255,255,255,0.6);color:var(--muted);font-family:'DM Sans',sans-serif;" />
+        <button id="historialFechaClear" onclick="clearHistorialFecha()" style="display:none;border:none;background:rgba(74,48,32,0.08);font-size:11px;color:var(--espresso);cursor:pointer;padding:4px 10px;border-radius:6px;font-family:'DM Sans',sans-serif;font-weight:600;">Limpiar</button>
+      </div>
       <div id="alertaDuplicados"></div>
       <div class="section-title">Facturas pagadas</div>
       <div class="historial-list" id="historialList">

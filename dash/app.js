@@ -567,11 +567,36 @@ function renderAPagar(pendientes) {
   }).join('');
 }
 
+function onHistorialFechaChange() {
+  const input = document.getElementById('historialFechaFiltro');
+  const clearBtn = document.getElementById('historialFechaClear');
+  if (input && input.value) {
+    input.style.color = 'var(--espresso)';
+    if (clearBtn) clearBtn.style.display = '';
+  } else {
+    input.style.color = 'var(--muted)';
+    if (clearBtn) clearBtn.style.display = 'none';
+  }
+  renderHistorial();
+}
+function clearHistorialFecha() {
+  const input = document.getElementById('historialFechaFiltro');
+  if (input) { input.value = ''; input.style.color = 'var(--muted)'; }
+  const clearBtn = document.getElementById('historialFechaClear');
+  if (clearBtn) clearBtn.style.display = 'none';
+  renderHistorial();
+}
+
 function renderHistorial(pagadas) {
   const el = document.getElementById('historialList');
   if (!pagadas) pagadas = state.data.facturas.filter(esPagado);
   const localFiltro = getLocalFiltro('historialLocalFiltro');
-  const fechaFiltro = null;
+  const fechaRaw = (document.getElementById('historialFechaFiltro') || {}).value || '';
+  let fechaFiltro = null;
+  if (fechaRaw) {
+    const [y, m, d] = fechaRaw.split('-');
+    fechaFiltro = d + '/' + m + '/' + y;
+  }
   const q = (document.getElementById('historialSearch') || {}).value || '';
   let filtradas = [...pagadas].reverse();
   if (localFiltro) filtradas = filtradas.filter(f => f[COL.local] === localFiltro);
