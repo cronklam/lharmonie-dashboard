@@ -1,0 +1,507 @@
+/* Lharmonie Dashboard — globals.css
+   Paleta + tokens replicados del staff app, con la variante "exclusive"
+   del top nav (más oscuro/luxury) que diferencia este dashboard como
+   surface privado de management. */
+
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=DM+Sans:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+/* Recoleta — tipografía oficial Lharmonie. Si los .woff2 no existen, el browser
+   cae al fallback (Fraunces) sin romper. font-display: swap = nunca esconde texto. */
+@font-face {
+  font-family: 'Recoleta';
+  src: url('/fonts/Recoleta-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Recoleta';
+  src: url('/fonts/Recoleta-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Recoleta';
+  src: url('/fonts/Recoleta-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Recoleta';
+  src: url('/fonts/Recoleta-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* ── Core palette (warm coffee tones) ── */
+  --bg: #EDE8DE;
+  --bg-subtle: #F2EFE7;
+  --bg-card: #FDFBF8;
+  --bg-card-alt: #F9F7F3;
+  --bg-card-hover: #FFFFFF;
+  --bg-input: #F7F5F1;
+
+  /* ── Text ── */
+  --text: #1F1410;
+  --text-secondary: #6B5C52;
+  --text-muted: #8B6D5A;
+  --text-dim: #A39B92;
+  --text-inverse: #FDFBF8;
+
+  /* ── Brand accent ── */
+  --accent: #B8956F;
+  --accent-hover: #A98461;
+  --accent-light: #D4A574;
+  --accent-bg: rgba(184, 149, 111, 0.10);
+  --accent-bg-strong: rgba(184, 149, 111, 0.20);
+
+  /* ── Top nav EXCLUSIVE — más oscuro/luxury que staff (que usa #1E1512) ── */
+  --header-bg: #0D0805;
+  --header-bg-light: #1A100A;
+  --header-accent: #C4A067;
+  --header-text: #F9F7F3;
+  --header-divider: rgba(196, 160, 103, 0.20);
+
+  /* ── Semantic ── */
+  --green: #4A7C3E;
+  --green-bg: #F0F7E8;
+  --red: #C85A54;
+  --red-bg: #FEF4ED;
+  --amber: #E6A23C;
+  --amber-bg: rgba(230, 162, 60, 0.10);
+  --blue: #4A90D9;
+  --blue-bg: rgba(74, 144, 217, 0.08);
+
+  /* ── Borders & shadows ── */
+  --border: rgba(31, 20, 16, 0.08);
+  --border-strong: rgba(31, 20, 16, 0.14);
+  --border-accent: rgba(184, 149, 111, 0.30);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.03), 0 1px 1px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 2px 6px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.03);
+  --shadow-lg: 0 6px 16px rgba(0, 0, 0, 0.05), 0 4px 8px rgba(0, 0, 0, 0.03);
+  --shadow-card: 0 1px 4px rgba(0, 0, 0, 0.04), 0 0 0 0.5px rgba(0, 0, 0, 0.03);
+  --shadow-card-hover: 0 4px 16px rgba(0, 0, 0, 0.06), 0 2px 6px rgba(0, 0, 0, 0.03);
+  /* Tinte dorado en el shadow del top nav exclusive */
+  --shadow-header-exclusive: 0 1px 8px rgba(196, 160, 103, 0.08);
+
+  /* ── Radius ── */
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+  --radius-full: 9999px;
+
+  /* ── Spacing / safe area ── */
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --nav-height: 56px;
+  --topnav-height: 56px;
+
+  /* ── Easing ── */
+  --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-spring: 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-ios: cubic-bezier(0.4, 0.0, 0.2, 1);
+
+  /* ── Type scale ── */
+  --text-xs: 11px;
+  --text-sm: 12.5px;
+  --text-base: 14px;
+  --text-md: 15px;
+  --text-body: 16px;
+  --text-lg: 18px;
+  --text-xl: 22px;
+  --text-2xl: 28px;
+
+  /* ── Z-index ── */
+  --z-sticky: 20;
+  --z-nav: 100;
+  --z-modal: 200;
+  --z-toast: 1000;
+}
+
+/* ══ Base ══ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+  font-size: var(--text-md);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  min-height: 100dvh;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.font-brand {
+  font-family: 'Recoleta', 'Fraunces', Georgia, serif;
+  letter-spacing: -0.01em;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: transparent;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+input,
+textarea,
+select {
+  /* iOS no auto-zoom: necesita >=16px en el input. */
+  font-size: var(--text-body);
+}
+
+/* ══ Top nav exclusive ══ */
+.lh-topnav {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-nav);
+  height: var(--topnav-height);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  background: var(--header-bg);
+  color: var(--header-text);
+  border-bottom: 1px solid var(--header-divider);
+  box-shadow: var(--shadow-header-exclusive);
+  padding-top: env(safe-area-inset-top, 0px);
+  height: calc(var(--topnav-height) + env(safe-area-inset-top, 0px));
+}
+
+.lh-topnav-brand {
+  font-family: 'Recoleta', 'Fraunces', Georgia, serif;
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--header-text);
+  letter-spacing: 0.005em;
+}
+
+.lh-topnav-tag {
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--header-accent);
+  opacity: 0.85;
+}
+
+/* ══ Bottom nav (5 tabs estilo MercadoPago) ══ */
+.lh-bottomnav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: var(--z-nav);
+  background: var(--bg-card);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: stretch;
+  justify-content: space-around;
+  height: calc(var(--nav-height) + env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  box-shadow: 0 -1px 8px rgba(0, 0, 0, 0.04);
+}
+
+.lh-bottomnav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  transition: color var(--transition);
+  padding: 6px 4px;
+  position: relative;
+  min-height: 44px;
+}
+
+.lh-bottomnav-item:active {
+  transform: scale(0.96);
+  transition: transform 0.1s ease;
+}
+
+.lh-bottomnav-item.active {
+  color: var(--accent);
+}
+
+.lh-bottomnav-item.active::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 24px;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 0 0 2px 2px;
+}
+
+.lh-bottomnav-icon {
+  width: 22px;
+  height: 22px;
+}
+
+/* Padding inferior global para no quedar tapado por la bottom nav. */
+.lh-page {
+  min-height: 100dvh;
+  padding-bottom: calc(var(--nav-height) + env(safe-area-inset-bottom, 0px) + 16px);
+}
+
+/* ══ Cards / acceso rápido ══ */
+.lh-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  box-shadow: var(--shadow-card);
+  transition: box-shadow var(--transition), transform var(--transition);
+}
+
+.lh-card:hover {
+  box-shadow: var(--shadow-card-hover);
+}
+
+.lh-card-button {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 18px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  text-align: left;
+  width: 100%;
+  box-shadow: var(--shadow-card);
+  transition: box-shadow var(--transition), transform 0.15s ease;
+}
+
+.lh-card-button:active {
+  transform: scale(0.98);
+  box-shadow: var(--shadow-card-hover);
+}
+
+.lh-card-icon {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-bg);
+  border-radius: var(--radius-md);
+  color: var(--accent);
+}
+
+.lh-card-title {
+  font-family: 'Recoleta', 'Fraunces', Georgia, serif;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.005em;
+}
+
+.lh-card-desc {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.lh-card-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 4px 10px;
+  background: var(--bg-card-alt);
+  border-radius: var(--radius-full);
+}
+
+.lh-card-pill.coming {
+  color: var(--accent);
+  background: var(--accent-bg);
+}
+
+/* ══ Botones ══ */
+.lh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 18px;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  font-size: 14px;
+  transition: background var(--transition), transform 0.15s ease;
+}
+
+.lh-btn-primary {
+  background: var(--accent);
+  color: white;
+}
+
+.lh-btn-primary:hover {
+  background: var(--accent-hover);
+}
+
+.lh-btn-ghost {
+  background: var(--bg-card-alt);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.lh-btn:active {
+  transform: scale(0.97);
+}
+
+/* ══ Estados de factura (chips) ══ */
+.lh-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: var(--radius-full);
+  letter-spacing: 0.02em;
+}
+
+.lh-chip-pagada {
+  background: var(--green-bg);
+  color: var(--green);
+}
+
+.lh-chip-pendiente {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+.lh-chip-bistrosoft {
+  background: var(--accent-bg);
+  color: var(--accent-hover);
+}
+
+/* ══ Animaciones ══ */
+@keyframes lh-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.lh-fade-in {
+  animation: lh-fade-in 0.4s var(--ease-ios) both;
+}
+
+@keyframes lh-glow-pulse {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ══ Login screen ══ */
+.lh-login-hero {
+  position: relative;
+  min-height: 52vh;
+  background: linear-gradient(165deg, #060403 0%, var(--header-bg) 35%, #1A100A 70%, #2A1810 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.lh-login-hero-glow {
+  position: absolute;
+  width: 240px;
+  height: 240px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(196, 160, 103, 0.15) 0%, transparent 70%);
+  animation: lh-glow-pulse 4s ease-in-out infinite;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -55%);
+}
+
+/* ══ Toast ══ */
+.lh-toast {
+  position: fixed;
+  bottom: calc(var(--nav-height) + env(safe-area-inset-bottom, 0px) + 16px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--text);
+  color: var(--text-inverse);
+  padding: 10px 18px;
+  border-radius: var(--radius-full);
+  font-size: 13px;
+  font-weight: 500;
+  z-index: var(--z-toast);
+  box-shadow: var(--shadow-lg);
+  animation: lh-fade-in 0.3s ease both;
+}
+
+/* ══ Scrollbars sutiles ══ */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
+}
