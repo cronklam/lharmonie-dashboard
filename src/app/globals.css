@@ -1,13 +1,12 @@
-/* Lharmonie Dashboard — globals.css
-   Paleta + tokens replicados del staff app, con la variante "exclusive"
-   del top nav (más oscuro/luxury) que diferencia este dashboard como
-   surface privado de management. */
-
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=DM+Sans:wght@300;400;500;600;700&display=swap');
-@import "tailwindcss";
-
-/* Recoleta — tipografía oficial Lharmonie. Si los .woff2 no existen, el browser
-   cae al fallback (Fraunces) sin romper. font-display: swap = nunca esconde texto. */
+/* Recoleta = tipografía oficial Lharmonie (manual de marca).
+   Self-hosted .woff2 en /public/fonts/. Fraunces como fallback.
+   Archivos esperados (subir a /public/fonts/):
+     - Recoleta-Regular.woff2   (weight 400) ✓ presente
+     - Recoleta-Medium.woff2    (weight 500) — opcional, agrega cuando lo tengas
+     - Recoleta-SemiBold.woff2  (weight 600) — opcional
+     - Recoleta-Bold.woff2      (weight 700) — opcional
+   Si un archivo no existe, el browser cae al fallback (Fraunces) sin romper.
+   font-display: swap = nunca esconde texto, solo cambia tipografía cuando carga. */
 @font-face {
   font-family: 'Recoleta';
   src: url('/fonts/Recoleta-Regular.woff2') format('woff2');
@@ -37,58 +36,79 @@
   font-display: swap;
 }
 
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,100..900;1,9..144,100..900&family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap');
+@import "tailwindcss";
+
 :root {
   /* ── Core palette (warm coffee tones) ── */
-  --bg: #EDE8DE;
-  --bg-subtle: #F2EFE7;
-  --bg-card: #FDFBF8;
+  --bg: #F7F5F1;
+  --bg-subtle: #EDE8DE;
+  --bg-card: #FFFFFF;
+  --bg-card-hover: #FDFBF8;
   --bg-card-alt: #F9F7F3;
-  --bg-card-hover: #FFFFFF;
   --bg-input: #F7F5F1;
 
   /* ── Text ── */
-  --text: #1F1410;
+  --text: #1A1210;
   --text-secondary: #6B5C52;
-  --text-muted: #8B6D5A;
-  --text-dim: #A39B92;
+  --text-muted: #8B7D72;
+  --text-dim: #B0A89F;
   --text-inverse: #FDFBF8;
 
-  /* ── Brand accent ── */
-  --accent: #B8956F;
-  --accent-hover: #A98461;
+  /* ── Brand accent (caramel/gold) ── */
+  --accent: #C4956A;
+  --accent-hover: #B8865C;
   --accent-light: #D4A574;
-  --accent-bg: rgba(184, 149, 111, 0.10);
-  --accent-bg-strong: rgba(184, 149, 111, 0.20);
+  --accent-bg: rgba(196, 149, 106, 0.10);
+  --accent-bg-strong: rgba(196, 149, 106, 0.20);
 
-  /* ── Top nav EXCLUSIVE — más oscuro/luxury que staff (que usa #1E1512) ── */
-  --header-bg: #0D0805;
-  --header-bg-light: #1A100A;
-  --header-accent: #C4A067;
-  --header-text: #F9F7F3;
-  --header-divider: rgba(196, 160, 103, 0.20);
+  /* ── Header / Dark surfaces ── */
+  --header-bg: #1E1512;
+  --header-bg-light: #2C1F18;
 
-  /* ── Semantic ── */
-  --green: #4A7C3E;
-  --green-bg: #F0F7E8;
-  --red: #C85A54;
-  --red-bg: #FEF4ED;
+  /* ── Semantic colors ── */
+  --green: #3D8B37;
+  --green-light: #4CAF50;
+  --green-bg: rgba(61, 139, 55, 0.08);
+  --green-bg-strong: rgba(61, 139, 55, 0.15);
+
+  --red: #D44D44;
+  --red-light: #E57373;
+  --red-bg: rgba(212, 77, 68, 0.08);
+  --red-bg-strong: rgba(212, 77, 68, 0.15);
+
   --amber: #E6A23C;
   --amber-bg: rgba(230, 162, 60, 0.10);
+
   --blue: #4A90D9;
   --blue-bg: rgba(74, 144, 217, 0.08);
 
-  /* ── Borders & shadows ── */
-  --border: rgba(31, 20, 16, 0.08);
-  --border-strong: rgba(31, 20, 16, 0.14);
-  --border-accent: rgba(184, 149, 111, 0.30);
+  /* ── Borders & Shadows ── */
+  --border: rgba(26, 18, 16, 0.06);
+  --border-strong: rgba(26, 18, 16, 0.12);
+  --border-accent: rgba(196, 149, 106, 0.30);
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.03), 0 1px 1px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 2px 6px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.03);
-  --shadow-lg: 0 6px 16px rgba(0, 0, 0, 0.05), 0 4px 8px rgba(0, 0, 0, 0.03);
-  --shadow-card: 0 1px 4px rgba(0, 0, 0, 0.04), 0 0 0 0.5px rgba(0, 0, 0, 0.03);
-  --shadow-card-hover: 0 4px 16px rgba(0, 0, 0, 0.06), 0 2px 6px rgba(0, 0, 0, 0.03);
-  /* Tinte dorado en el shadow del top nav exclusive */
-  --shadow-header-exclusive: 0 1px 8px rgba(196, 160, 103, 0.08);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.03), 0 1px 1px rgba(0,0,0,0.04);
+  --shadow-md: 0 2px 6px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.03), 0 0 0 0.5px rgba(0,0,0,0.02);
+  --shadow-lg: 0 6px 16px rgba(0,0,0,0.05), 0 4px 8px rgba(0,0,0,0.03), 0 0 0 0.5px rgba(0,0,0,0.02);
+  --shadow-xl: 0 12px 32px rgba(0,0,0,0.08), 0 8px 16px rgba(0,0,0,0.04);
+  --shadow-card: 0 1px 4px rgba(0,0,0,0.04), 0 0 0 0.5px rgba(0,0,0,0.03);
+  --shadow-card-hover: 0 4px 16px rgba(0,0,0,0.06), 0 2px 6px rgba(0,0,0,0.03), 0 0 0 0.5px rgba(0,0,0,0.04);
+  --shadow-float: 0 12px 36px rgba(0,0,0,0.08), 0 6px 12px rgba(0,0,0,0.04);
+
+  /* ── Glass effect ── */
+  --glass-bg: rgba(255, 255, 255, 0.78);
+  --glass-border: rgba(255, 255, 255, 0.5);
+  --glass-blur: 24px;
+  --glass-bg-strong: rgba(255, 255, 255, 0.92);
+  --glass-shadow: 0 1px 0 rgba(255,255,255,0.5) inset, 0 -1px 0 rgba(0,0,0,0.03) inset;
+
+  /* ── Transitions (Apple-style) ── */
+  --ease-spring: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fast: 150ms;
+  --duration-normal: 250ms;
+  --duration-slow: 400ms;
 
   /* ── Radius ── */
   --radius-sm: 10px;
@@ -97,411 +117,1939 @@
   --radius-xl: 28px;
   --radius-full: 9999px;
 
-  /* ── Spacing / safe area ── */
+  /* ── Spacing ── */
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-top: env(safe-area-inset-top, 0px);
+  /* Altura REAL del BottomTabBar (row interno 56px). El padding por safe-area
+     se aplica afuera con env(safe-area-inset-bottom). NO usar 64 / 72 /etc.,
+     causaba gap entre CTAs fixed y la barra inferior. */
   --nav-height: 56px;
-  --topnav-height: 56px;
 
-  /* ── Easing ── */
-  --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-spring: 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* ══ EASING CURVES PROFESIONALES (tendencias 2025-2026) ══ */
+  /* Linear/Vercel — entradas premium */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Spring overshoot — botones, taps, toasts */
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* iOS standard — gestures, page transitions */
   --ease-ios: cubic-bezier(0.4, 0.0, 0.2, 1);
+  /* Sheets, modals */
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
 
-  /* ── Type scale ── */
-  --text-xs: 11px;
-  --text-sm: 12.5px;
-  --text-base: 14px;
-  --text-md: 15px;
-  --text-body: 16px;
-  --text-lg: 18px;
-  --text-xl: 22px;
-  --text-2xl: 28px;
+  /* Duraciones canónicas */
+  --dur-press: 120ms;     /* tap feedback */
+  --dur-toggle: 220ms;    /* tabs, switches */
+  --dur-page: 280ms;      /* navegación — Linear/Stripe-style sutil */
+  --dur-sheet: 380ms;     /* drawers/sheets */
 
-  /* ── Z-index ── */
+  /* ══ TOUCH TARGETS (UI/UX Pro Max §2 — CRÍTICO) ══
+     iOS HIG: min 44pt | Material: min 48dp | Cumplimos 44px universal */
+  --touch-min: 44px;
+  --touch-comfortable: 48px;
+  --touch-spacing: 8px;
+
+  /* ══ SPACING SCALE 4/8 (UI/UX Pro Max §5) ══
+     Tokens semánticos para padding/margin. Usar SIEMPRE estos en lugar de
+     valores arbitrarios. Cumple con Material 8dp y Apple HIG 8pt rhythm. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ══ TYPOGRAPHY SCALE (UI/UX Pro Max §6) ══
+     Material/HIG type roles. Mobile body min 16px (evita auto-zoom iOS). */
+  --text-xs: 11px;       /* labels, captions */
+  --text-sm: 12.5px;     /* metadata, helper */
+  --text-base: 14px;     /* body default app dense */
+  --text-md: 15px;       /* body comfortable */
+  --text-body: 16px;     /* body input — CRÍTICO para no auto-zoom iOS */
+  --text-lg: 18px;       /* subheading */
+  --text-xl: 22px;       /* headline */
+  --text-2xl: 28px;      /* display small */
+  --text-3xl: 34px;      /* display medium */
+
+  /* ══ FONT WEIGHTS (UI/UX Pro Max §6 weight-hierarchy) ══ */
+  --weight-regular: 400;  /* body */
+  --weight-medium: 500;   /* labels, navigation */
+  --weight-semibold: 600; /* subheadings, CTA */
+  --weight-bold: 700;     /* headlines, emphasis */
+
+  /* ══ LINE HEIGHTS (UI/UX Pro Max §6 line-height) ══
+     1.5-1.75 para body (legibilidad), tight para headlines. */
+  --lh-tight: 1.15;       /* headlines, displays */
+  --lh-snug: 1.35;        /* subheadings */
+  --lh-normal: 1.5;       /* body — sweet spot lectura */
+  --lh-relaxed: 1.65;     /* long-form content */
+
+  /* ══ Z-INDEX SCALE (UI/UX Pro Max §5 z-index-management) ══
+     Definida explícita para evitar números mágicos sueltos. */
+  --z-base: 0;
+  --z-dropdown: 10;
   --z-sticky: 20;
-  --z-nav: 100;
-  --z-modal: 200;
-  --z-toast: 1000;
+  --z-floating: 40;       /* FAB, floating action bars */
+  --z-overlay: 90;        /* backdrops */
+  --z-modal: 100;         /* drawers, popovers, modals */
+  --z-toast: 1000;        /* notifications globales */
 }
 
-/* ══ Base ══ */
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
+/* ══ KEYFRAMES PROFESIONALES ══ */
+
+/* Page enter (forward nav) — slide horizontal estilo iOS.
+   Más notorio: nueva pantalla entra deslizándose desde la derecha. */
+@keyframes pageEnter {
+  from {
+    opacity: 0;
+    transform: translateX(28px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
 }
 
-html,
-body {
-  margin: 0;
-  padding: 0;
-  background: var(--bg);
+/* Page exit — fade out rápido sin desplazamiento */
+@keyframes pageExit {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.99); }
+}
+
+/* Page back enter — slide desde la izquierda (volver) */
+@keyframes pageBackEnter {
+  from {
+    opacity: 0;
+    transform: translateX(-28px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+/* Bottom sheet */
+@keyframes sheetIn {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+/* Popover (NotifBell, dropdowns anclados) — fade + scale desde el origen */
+@keyframes popoverIn {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Toast con spring overshoot — Linear-style */
+@keyframes toastIn {
+  0% { transform: translateY(40px) scale(0.92); opacity: 0; }
+  60% { transform: translateY(-3px) scale(1.02); opacity: 1; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+/* Number tick — blur + slide vertical */
+@keyframes numberTick {
+  from { transform: translateY(8px); filter: blur(2px); opacity: 0; }
+  to { transform: translateY(0); filter: blur(0); opacity: 1; }
+}
+
+/* Spring scale — para entrar elementos importantes */
+@keyframes springIn {
+  0% { transform: scale(0.85); opacity: 0; }
+  50% { transform: scale(1.04); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* Shimmer angular moderno (no gris plano) */
+@keyframes shimmerSweep {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Logo girando — pull-to-refresh */
+@keyframes brandSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* Logo exit — zoom infinito + fade estilo X.com (Twitter rebrand).
+   El logo crece a 8x mientras desaparece. Renderizado via portal
+   en LogoLharmonie para escapar overflow:hidden de los padres.
+   Editorial Luxury: cubic-bezier agresivo en el medio, suave al final. */
+@keyframes lhLogoExit {
+  0%   { opacity: 1; transform: scale(1); }
+  60%  { opacity: 0.85; }
+  100% { opacity: 0; transform: scale(8); }
+}
+@media (prefers-reduced-motion: reduce) {
+  @keyframes lhLogoExit {
+    from, to { opacity: 0; transform: none; }
+  }
+}
+
+/* Logo entrada del login — fade + scale-up dramático y lento.
+   Le da peso de "protagonista". 1200ms con scale 0.85 → 1. */
+@keyframes lhLogoEnter {
+  0%   { opacity: 0; transform: scale(0.85); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  @keyframes lhLogoEnter {
+    from, to { opacity: 1; transform: none; }
+  }
+}
+
+/* Inicio — animaciones MUY smooth: fade + translateY largo con duración
+   y ease que prioriza suavidad sobre rapidez. */
+@keyframes lhInicioFadeUp {
+  0%   { opacity: 0; transform: translateY(14px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@keyframes lhInicioScaleIn {
+  0%   { opacity: 0; transform: scale(0.98); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.lh-inicio-fade-up {
+  animation: lhInicioFadeUp 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--lh-delay, 0) * 1ms);
+}
+.lh-inicio-scale-in {
+  animation: lhInicioScaleIn 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--lh-delay, 0) * 1ms);
+}
+/* Stagger HOME: 100ms entre items, 900ms duración cada uno.
+   Ease cubic-bezier(0.22, 1, 0.36, 1) — empieza rápido, frena suave
+   (ease-out-expo). Da feel "deslizándose elegante". */
+.lh-inicio-stagger > * {
+  opacity: 0;
+  animation: lhInicioFadeUp 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.lh-inicio-stagger > *:nth-child(1) { animation-delay: 80ms; }
+.lh-inicio-stagger > *:nth-child(2) { animation-delay: 180ms; }
+.lh-inicio-stagger > *:nth-child(3) { animation-delay: 280ms; }
+.lh-inicio-stagger > *:nth-child(4) { animation-delay: 380ms; }
+.lh-inicio-stagger > *:nth-child(5) { animation-delay: 480ms; }
+.lh-inicio-stagger > *:nth-child(6) { animation-delay: 560ms; }
+.lh-inicio-stagger > *:nth-child(7) { animation-delay: 640ms; }
+.lh-inicio-stagger > *:nth-child(n+8) { animation-delay: 720ms; }
+
+/* Stagger LOGIN: aún más respirado. 180ms entre items, 1100ms duración. */
+.lh-login-stagger > * {
+  opacity: 0;
+  animation: lhInicioFadeUp 1100ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.lh-login-stagger > *:nth-child(1) { animation-delay: 350ms; }
+.lh-login-stagger > *:nth-child(2) { animation-delay: 530ms; }
+.lh-login-stagger > *:nth-child(3) { animation-delay: 710ms; }
+.lh-login-stagger > *:nth-child(4) { animation-delay: 890ms; }
+.lh-login-stagger > *:nth-child(5) { animation-delay: 1070ms; }
+.lh-login-stagger > *:nth-child(n+6) { animation-delay: 1250ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .lh-inicio-fade-up,
+  .lh-inicio-scale-in,
+  .lh-inicio-stagger > *,
+  .lh-login-stagger > * {
+    animation: none;
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+/* Check completion — bounce */
+@keyframes checkBounce {
+  0% { transform: scale(0); opacity: 0; }
+  60% { transform: scale(1.25); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
+/* Glow pulse — alertas urgentes */
+@keyframes glowPulse {
+  0%, 100% { box-shadow: 0 0 0 0 currentColor; opacity: 1; }
+  50% { box-shadow: 0 0 12px 2px currentColor; opacity: 0.85; }
+}
+
+/* ══ UTILITY CLASSES — pattern library ══ */
+
+/* Tap feedback universal — mobile-first (no usa hover) */
+.tap-feedback {
+  transition: transform var(--dur-press) var(--ease-ios), opacity var(--dur-press) var(--ease-ios);
+  -webkit-tap-highlight-color: transparent;
+}
+.tap-feedback:active {
+  transform: scale(0.97);
+  opacity: 0.85;
+}
+@media (hover: hover) {
+  .tap-feedback:hover {
+    transform: translateY(-1px);
+  }
+}
+
+/* Spring tap — para CTAs principales (sutil, no bouncy) */
+.spring-tap {
+  transition: transform 0.18s var(--ease-ios), box-shadow 0.18s var(--ease-ios);
+  -webkit-tap-highlight-color: transparent;
+}
+.spring-tap:active {
+  transform: scale(0.97);
+}
+
+/* Page transitions — Linear/Stripe sutil (fade + micro-scale, sin slide brusco) */
+.page-enter { animation: pageEnter var(--dur-page) var(--ease-ios) both; }
+.page-back-enter { animation: pageBackEnter var(--dur-page) var(--ease-ios) both; }
+.page-exit { animation: pageExit 160ms var(--ease-ios) forwards; }
+
+/* Spring entrada — para elementos destacados (hero, alerts) */
+.spring-in { animation: springIn 0.45s var(--ease-spring) both; }
+
+/* Toast */
+.toast-in { animation: toastIn 0.5s var(--ease-spring); }
+
+/* Number tick — usar al cambiar valor numérico */
+.number-tick { animation: numberTick 0.28s var(--ease-out-expo); }
+
+/* Check con bounce */
+.check-bounce { animation: checkBounce 0.42s var(--ease-spring); }
+
+/* Glow pulse para alertas */
+.glow-pulse { animation: glowPulse 1.8s ease-in-out infinite; }
+
+/* Shimmer moderno — reemplaza skeleton-pulse viejo */
+.shimmer-modern {
+  background: linear-gradient(110deg, var(--bg-card) 30%, var(--bg-card-alt, #F5F1E8) 50%, var(--bg-card) 70%);
+  background-size: 200% 100%;
+  animation: shimmerSweep 1.6s infinite linear;
+  border-radius: 8px;
+}
+
+/* Heading premium — letterspacing tight */
+.heading-tight {
+  letter-spacing: -0.02em;
+}
+.heading-tight-lg {
+  letter-spacing: -0.025em;
+}
+
+/* Sheet drawer */
+.sheet-in { animation: sheetIn var(--dur-sheet) var(--ease-out-quart); }
+
+/* ══ BOTONES CON LUZ PROFESIONAL ══
+   Capas de sombra Linear/Stripe-style:
+   - inset top highlight (luz reflejada)
+   - inset bottom dark (peso/profundidad)
+   - drop shadow corto (lift sutil)
+   - drop shadow largo coloreado (glow del color del botón) */
+
+.btn-glow-accent {
+  background: var(--accent);
+  color: #FDFBF8;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.10),
+    0 1px 2px rgba(31, 20, 16, 0.08),
+    0 6px 16px -4px rgba(184, 149, 111, 0.45),
+    0 12px 28px -10px rgba(184, 149, 111, 0.30);
+  letter-spacing: -0.01em;
+  transition: box-shadow .22s var(--ease-ios), transform .15s var(--ease-ios);
+}
+.btn-glow-accent:active {
+  transform: scale(0.985);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.18),
+    0 1px 2px rgba(31, 20, 16, 0.10),
+    0 2px 6px -2px rgba(184, 149, 111, 0.40);
+}
+
+.btn-glow-dark {
+  background: var(--header-bg);
+  color: #FDFBF8;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.20),
+    0 1px 2px rgba(0, 0, 0, 0.10),
+    0 6px 16px -4px rgba(31, 20, 16, 0.40),
+    0 12px 28px -10px rgba(31, 20, 16, 0.25);
+  letter-spacing: -0.01em;
+  transition: box-shadow .22s var(--ease-ios), transform .15s var(--ease-ios);
+}
+.btn-glow-dark:active {
+  transform: scale(0.985);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.30),
+    0 2px 6px -2px rgba(31, 20, 16, 0.40);
+}
+
+.btn-glow-success {
+  background: var(--green);
+  color: #FDFBF8;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.12),
+    0 1px 2px rgba(0, 0, 0, 0.08),
+    0 6px 16px -4px rgba(46, 125, 50, 0.40),
+    0 12px 28px -10px rgba(46, 125, 50, 0.25);
+  letter-spacing: -0.01em;
+  transition: box-shadow .22s var(--ease-ios), transform .15s var(--ease-ios);
+}
+.btn-glow-success:active {
+  transform: scale(0.985);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.20),
+    0 2px 6px -2px rgba(46, 125, 50, 0.40);
+}
+
+.btn-glow-danger {
+  background: #D95F4E;
+  color: #FDFBF8;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.12),
+    0 1px 2px rgba(0, 0, 0, 0.08),
+    0 6px 16px -4px rgba(217, 95, 78, 0.45),
+    0 12px 28px -10px rgba(217, 95, 78, 0.25);
+  letter-spacing: -0.01em;
+  transition: box-shadow .22s var(--ease-ios), transform .15s var(--ease-ios);
+}
+.btn-glow-danger:active {
+  transform: scale(0.985);
+}
+
+/* Light variant — botón secundario con borde + sutil elevation */
+.btn-glow-light {
+  background: var(--bg-card);
   color: var(--text);
+  border: 1px solid var(--border);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 4px 12px -4px rgba(0, 0, 0, 0.08);
+  transition: box-shadow .22s var(--ease-ios), transform .15s var(--ease-ios);
+}
+.btn-glow-light:active {
+  transform: scale(0.985);
+  background: var(--bg-subtle);
+}
+
+/* ── Utility: posición bottom arriba del BottomTabBar fijo.
+   El nav real tiene 56px de row + safe-area-inset-bottom de padding externo.
+   Esta utility apila CTAs fixed justo arriba del nav, al ras visual sin gap. */
+.bottom-nav-safe {
+  bottom: calc(env(safe-area-inset-bottom, 0px) + var(--nav-height)) !important;
+  z-index: 60 !important;
+}
+
+/* ── Utility: padding-bottom para scrollable content que tiene un CTA fixed
+   encima. nav (56) + CTA típico (48) + safe + 8 buffer. */
+.pb-cta-safe {
+  padding-bottom: calc(var(--nav-height) + 48px + var(--safe-bottom, 0px) + 8px) !important;
+}
+/* ── Utility: padding-bottom para scrollable content SIN CTA fixed (solo nav).
+   nav (56) + safe + 12 buffer para que la última fila respire. */
+.pb-nav-safe {
+  padding-bottom: calc(var(--nav-height) + var(--safe-bottom, 0px) + 12px) !important;
+}
+
+/* ── Reset & Base ── */
+* {
   font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
-  font-size: var(--text-md);
-  line-height: 1.5;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
 }
 
 body {
-  min-height: 100dvh;
+  background-color: var(--bg);
+  color: var(--text);
+  overflow-x: hidden;
+  /* Evitar rubber-band lateral en iOS Safari que muestra el body background
+     cuando el scroll horizontal de un componente interno (carousel) llega al
+     borde. Mantenemos vertical normal. */
+  overscroll-behavior-x: none;
 }
 
-h1,
-h2,
-h3,
-h4,
-h5,
-h6,
+html {
+  /* Cubrir 100% para que NO se vea el fondo del navegador en pull-up/down */
+  background-color: var(--bg);
+  overscroll-behavior-x: none;
+}
+
+/* Hide-scrollbar utility para carousels horizontales — invisible scrollbar
+   pero mantiene scrolleable. */
+.hide-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── Numeric inputs: hide spinners ── */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* ── Selection ── */
+::selection {
+  background: var(--accent-bg-strong);
+  color: var(--text);
+}
+
+/* ── Focus visible ── */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ── Scrollbar (subtle) ── */
+::-webkit-scrollbar {
+  width: 3px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.08);
+  border-radius: var(--radius-full);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0,0,0,0.15);
+}
+
+/* ── Animations (sutiles, profesionales — Linear/Stripe style) ── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes lift {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes checkmark {
+  0% { transform: scale(0) rotate(-45deg); opacity: 0; }
+  50% { transform: scale(1.2) rotate(0deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+
+/* ── Login page premium animations ── */
+@keyframes float-gentle {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  33% { transform: translateY(-6px) rotate(1deg); }
+  66% { transform: translateY(2px) rotate(-0.5deg); }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { opacity: 0.15; transform: scale(1); }
+  50% { opacity: 0.3; transform: scale(1.08); }
+}
+
+@keyframes reveal-up {
+  from { opacity: 0; transform: translateY(24px) scale(0.92); filter: blur(4px); }
+  to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+}
+
+@keyframes reveal-text {
+  from { opacity: 0; transform: translateY(12px); letter-spacing: 0.5em; }
+  to { opacity: 1; transform: translateY(0); letter-spacing: 0.3em; }
+}
+
+@keyframes line-expand {
+  from { transform: scaleX(0); opacity: 0; }
+  to { transform: scaleX(1); opacity: 1; }
+}
+
+@keyframes particle-drift {
+  0% { transform: translate(0, 0) scale(1); opacity: 0; }
+  10% { opacity: 0.6; }
+  90% { opacity: 0; }
+  100% { transform: translate(var(--dx, 30px), var(--dy, -60px)) scale(0.3); opacity: 0; }
+}
+
+@keyframes card-rise {
+  from { opacity: 0; transform: translateY(40px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Bottom sheet slide-up para selectors Apple-style (Legajos, etc). */
+@keyframes sheetSlideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.animate-float {
+  animation: float-gentle 4s ease-in-out infinite;
+}
+
+.login-particles span {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0;
+  animation: particle-drift 6s ease-out infinite;
+}
+.login-particles span:nth-child(1) { left: 20%; top: 60%; --dx: -20px; --dy: -80px; animation-delay: 0s; }
+.login-particles span:nth-child(2) { left: 70%; top: 50%; --dx: 30px; --dy: -90px; animation-delay: 1.2s; }
+.login-particles span:nth-child(3) { left: 40%; top: 70%; --dx: -10px; --dy: -70px; animation-delay: 2.4s; }
+.login-particles span:nth-child(4) { left: 80%; top: 65%; --dx: 15px; --dy: -85px; animation-delay: 3.6s; }
+.login-particles span:nth-child(5) { left: 30%; top: 55%; --dx: -25px; --dy: -75px; animation-delay: 4.8s; }
+
+.animate-fade-in {
+  animation: fadeIn 0.22s var(--ease-ios) both;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.28s var(--ease-out-expo) both;
+}
+
+.animate-lift {
+  animation: lift 0.28s var(--ease-out-expo) both;
+}
+
+.animate-slide-down {
+  animation: slideDown 0.22s var(--ease-out-expo) both;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.2s var(--ease-out-expo) both;
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, var(--bg-card-alt) 25%, var(--bg-card) 50%, var(--bg-card-alt) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+.skeleton-pulse {
+  background: linear-gradient(90deg, var(--bg-card-alt) 25%, var(--bg-card) 50%, var(--bg-card-alt) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* ── Stagger children ── */
+.stagger-children > * {
+  animation: fadeIn 0.3s ease-out both;
+}
+.stagger-children > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-children > *:nth-child(2) { animation-delay: 50ms; }
+.stagger-children > *:nth-child(3) { animation-delay: 100ms; }
+.stagger-children > *:nth-child(4) { animation-delay: 150ms; }
+.stagger-children > *:nth-child(5) { animation-delay: 200ms; }
+.stagger-children > *:nth-child(6) { animation-delay: 250ms; }
+.stagger-children > *:nth-child(7) { animation-delay: 300ms; }
+.stagger-children > *:nth-child(8) { animation-delay: 350ms; }
+.stagger-children > *:nth-child(9) { animation-delay: 400ms; }
+.stagger-children > *:nth-child(10) { animation-delay: 450ms; }
+
+/* ── Glass card ── */
+.glass-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 0.5px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+
+/* ── Interactive card ── */
+.card-interactive {
+  background: var(--bg-card);
+  border: 0.5px solid rgba(0,0,0,0.06);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  transition: all var(--duration-normal) var(--ease-spring);
+}
+.card-interactive:hover {
+  box-shadow: var(--shadow-card-hover);
+  transform: translateY(-1px);
+}
+.card-interactive:active {
+  transform: scale(0.98) translateY(0);
+  box-shadow: var(--shadow-sm);
+  transition-duration: var(--duration-fast);
+}
+
+/* ── Button styles ── */
+.btn-primary {
+  background: var(--header-bg);
+  color: var(--text-inverse);
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  transition: all var(--duration-normal) var(--ease-spring);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  backdrop-filter: blur(8px);
+  position: relative;
+  overflow: hidden;
+}
+.btn-primary:hover {
+  background: var(--header-bg-light);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+  transform: translateY(-0.5px);
+}
+.btn-primary:active {
+  transform: scale(0.98);
+  box-shadow: var(--shadow-sm);
+  transition-duration: var(--duration-fast);
+}
+.btn-primary:disabled {
+  background: var(--text-dim);
+  box-shadow: none;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-accent {
+  background: var(--accent);
+  color: white;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  transition: all var(--duration-normal) var(--ease-spring);
+  box-shadow: 0 4px 12px rgba(196, 149, 106, 0.3);
+}
+.btn-accent:hover {
+  background: var(--accent-hover);
+  box-shadow: 0 6px 16px rgba(196, 149, 106, 0.4);
+  transform: translateY(-0.5px);
+}
+.btn-accent:active {
+  transform: scale(0.98);
+  transition-duration: var(--duration-fast);
+}
+.btn-accent:disabled {
+  background: var(--text-dim);
+  box-shadow: none;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ── Input field ── */
+.input-field {
+  width: 100%;
+  padding: 14px 16px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  font-size: 16px;
+  transition: all var(--duration-normal) var(--ease-spring);
+}
+.input-field:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--bg-card);
+  box-shadow: 0 0 0 4px var(--accent-bg);
+}
+.input-field::placeholder {
+  color: var(--text-dim);
+}
+
+/* ── Status badge ── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.badge-green {
+  background: var(--green-bg-strong);
+  color: var(--green);
+}
+.badge-red {
+  background: var(--red-bg-strong);
+  color: var(--red);
+}
+.badge-amber {
+  background: var(--amber-bg);
+  color: var(--amber);
+}
+.badge-accent {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+/* ── Numeric input (compact for forms) ── */
+.input-qty {
+  width: 72px;
+  padding: 10px 8px;
+  text-align: center;
+  font-size: 18px;
+  font-weight: 600;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  transition: all var(--duration-normal) var(--ease-spring);
+}
+.input-qty:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--bg-card);
+  box-shadow: 0 0 0 4px var(--accent-bg);
+}
+.input-qty.has-value {
+  border-color: var(--green);
+  background: var(--green-bg);
+}
+
+/* ── Surface raised (Apple-style card surface) ── */
+.surface-raised {
+  background: var(--bg-card);
+  border: 0.5px solid rgba(0,0,0,0.06);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+}
+
+/* ── Bottom safe area padding ── */
+.pb-safe {
+  padding-bottom: calc(var(--safe-bottom) + 16px);
+}
+
+/* ── Brand typography (Recoleta = tipografía oficial Lharmonie) ── */
+/* Fallback chain: Recoleta (self-hosted) → Fraunces (Google) → Georgia */
 .font-brand {
-  font-family: 'Recoleta', 'Fraunces', Georgia, serif;
-  letter-spacing: -0.01em;
+  font-family: 'Recoleta', 'Fraunces', 'Georgia', serif;
 }
 
-button,
-input,
-select,
-textarea {
-  font-family: inherit;
-  font-size: inherit;
-  color: inherit;
+/* ── Timeline connector line ── */
+.timeline-line {
+  position: relative;
+}
+.timeline-line::before {
+  content: '';
+  position: absolute;
+  left: 19px;
+  top: 40px;
+  bottom: 0;
+  width: 2px;
+  background: var(--border);
+}
+.timeline-line:last-child::before {
+  display: none;
 }
 
-button {
+/* ── Prevent body scroll when modal is open ── */
+body.modal-open {
+  overflow: hidden;
+}
+
+/* ══════════════════════════════════════════════
+   MP-style utilities (MercadoPago layout patterns
+   with Lharmonie brand colors)
+   ══════════════════════════════════════════════ */
+
+/* ── MP-style Function Grid (round circles, 4 per row) ── */
+.fn-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2px 0;
+  padding: 4px 0;
+}
+.fn-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 2px;
+  border-radius: var(--radius-md);
+  transition: background var(--duration-fast);
+  -webkit-tap-highlight-color: transparent;
   cursor: pointer;
   border: none;
   background: transparent;
 }
-
-a {
-  color: inherit;
-  text-decoration: none;
+.fn-item:active {
+  background: rgba(0,0,0,0.04);
+}
+.fn-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform var(--duration-fast);
+}
+.fn-item:active .fn-icon {
+  transform: scale(0.92);
+}
+.fn-label {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text);
+  text-align: center;
+  line-height: 1.2;
+  max-width: 68px;
+  word-break: break-word;
 }
 
-input,
-textarea,
-select {
-  /* iOS no auto-zoom: necesita >=16px en el input. */
-  font-size: var(--text-body);
+/* ── Section card (MP-style clean container) ── */
+.section-card {
+  background: var(--bg-card);
+  border-radius: 14px;
+  padding: 10px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04), 0 0 0 0.5px rgba(0,0,0,0.03);
 }
 
-/* ══ Top nav exclusive ══ */
-.lh-topnav {
-  position: sticky;
-  top: 0;
-  z-index: var(--z-nav);
-  height: var(--topnav-height);
+/* ── Compact list item (MP-style service row) ── */
+.list-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 0.5px solid var(--border);
+  transition: opacity var(--duration-fast);
+}
+.list-item:last-child {
+  border-bottom: none;
+}
+.list-item:active {
+  opacity: 0.7;
+}
+.list-item-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* ── Section title (small caps label) ── */
+.section-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 8px;
+  padding-left: 4px;
+}
+
+/* ── MP-style colored header zone (1 color sólido, sin gradient) ── */
+.mp-header {
+  background: var(--accent);
+  padding: calc(var(--safe-top) + 14px) 16px 14px;
+  position: relative;
+}
+.mp-header-inner {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
-  background: var(--header-bg);
-  color: var(--header-text);
-  border-bottom: 1px solid var(--header-divider);
-  box-shadow: var(--shadow-header-exclusive);
-  padding-top: env(safe-area-inset-top, 0px);
-  height: calc(var(--topnav-height) + env(safe-area-inset-top, 0px));
+  gap: 10px;
 }
 
-.lh-topnav-brand {
-  font-family: 'Recoleta', 'Fraunces', Georgia, serif;
-  font-size: 20px;
-  font-weight: 500;
-  color: var(--header-text);
-  letter-spacing: 0.005em;
-}
-
-.lh-topnav-tag {
-  font-family: 'DM Sans', system-ui, sans-serif;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: var(--header-accent);
-  opacity: 0.85;
-}
-
-/* ══ Bottom nav (5 tabs estilo MercadoPago) ══ */
-.lh-bottomnav {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: var(--z-nav);
-  background: var(--bg-card);
-  border-top: 1px solid var(--border);
+/* ── Search bar inside header ── */
+.mp-search {
   display: flex;
-  align-items: stretch;
-  justify-content: space-around;
-  height: calc(var(--nav-height) + env(safe-area-inset-bottom, 0px));
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-  box-shadow: 0 -1px 8px rgba(0, 0, 0, 0.04);
-}
-
-.lh-bottomnav-item {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 2px;
-  color: var(--text-muted);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  transition: color var(--transition);
-  padding: 6px 4px;
+  gap: 8px;
+  background: rgba(255,255,255,0.18);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  margin-top: 2px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  transition: background var(--duration-fast);
+}
+.mp-search:active {
+  background: rgba(255,255,255,0.25);
+}
+.mp-search-text {
+  font-size: 13px;
+  color: rgba(255,255,255,0.65);
+  font-weight: 400;
+}
+
+/* ── Role switcher banner ── */
+.role-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 16px;
+  background: linear-gradient(90deg, #FFF3E0, #FFF8E1);
+  border-bottom: 1px solid rgba(230,162,60,0.2);
+  font-size: 12px;
+  color: #E65100;
+  font-weight: 600;
+}
+.role-banner button {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 99px;
+  background: rgba(230,81,0,0.1);
+  color: #E65100;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: background var(--duration-fast);
+}
+.role-banner button:active {
+  background: rgba(230,81,0,0.2);
+}
+
+/* ── Featured card (like MP balance card, elevated) ── */
+.featured-card {
+  background: var(--bg-card);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.07), 0 0 0 0.5px rgba(0,0,0,0.04);
+  transition: transform var(--duration-fast);
   position: relative;
-  min-height: 44px;
+  overflow: hidden;
 }
-
-.lh-bottomnav-item:active {
-  transform: scale(0.96);
-  transition: transform 0.1s ease;
-}
-
-.lh-bottomnav-item.active {
-  color: var(--accent);
-}
-
-.lh-bottomnav-item.active::before {
+.featured-card::before {
   content: '';
   position: absolute;
   top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 24px;
-  height: 2px;
-  background: var(--accent);
-  border-radius: 0 0 2px 2px;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-light), var(--accent));
+}
+.featured-card:active {
+  transform: scale(0.99);
 }
 
-.lh-bottomnav-icon {
-  width: 22px;
-  height: 22px;
+/* ── Info banner (promotional/visual) ── */
+.info-banner {
+  background: linear-gradient(135deg, #2C1F18 0%, #3E2A1E 100%);
+  border-radius: 16px;
+  padding: 16px 18px;
+  position: relative;
+  overflow: hidden;
+  min-height: 72px;
+}
+.info-banner::before {
+  content: '';
+  position: absolute;
+  top: -30px;
+  right: -20px;
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: rgba(196, 149, 106, 0.15);
+}
+.info-banner::after {
+  content: '';
+  position: absolute;
+  bottom: -20px;
+  right: 30px;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: rgba(196, 149, 106, 0.08);
 }
 
-/* Padding inferior global para no quedar tapado por la bottom nav. */
-.lh-page {
-  min-height: 100dvh;
-  padding-bottom: calc(var(--nav-height) + env(safe-area-inset-bottom, 0px) + 16px);
-}
-
-/* ══ Cards / acceso rápido ══ */
-.lh-card {
+/* ── Quick stat card ── */
+.stat-card {
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 16px;
+  border-radius: 14px;
+  padding: 14px;
   box-shadow: var(--shadow-card);
-  transition: box-shadow var(--transition), transform var(--transition);
+  flex: 1;
+  min-width: 0;
 }
-
-.lh-card:hover {
-  box-shadow: var(--shadow-card-hover);
-}
-
-.lh-card-button {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 18px 16px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 12px;
-  text-align: left;
-  width: 100%;
-  box-shadow: var(--shadow-card);
-  transition: box-shadow var(--transition), transform 0.15s ease;
-}
-
-.lh-card-button:active {
-  transform: scale(0.98);
-  box-shadow: var(--shadow-card-hover);
-}
-
-.lh-card-icon {
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--accent-bg);
-  border-radius: var(--radius-md);
-  color: var(--accent);
-}
-
-.lh-card-title {
-  font-family: 'Recoleta', 'Fraunces', Georgia, serif;
-  font-size: 17px;
-  font-weight: 600;
+.stat-card-value {
+  font-size: 20px;
+  font-weight: 700;
   color: var(--text);
-  letter-spacing: -0.005em;
+  line-height: 1.1;
 }
-
-.lh-card-desc {
-  font-size: 12.5px;
-  color: var(--text-muted);
-  line-height: 1.4;
-}
-
-.lh-card-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.stat-card-label {
   font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
   color: var(--text-muted);
-  padding: 4px 10px;
-  background: var(--bg-card-alt);
-  border-radius: var(--radius-full);
+  margin-top: 4px;
 }
 
-.lh-card-pill.coming {
-  color: var(--accent);
-  background: var(--accent-bg);
-}
+/* ════════════════════════════════════════════════════════════════════
+   UI/UX PRO MAX UTILITIES — Pass 1 (aplicado 25-abr-2026)
+   Estas clases aplican las reglas críticas del skill UI/UX Pro Max
+   sin tener que repetir el mismo style en cada componente.
+   ════════════════════════════════════════════════════════════════════ */
 
-/* ══ Botones ══ */
-.lh-btn {
+/* ── Touch target hit area mínima 44×44 (UI/UX §2 touch-target-size) ──
+   Aplicar a botones icon-only o cualquier tap target que visualmente sea
+   más chico de 44px. Expande el hit area sin cambiar el visual. */
+.tap-min {
+  min-width: var(--touch-min);
+  min-height: var(--touch-min);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  height: 44px;
-  padding: 0 18px;
-  border-radius: var(--radius-md);
-  font-weight: 600;
-  font-size: 14px;
-  transition: background var(--transition), transform 0.15s ease;
+}
+/* Variante con padding cuando no se puede usar min-* */
+.tap-pad {
+  padding: var(--space-3);
 }
 
-.lh-btn-primary {
-  background: var(--accent);
-  color: white;
+/* ── Press feedback unificado (UI/UX §7 scale-feedback) ──
+   Subtle scale + sombra reducida al apretar. Para CTAs e interactive
+   cards. NO shiftea layout (evita layout-shift-avoid). */
+.press-feedback {
+  transition:
+    transform 0.18s var(--ease-ios),
+    box-shadow 0.18s var(--ease-ios),
+    background-color 0.15s var(--ease-ios);
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
 }
-
-.lh-btn-primary:hover {
-  background: var(--accent-hover);
-}
-
-.lh-btn-ghost {
-  background: var(--bg-card-alt);
-  color: var(--text);
-  border: 1px solid var(--border);
-}
-
-.lh-btn:active {
+.press-feedback:active {
   transform: scale(0.97);
 }
 
-/* ══ Estados de factura (chips) ══ */
+/* ── Disabled state semántico (UI/UX §8 disabled-states) ──
+   Opacidad 0.42 (entre el 0.38-0.5 del skill), cursor not-allowed,
+   pointer-events bloqueados, sin posibilidad de focus accidental. */
+.is-disabled,
+[aria-disabled="true"],
+button:disabled,
+input:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* ── Tabular nums para data alignment (UI/UX §6 number-tabular) ──
+   Para precios, timers, conteos en columnas. Evita el "salto" visual
+   cuando los dígitos cambian. */
+.tabular-nums-strict {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* ── numeric-display ──────────────────────────────────────────────
+   Para montos / saldos / totales donde la prioridad es LEGIBILIDAD
+   numérica antes que la voz editorial. Stack: DM Sans (que ya carga
+   la app) + system fallbacks geométricos. NO usa Recoleta serif —
+   los serif chicos confunden 0 con O y 5 con S en mobile.
+   Tabular nums + ligera apertura de tracking + features estilísticos
+   (ss01) que mejoran shapes de 0/1/4/7. Centro óptico ligeramente
+   bajado con line-height 1.05 para que números grandes no parezcan
+   "flotar" dentro del card. */
+.numeric-display {
+  font-family: "DM Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+    "Segoe UI", system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "ss01" 1, "lnum" 1;
+  letter-spacing: -0.012em;
+  line-height: 1.05;
+}
+
+/* ── Truncate con safety (UI/UX §6 truncation-strategy) ──
+   Single-line truncate con tooltip via title attr opcional. */
+.truncate-1 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Multi-line truncate (2 líneas) */
+.truncate-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ── Visual hierarchy semántico (UI/UX §6 weight-hierarchy) ──
+   Clases para aplicar tipografía consistente sin repetir style. */
+.text-display {
+  font-size: var(--text-3xl);
+  font-weight: var(--weight-bold);
+  line-height: var(--lh-tight);
+  letter-spacing: -0.02em;
+}
+.text-headline {
+  font-size: var(--text-xl);
+  font-weight: var(--weight-bold);
+  line-height: var(--lh-snug);
+  letter-spacing: -0.015em;
+}
+.text-title {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  line-height: var(--lh-snug);
+  letter-spacing: -0.01em;
+}
+.text-body-lg {
+  font-size: var(--text-md);
+  font-weight: var(--weight-regular);
+  line-height: var(--lh-normal);
+}
+.text-body {
+  font-size: var(--text-base);
+  font-weight: var(--weight-regular);
+  line-height: var(--lh-normal);
+}
+.text-label {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  line-height: var(--lh-snug);
+}
+.text-caption {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  line-height: var(--lh-snug);
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+.text-overline {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  line-height: var(--lh-snug);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+}
+
+/* ── Forms reglas críticas (UI/UX §8) ──
+   Inputs mobile mínimo 44px alto + font 16px (no auto-zoom iOS). */
+.input-pro {
+  width: 100%;
+  min-height: var(--touch-min);
+  padding: 0 var(--space-4);
+  font-size: var(--text-body);
+  font-weight: var(--weight-regular);
+  color: var(--text);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  transition:
+    border-color 0.18s var(--ease-ios),
+    box-shadow 0.18s var(--ease-ios),
+    background-color 0.18s var(--ease-ios);
+  -webkit-appearance: none;
+  appearance: none;
+}
+.input-pro:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--bg-card);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+.input-pro:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+/* Input con error visible cerca del field (UI/UX §8 error-placement) */
+.input-pro[aria-invalid="true"] {
+  border-color: var(--red);
+  background: var(--red-bg);
+}
+.input-pro[aria-invalid="true"]:focus {
+  box-shadow: 0 0 0 3px var(--red-bg-strong);
+}
+
+/* Field group con label arriba + helper text debajo */
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.field-label {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+  letter-spacing: -0.005em;
+}
+.field-label[data-required="true"]::after {
+  content: " *";
+  color: var(--red);
+}
+.field-helper {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  line-height: var(--lh-normal);
+}
+.field-error {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: var(--red);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ── Card / Surface elevation consistente (UI/UX §4 elevation-consistent) ──
+   Escala definida de elevations en lugar de sombras random. */
+.surface-1 {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.surface-2 {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    0 1px 2px rgba(0,0,0,0.03),
+    0 0 0 0.5px rgba(0,0,0,0.02);
+}
+.surface-3 {
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    0 4px 12px rgba(0,0,0,0.06),
+    0 1px 3px rgba(0,0,0,0.03);
+}
+.surface-4 {
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    0 12px 32px rgba(0,0,0,0.10),
+    0 4px 8px rgba(0,0,0,0.04);
+}
+
+/* ── Section spacing rhythm (UI/UX §5 spacing-scale) ──
+   Tiers consistentes para separación entre secciones. */
+.gap-section-sm > * + * { margin-top: var(--space-4); }
+.gap-section-md > * + * { margin-top: var(--space-6); }
+.gap-section-lg > * + * { margin-top: var(--space-8); }
+
+/* ── Reduce motion respect (UI/UX §1 reduced-motion) ──
+   Si el user tiene reduce-motion activado en OS, deshabilitamos
+   transiciones y animaciones largas. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── Focus-visible mejorado (UI/UX §1 focus-states) ──
+   Solo se ve cuando hace falta (keyboard nav), no en mouse click. */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ── Spinner rotation (Button loading state) ── */
+@keyframes spinnerRotate {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Screen reader only — visually hidden but accessible (UI/UX §1) ──
+   Patrón estándar para textos que solo deben leerlos screen readers. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* ── Button (.btn-pro) — hover y active states ──
+   El componente Button.tsx aplica estilos inline pero estos pseudo-classes
+   añaden el press feedback y hover refinement que NO se pueden hacer inline. */
+.btn-pro:active:not(:disabled) {
+  transform: scale(0.97);
+}
+@media (hover: hover) {
+  .btn-pro:hover:not(:disabled) {
+    transform: translateY(-0.5px);
+  }
+}
+
+/* ── Defaults globales para TODOS los botones de la app ──
+   No es un override, son mejoras de baseline que aplican a cualquier <button>:
+   - tap-highlight transparente (sin flash gris feo de Mobile Safari)
+   - cursor pointer
+   - user-select none (no se selecciona texto al apretar)
+   - transition de transform/opacity (para que cualquier active:scale se vea suave)
+   Esto NO interfiere con estilos custom — solo se aplica si no hay override. */
+button:not([type="text"]) {
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+button:not(:disabled) {
+  cursor: pointer;
+}
+/* Si el button no tiene transition explícita, le damos una baseline suave */
+button:not([style*="transition"]) {
+  transition:
+    transform 0.18s var(--ease-ios),
+    opacity 0.15s var(--ease-ios),
+    background-color 0.15s var(--ease-ios);
+}
+
+/* ── Hit area mínima global para iconos chicos en botones ──
+   Si un button tiene un SVG <=20px adentro, asumimos que es icon-only y
+   garantizamos hit area ≥44px con padding extra invisible. NO cambia el
+   visual, solo expande la zona tappable. */
+button:has(> svg:only-child[width="14"]),
+button:has(> svg:only-child[width="16"]),
+button:has(> svg:only-child[width="18"]),
+button:has(> svg:only-child[width="20"]) {
+  min-width: var(--touch-min);
+  min-height: var(--touch-min);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── Inputs default — evitar auto-zoom iOS en mobile (UI/UX §5) ──
+   Cualquier input/textarea/select de la app tiene font-size mínimo 16px en
+   mobile para que iOS Safari no haga zoom automático al focusear. En desktop
+   (≥768px) podemos usar el tamaño que queramos. */
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  textarea,
+  select {
+    font-size: max(16px, 1em);
+  }
+}
+
+/* ── Default disabled state global ──
+   Para que cualquier elemento marcado como disabled tenga el look semántico
+   correcto sin tener que repetir style en cada componente. */
+input:disabled,
+textarea:disabled,
+select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   ✦ TASTE-SKILL APPLIED — Editorial Luxury archetype
+   Aplicación de leonxlnx/taste-skill (TASTE + REDESIGN + SOFT) al stack
+   Lharmonie Staff. Vibe: warm creams + caramel accent + premium motion.
+   ════════════════════════════════════════════════════════════════════ */
+
+/* Custom soft cubic-bezier (Apple-tier) — supera al stock ease-ios */
+:root {
+  --ease-soft: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-emphatic: cubic-bezier(0.2, 0.85, 0.25, 1);
+  --ease-overshoot: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ── 1. Mesh gradient blobs animados (lava-lamp behind hero) ────────── */
+@keyframes blobDrift1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(8%, -6%) scale(1.08); }
+  66%      { transform: translate(-5%, 4%) scale(0.96); }
+}
+@keyframes blobDrift2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50%      { transform: translate(-7%, 5%) scale(1.12); }
+}
+@keyframes blobDrift3 {
+  0%, 100% { transform: translate(0, 0) scale(1.05); }
+  40%      { transform: translate(6%, 7%) scale(0.92); }
+  80%      { transform: translate(-4%, -3%) scale(1.1); }
+}
+
+.mesh-bg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+.mesh-bg::before,
+.mesh-bg::after,
+.mesh-bg > .blob {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+  opacity: 0.55;
+  will-change: transform;
+}
+.mesh-bg::before {
+  width: 60%; height: 60%;
+  top: -10%; left: -10%;
+  background: radial-gradient(circle, var(--accent-light) 0%, transparent 70%);
+  animation: blobDrift1 22s ease-in-out infinite;
+}
+.mesh-bg::after {
+  width: 55%; height: 55%;
+  bottom: -15%; right: -10%;
+  background: radial-gradient(circle, #E8C9A6 0%, transparent 70%);
+  animation: blobDrift2 28s ease-in-out infinite;
+}
+.mesh-bg > .blob {
+  width: 50%; height: 50%;
+  top: 35%; left: 35%;
+  background: radial-gradient(circle, #D4B894 0%, transparent 70%);
+  opacity: 0.35;
+  animation: blobDrift3 32s ease-in-out infinite;
+}
+
+/* Variante dark (HomeHero) — blobs con mostly amber/gold */
+.mesh-bg-dark::before {
+  background: radial-gradient(circle, rgba(196, 149, 106, 0.55) 0%, transparent 70%);
+}
+.mesh-bg-dark::after {
+  background: radial-gradient(circle, rgba(232, 201, 166, 0.4) 0%, transparent 70%);
+}
+
+/* ── 2. Coffee bean particles ambient (Editorial Luxury detail) ─────── */
+@keyframes coffeeFloat {
+  0%   { transform: translate(0, 0) rotate(0deg); opacity: 0; }
+  10%  { opacity: 0.06; }
+  50%  { opacity: 0.08; }
+  90%  { opacity: 0.04; }
+  100% { transform: translate(var(--drift-x, 30px), -120vh) rotate(180deg); opacity: 0; }
+}
+.coffee-particles {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+}
+.coffee-particles span {
+  position: absolute;
+  bottom: -20px;
+  width: 6px;
+  height: 9px;
+  background: radial-gradient(ellipse at center, #6B4423 0%, #3D2819 100%);
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  animation: coffeeFloat var(--dur, 28s) linear infinite;
+  animation-delay: var(--delay, 0s);
+  left: var(--x, 50%);
+}
+
+/* ── 3. Eyebrow tag — micro pill arriba de los headers ──────────────── */
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  line-height: 1;
+  border: 1px solid var(--border-accent);
+}
+.eyebrow.eyebrow-on-dark {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.7);
+}
+.eyebrow .eyebrow-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pulseStatus 1.6s ease-in-out infinite;
+}
+
+@keyframes pulseStatus {
+  0%, 100% { opacity: 0.5; transform: scale(0.85); }
+  50%      { opacity: 1;   transform: scale(1); }
+}
+
+/* ── 4. Double-Bezel pattern (outer shell + inner core) ─────────────── */
+/* SOFT.md §4A — cards que parecen "machined hardware" */
+.bezel-shell {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  padding: 6px;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.5) inset, 0 12px 32px -12px rgba(26,18,16,0.08);
+}
+.bezel-core {
+  background: var(--bg-card);
+  border-radius: calc(28px - 6px);
+  box-shadow: 0 1px 1px rgba(255,255,255,0.4) inset;
+  position: relative;
+}
+.bezel-shell-dark {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 28px;
+  padding: 6px;
+}
+.bezel-core-dark {
+  background: rgba(255,255,255,0.03);
+  border-radius: calc(28px - 6px);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.05) inset;
+}
+
+/* ── 5. Button-in-Button trailing arrow (SOFT §4B) ──────────────────── */
+.btn-trailing-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: rgba(0,0,0,0.06);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: transform 0.32s var(--ease-soft), background 0.2s var(--ease-soft);
+}
+button:hover .btn-trailing-icon,
+button:focus-visible .btn-trailing-icon {
+  transform: translate(2px, -1px) scale(1.06);
+  background: rgba(0,0,0,0.1);
+}
+.btn-trailing-icon-on-dark {
+  background: rgba(255,255,255,0.12);
+}
+button:hover .btn-trailing-icon-on-dark {
+  background: rgba(255,255,255,0.2);
+}
+
+/* ── 6. Particle burst (Anotado dorado) ─────────────────────────────── */
+@keyframes particleBurst {
+  0%   { transform: translate(0, 0) scale(0); opacity: 1; }
+  60%  { opacity: 1; }
+  100% { transform: translate(var(--bx, 60px), var(--by, -60px)) scale(0.4); opacity: 0; }
+}
+.burst-container {
+  position: absolute;
+  pointer-events: none;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+}
+.burst-particle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent-light);
+  animation: particleBurst 0.9s var(--ease-out-expo) forwards;
+}
+.burst-particle.gold {
+  background: linear-gradient(135deg, #F2D49A 0%, #C4956A 100%);
+}
+
+/* ── 7. Scroll fade-up (SOFT §5C — entry animations) ────────────────── */
+.scroll-fade-up {
+  opacity: 0;
+  transform: translateY(28px);
+  filter: blur(6px);
+  transition:
+    opacity 0.8s var(--ease-soft),
+    transform 0.8s var(--ease-soft),
+    filter 0.6s var(--ease-soft);
+}
+.scroll-fade-up.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+  filter: blur(0);
+}
+
+/* ── 8. Skeleton shimmer premium (110deg, color-matched) ────────────── */
+.shimmer-premium {
+  background: linear-gradient(
+    110deg,
+    var(--bg-subtle) 8%,
+    var(--bg-card) 18%,
+    var(--accent-bg) 33%,
+    var(--bg-card) 48%,
+    var(--bg-subtle) 60%
+  );
+  background-size: 200% 100%;
+  animation: shimmerSweep 1.8s linear infinite;
+}
+
+/* ── 9. Steam wisp animation (encima de cards "calientes") ──────────── */
+@keyframes steamRise {
+  0%   { transform: translateY(0) scaleX(1); opacity: 0; }
+  20%  { opacity: 0.4; }
+  100% { transform: translateY(-30px) scaleX(1.5); opacity: 0; }
+}
+.steam-wisp {
+  position: absolute;
+  width: 4px;
+  height: 12px;
+  background: linear-gradient(to top, transparent, rgba(255,255,255,0.4), transparent);
+  border-radius: 50%;
+  filter: blur(2px);
+  animation: steamRise 2.5s ease-out infinite;
+}
+
+/* ── 10. Magnetic press (mejora press-feedback) ──────────────────────── */
+.magnetic-press {
+  transition: transform 0.32s var(--ease-soft);
+  -webkit-tap-highlight-color: transparent;
+}
+.magnetic-press:active {
+  transform: scale(0.94) translateY(1px);
+}
+
+/* ── 11. Noise/grain overlay (Editorial Luxury — fixed, low cost) ───── */
+.grain-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: var(--z-overlay);
+  opacity: 0.025;
+  background-image:
+    radial-gradient(circle at 1px 1px, var(--text) 1px, transparent 0);
+  background-size: 3px 3px;
+  mix-blend-mode: multiply;
+}
+
+/* ── 12. Bento Grid (asymmetric tile structure) ──────────────────────── */
+.bento-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  width: 100%;
+}
+.bento-item {
+  border-radius: 24px;
+  overflow: hidden;
+  position: relative;
+  min-height: 110px;
+}
+.bento-item.span-2 { grid-column: span 2; }
+.bento-item.tall { min-height: 220px; grid-row: span 2; }
+
+/* ── 13. Liquid pull-to-refresh (droplet effect) ─────────────────────── */
+@keyframes droplet {
+  0%   { transform: translateY(0) scale(0.6); opacity: 0; }
+  40%  { transform: translateY(8px) scale(1.1); opacity: 0.8; }
+  80%  { transform: translateY(-4px) scaleY(1.4) scaleX(0.85); opacity: 0.5; }
+  100% { transform: translateY(-20px) scale(0.4); opacity: 0; }
+}
+.refresh-droplet {
+  width: 18px; height: 22px;
+  background: var(--accent);
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  animation: droplet 1.6s ease-out infinite;
+  filter: blur(0.5px);
+}
+
+/* ── 14. Status breathing dot (live indicators) ──────────────────────── */
+@keyframes breathe {
+  0%, 100% { box-shadow: 0 0 0 0 currentColor; opacity: 1; }
+  50%      { box-shadow: 0 0 0 6px transparent; opacity: 0.7; }
+}
+.status-breathe {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  animation: breathe 2s ease-out infinite;
+}
+
+/* ── 15. Stagger orchestration (cascade reveal en listas) ────────────── */
+.stagger-reveal > * {
+  opacity: 0;
+  transform: translateY(12px);
+  animation: staggerIn 0.6s var(--ease-soft) forwards;
+  animation-delay: calc(var(--idx, 0) * 70ms);
+}
+@keyframes staggerIn {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Shake — para destacar un input que falta completar al intentar enviar.
+   Combinado con un border rojizo temporal vía .field-error. */
+@keyframes fieldShake {
+  0%, 100% { transform: translateX(0); }
+  15% { transform: translateX(-7px); }
+  30% { transform: translateX(6px); }
+  45% { transform: translateX(-4px); }
+  60% { transform: translateX(4px); }
+  75% { transform: translateX(-2px); }
+  90% { transform: translateX(2px); }
+}
+.field-shake {
+  animation: fieldShake 0.55s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+.field-shake input,
+.field-shake select,
+.field-shake textarea {
+  border-color: var(--red) !important;
+  box-shadow: 0 0 0 3px rgba(200,90,84,0.18);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+/* ── 16. Spring tap (motion intensity 6) ─────────────────────────────── */
+.spring-tap-hard {
+  transition:
+    transform 0.4s var(--ease-overshoot),
+    box-shadow 0.4s var(--ease-soft);
+}
+.spring-tap-hard:active {
+  transform: scale(0.92) translateY(2px);
+}
+
+/* ── 17. Reduced motion overrides — todo lo de arriba ────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .mesh-bg::before, .mesh-bg::after, .mesh-bg > .blob,
+  .coffee-particles span,
+  .eyebrow .eyebrow-dot,
+  .steam-wisp,
+  .refresh-droplet,
+  .status-breathe,
+  .shimmer-premium {
+    animation: none !important;
+  }
+  .scroll-fade-up { opacity: 1; transform: none; filter: none; transition: none; }
+  .stagger-reveal > * { opacity: 1; transform: none; animation: none; }
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+ *  Lharmonie Dashboard — overrides exclusive (al final, NO en :root)
+ *  Diferencia visual: header más oscuro/luxury que el staff.
+ * ───────────────────────────────────────────────────────────────────── */
+
+/* Chips de estado de factura */
 .lh-chip {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 600;
   padding: 3px 9px;
-  border-radius: var(--radius-full);
-  letter-spacing: 0.02em;
+  border-radius: 999px;
+  letter-spacing: 0.01em;
+  line-height: 1.3;
 }
+.lh-chip-pagada { background: var(--green-bg); color: var(--green); }
+.lh-chip-pendiente { background: rgba(217,95,78,0.10); color: #C84F3F; }
+.lh-chip-bistrosoft { background: var(--accent-bg); color: var(--accent-hover); }
 
-.lh-chip-pagada {
-  background: var(--green-bg);
-  color: var(--green);
-}
-
-.lh-chip-pendiente {
-  background: var(--red-bg);
-  color: var(--red);
-}
-
-.lh-chip-bistrosoft {
-  background: var(--accent-bg);
-  color: var(--accent-hover);
-}
-
-/* ══ Animaciones ══ */
-@keyframes lh-fade-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.lh-fade-in {
-  animation: lh-fade-in 0.4s var(--ease-ios) both;
-}
-
-@keyframes lh-glow-pulse {
-  0%,
-  100% {
-    opacity: 0.6;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-/* ══ Login screen ══ */
-.lh-login-hero {
-  position: relative;
-  min-height: 52vh;
-  background: linear-gradient(165deg, #060403 0%, var(--header-bg) 35%, #1A100A 70%, #2A1810 100%);
-  display: flex;
-  flex-direction: column;
+/* Period chip (filtros de período en /) */
+.lh-period-chip {
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-muted);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
+  white-space: nowrap;
+  transition: background 0.18s var(--ease-ios), color 0.18s var(--ease-ios), transform 0.15s var(--ease-ios);
+}
+.lh-period-chip:active { transform: scale(0.97); }
+.lh-period-chip.is-active {
+  background: var(--accent);
+  color: #FDFBF8;
+  border-color: var(--accent);
+  box-shadow: 0 1px 2px rgba(31,20,16,0.08), 0 4px 12px -4px rgba(184,149,111,0.40);
+}
+
+/* Hero "Total a pagar" */
+.lh-hero-total {
+  background: linear-gradient(165deg, #0A0806 0%, #1E1512 40%, #2A1810 100%);
+  color: #F9F7F3;
+  border-radius: var(--radius-xl);
+  padding: 22px 22px 24px;
+  position: relative;
   overflow: hidden;
 }
-
-.lh-login-hero-glow {
+.lh-hero-total::before {
+  content: '';
   position: absolute;
-  width: 240px;
-  height: 240px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(196, 160, 103, 0.15) 0%, transparent 70%);
-  animation: lh-glow-pulse 4s ease-in-out infinite;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -55%);
+  top: -40%;
+  right: -20%;
+  width: 60%;
+  height: 140%;
+  background: radial-gradient(circle, rgba(196,160,103,0.18) 0%, transparent 60%);
+  pointer-events: none;
 }
 
-/* ══ Toast ══ */
-.lh-toast {
-  position: fixed;
-  bottom: calc(var(--nav-height) + env(safe-area-inset-bottom, 0px) + 16px);
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--text);
-  color: var(--text-inverse);
-  padding: 10px 18px;
-  border-radius: var(--radius-full);
-  font-size: 13px;
-  font-weight: 500;
-  z-index: var(--z-toast);
-  box-shadow: var(--shadow-lg);
-  animation: lh-fade-in 0.3s ease both;
-}
-
-/* ══ Scrollbars sutiles ══ */
-::-webkit-scrollbar {
-  width: 6px;
+/* Local comparison bar */
+.lh-local-bar {
   height: 6px;
+  background: var(--bg-subtle);
+  border-radius: 999px;
+  overflow: hidden;
 }
-::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: 3px;
+.lh-local-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-light) 100%);
+  border-radius: inherit;
+  transition: width 0.6s var(--ease-ios);
+}
+
+/* Provider-row (ranking) */
+.lh-prov-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
 }

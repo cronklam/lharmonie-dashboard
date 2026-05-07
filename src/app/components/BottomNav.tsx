@@ -1,74 +1,232 @@
 'use client';
 
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useFacturasStore } from './FacturasStore';
 
-// 5 tabs estilo MercadoPago, idénticas al staff.
-const TABS = [
-  { href: '/', label: 'Inicio', match: (p: string) => p === '/' },
-  { href: '/operaciones', label: 'Operaciones', match: (p: string) => p.startsWith('/operaciones') },
-  { href: '/control', label: 'Control', match: (p: string) => p.startsWith('/control') },
-  { href: '/equipo', label: 'Equipo', match: (p: string) => p.startsWith('/equipo') },
-  { href: '/perfil', label: 'Perfil', match: (p: string) => p.startsWith('/perfil') },
-] as const;
+// Replica del BottomTabBar del staff: glass blur + sliding pill +
+// crossfade outline/filled icons. 5 tabs del dashboard:
+// Inicio, A pagar (con badge), Pagadas, Proveedores, Productos.
 
-const ICONS: Record<string, React.ReactNode> = {
-  Inicio: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="lh-bottomnav-icon">
-      <path d="M3 10.5L12 3l9 7.5" />
-      <path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5" />
+type TabId = 'inicio' | 'apagar' | 'pagadas' | 'proveedores' | 'productos';
+
+const TABS: { id: TabId; label: string; href: string; match: (p: string) => boolean }[] = [
+  { id: 'inicio', label: 'Inicio', href: '/', match: (p) => p === '/' || p === '/perfil' || p === '/buscar' || p === '/pyl' },
+  { id: 'apagar', label: 'A pagar', href: '/a-pagar', match: (p) => p.startsWith('/a-pagar') || p.startsWith('/factura') },
+  { id: 'pagadas', label: 'Pagadas', href: '/pagadas', match: (p) => p.startsWith('/pagadas') },
+  { id: 'proveedores', label: 'Proveedores', href: '/proveedores', match: (p) => p.startsWith('/proveedores') },
+  { id: 'productos', label: 'Productos', href: '/productos', match: (p) => p.startsWith('/productos') },
+];
+
+function NavIconOutline({ id, color }: { id: TabId; color: string }) {
+  const sw = 1.6;
+  if (id === 'inicio')
+    return (
+      <svg width={26} height={26} viewBox="0 0 24 24" fill="none">
+        <path d="M3 10.5L12 3l9 7.5V21a1 1 0 01-1 1H4a1 1 0 01-1-1V10.5z" stroke={color} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M9 22V13a1 1 0 011-1h4a1 1 0 011 1v9" stroke={color} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  if (id === 'apagar')
+    return (
+      <svg width={26} height={26} viewBox="0 0 24 24" fill="none">
+        <path d="M5 3h11l3 3v15a1 1 0 01-1 1H5a1 1 0 01-1-1V4a1 1 0 011-1z" stroke={color} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M16 3v3h3" stroke={color} strokeWidth={sw} strokeLinecap="round" />
+        <path d="M8 13h8M8 17h6" stroke={color} strokeWidth={sw} strokeLinecap="round" />
+      </svg>
+    );
+  if (id === 'pagadas')
+    return (
+      <svg width={26} height={26} viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="12" r="9" stroke={color} strokeWidth={sw} />
+        <path d="m8 12 3 3 5-6" stroke={color} strokeWidth={sw + 0.2} strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  if (id === 'proveedores')
+    return (
+      <svg width={26} height={26} viewBox="0 0 24 24" fill="none">
+        <path d="M3 9l1.5-4h15L21 9" stroke={color} strokeWidth={sw} strokeLinejoin="round" />
+        <path d="M4 9v11a1 1 0 001 1h14a1 1 0 001-1V9" stroke={color} strokeWidth={sw} strokeLinejoin="round" />
+        <path d="M9 14h6" stroke={color} strokeWidth={sw} strokeLinecap="round" />
+      </svg>
+    );
+  return (
+    <svg width={26} height={26} viewBox="0 0 24 24" fill="none">
+      <path d="M12 3l9 4.5v9L12 21 3 16.5v-9z" stroke={color} strokeWidth={sw} strokeLinejoin="round" />
+      <path d="M3 7.5L12 12l9-4.5M12 12v9" stroke={color} strokeWidth={sw} strokeLinejoin="round" />
     </svg>
-  ),
-  Operaciones: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="lh-bottomnav-icon">
-      <rect x="3" y="3" width="7" height="7" rx="1.5" />
-      <rect x="14" y="3" width="7" height="7" rx="1.5" />
-      <rect x="3" y="14" width="7" height="7" rx="1.5" />
-      <rect x="14" y="14" width="7" height="7" rx="1.5" />
+  );
+}
+
+function NavIconFilled({ id, color }: { id: TabId; color: string }) {
+  if (id === 'inicio')
+    return (
+      <svg width={26} height={26} viewBox="0 0 24 24" fill={color}>
+        <path d="M3 10.5L12 3l9 7.5V21a1 1 0 01-1 1h-5v-8a1 1 0 00-1-1h-4a1 1 0 00-1 1v8H4a1 1 0 01-1-1V10.5z" />
+      </svg>
+    );
+  if (id === 'apagar')
+    return (
+      <svg width={26} height={26} viewBox="0 0 24 24" fill="none">
+        <path d="M5 3h11l3 3v15a1 1 0 01-1 1H5a1 1 0 01-1-1V4a1 1 0 011-1z" fill={color} />
+        <path d="M16 3v3h3z" fill={color} opacity="0.65" />
+        <path d="M8 13h8M8 17h6" stroke="#FDFBF8" strokeWidth="1.7" strokeLinecap="round" />
+      </svg>
+    );
+  if (id === 'pagadas')
+    return (
+      <svg width={26} height={26} viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="12" r="9" fill={color} />
+        <path d="m8 12 3 3 5-6" stroke="#FDFBF8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  if (id === 'proveedores')
+    return (
+      <svg width={26} height={26} viewBox="0 0 24 24" fill="none">
+        <path d="M3 9l1.5-4h15L21 9z" fill={color} opacity="0.85" />
+        <path d="M4 9v11a1 1 0 001 1h14a1 1 0 001-1V9H4z" fill={color} />
+      </svg>
+    );
+  return (
+    <svg width={26} height={26} viewBox="0 0 24 24" fill={color}>
+      <path d="M12 3l9 4.5L12 12 3 7.5z" />
+      <path d="M3 7.5L12 12v9L3 16.5z" opacity="0.85" />
+      <path d="M21 7.5L12 12v9l9-4.5z" opacity="0.7" />
     </svg>
-  ),
-  Control: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="lh-bottomnav-icon">
-      <path d="M12 3l8 3v6c0 5-3.5 8.5-8 9-4.5-.5-8-4-8-9V6l8-3z" />
-      <path d="M9 12l2 2 4-4" />
-    </svg>
-  ),
-  Equipo: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="lh-bottomnav-icon">
-      <circle cx="9" cy="8" r="3.2" />
-      <circle cx="17" cy="9" r="2.4" />
-      <path d="M3 19c0-3 2.7-5 6-5s6 2 6 5" />
-      <path d="M15 19c0-2 1.5-4 4-4s2 1 2 1" />
-    </svg>
-  ),
-  Perfil: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="lh-bottomnav-icon">
-      <circle cx="12" cy="8" r="3.6" />
-      <path d="M4 20c0-3.6 3.6-6 8-6s8 2.4 8 6" />
-    </svg>
-  ),
-};
+  );
+}
 
 export function BottomNav() {
   const pathname = usePathname();
+  const [mounted, setMounted] = useState(false);
+  const { pendingCount } = useFacturasStore();
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  if (!mounted) return null;
   if (pathname === '/login' || pathname === '/unauthorized') return null;
 
-  return (
-    <nav className="lh-bottomnav" aria-label="Navegación principal">
-      {TABS.map((t) => {
-        const active = t.match(pathname);
-        return (
-          <Link
-            key={t.href}
-            href={t.href}
-            className={`lh-bottomnav-item${active ? ' active' : ''}`}
-            aria-current={active ? 'page' : undefined}
-          >
-            {ICONS[t.label]}
-            <span>{t.label}</span>
-          </Link>
-        );
-      })}
+  const activeIdx = Math.max(
+    0,
+    TABS.findIndex((t) => t.match(pathname)),
+  );
+  const tabWidth = 100 / TABS.length;
+
+  const nav = (
+    <nav
+      aria-label="Navegación principal"
+      style={{
+        position: 'fixed',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        zIndex: 110,
+        background: 'rgba(253,251,248,0.86)',
+        backdropFilter: 'blur(24px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+        borderTop: '1px solid rgba(31,20,16,0.06)',
+        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        boxShadow: '0 -10px 32px -12px rgba(31,20,16,0.10), 0 -1px 0 rgba(255,255,255,0.7) inset',
+      }}
+    >
+      <div
+        className="relative flex items-stretch justify-around"
+        style={{ height: 56, padding: '6px 10px' }}
+      >
+        <div
+          aria-hidden
+          style={{
+            position: 'absolute',
+            top: 6,
+            bottom: 6,
+            width: `calc(${tabWidth}% - 10px)`,
+            left: `calc(${activeIdx * tabWidth}% + 5px)`,
+            background: 'var(--accent-bg, rgba(184,149,111,0.16))',
+            borderRadius: 16,
+            transition:
+              'left 0.46s cubic-bezier(0.32, 0.72, 0, 1), width 0.46s cubic-bezier(0.32, 0.72, 0, 1)',
+            boxShadow:
+              '0 1px 0 rgba(255,255,255,0.6) inset, 0 4px 12px -6px rgba(184,149,111,0.4)',
+            pointerEvents: 'none',
+          }}
+        />
+        {TABS.map((tab) => {
+          const active = tab.match(pathname);
+          const accent = 'var(--accent)';
+          const dim = 'var(--text-dim)';
+          const showBadge = tab.id === 'apagar' && pendingCount > 0;
+          return (
+            <Link
+              key={tab.id}
+              href={tab.href}
+              aria-label={tab.label}
+              aria-current={active ? 'page' : undefined}
+              className="relative flex items-center justify-center flex-1 spring-tap rounded-2xl"
+              style={{ zIndex: 1 }}
+            >
+              <span
+                style={{
+                  position: 'relative',
+                  width: 26,
+                  height: 26,
+                  display: 'inline-block',
+                }}
+              >
+                <span
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    opacity: active ? 0 : 1,
+                    transition:
+                      'opacity 0.28s cubic-bezier(0.32,0.72,0,1)',
+                  }}
+                >
+                  <NavIconOutline id={tab.id} color={dim} />
+                </span>
+                <span
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    opacity: active ? 1 : 0,
+                    transform: active ? 'scale(1)' : 'scale(0.85)',
+                    transition:
+                      'opacity 0.28s cubic-bezier(0.32,0.72,0,1), transform 0.32s cubic-bezier(0.32,0.72,0,1)',
+                  }}
+                >
+                  <NavIconFilled id={tab.id} color={accent} />
+                </span>
+                {showBadge && (
+                  <span
+                    aria-hidden
+                    style={{
+                      position: 'absolute',
+                      top: -3,
+                      right: -8,
+                      minWidth: 16,
+                      height: 16,
+                      padding: '0 4px',
+                      borderRadius: 999,
+                      background: '#D95F4E',
+                      color: '#FDFBF8',
+                      fontSize: 9.5,
+                      fontWeight: 700,
+                      lineHeight: '16px',
+                      textAlign: 'center',
+                      boxShadow: '0 0 0 2px rgba(253,251,248,0.95)',
+                    }}
+                  >
+                    {pendingCount > 99 ? '99+' : pendingCount}
+                  </span>
+                )}
+              </span>
+            </Link>
+          );
+        })}
+      </div>
     </nav>
   );
+
+  return createPortal(nav, document.body);
 }

@@ -6,7 +6,11 @@ import { useAuth } from '../components/AuthProvider';
 
 export default function UnauthorizedPage() {
   return (
-    <Suspense fallback={<div style={{ minHeight: '100dvh', background: 'var(--bg)' }} />}>
+    <Suspense
+      fallback={
+        <div style={{ minHeight: '100dvh', background: 'var(--bg)' }} />
+      }
+    >
       <UnauthorizedInner />
     </Suspense>
   );
@@ -31,9 +35,9 @@ function UnauthorizedInner() {
       }}
     >
       <div
+        className="font-brand heading-tight"
         style={{
-          fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
-          fontSize: 28,
+          fontSize: 30,
           fontWeight: 600,
           color: 'var(--text)',
           marginBottom: 12,
@@ -47,24 +51,34 @@ function UnauthorizedInner() {
           fontSize: 14.5,
           maxWidth: 380,
           lineHeight: 1.55,
-          marginBottom: 8,
         }}
       >
-        Este dashboard es solo para management de Lharmonie. Si crees que es un
-        error, contactá a Martín.
+        Este dashboard es solo para management de Lharmonie. Si crees que es
+        un error, contactá a Martín.
       </p>
       {email && (
         <p
           style={{
             color: 'var(--text-dim)',
             fontSize: 12.5,
-            marginBottom: 24,
+            marginTop: 8,
           }}
         >
-          Cuenta usada: <strong style={{ color: 'var(--text-muted)' }}>{email}</strong>
+          Cuenta usada:{' '}
+          <strong style={{ color: 'var(--text-muted)' }}>{email}</strong>
         </p>
       )}
-      <button className="lh-btn lh-btn-primary" onClick={logout}>
+      <button
+        onClick={logout}
+        className="btn-glow-dark spring-tap"
+        style={{
+          marginTop: 24,
+          height: 44,
+          padding: '0 22px',
+          borderRadius: 'var(--radius-md)',
+          fontWeight: 600,
+        }}
+      >
         Volver
       </button>
     </div>

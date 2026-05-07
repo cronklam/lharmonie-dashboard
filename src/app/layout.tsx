@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { AuthProvider } from './components/AuthProvider';
+import { FacturasProvider } from './components/FacturasStore';
 import { TopNav } from './components/TopNav';
 import { BottomNav } from './components/BottomNav';
 import { ServiceWorkerRegister } from './components/ServiceWorkerRegister';
@@ -37,18 +38,27 @@ export default function RootLayout({
           href="https://fonts.gstatic.com"
           crossOrigin="anonymous"
         />
+        <link
+          rel="preload"
+          href="/fonts/Recoleta-Regular.woff2"
+          as="font"
+          type="font/woff2"
+          crossOrigin="anonymous"
+        />
         <link rel="apple-touch-icon" href="/icon-192.png" />
         <meta
           name="google-client-id"
           content={process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || ''}
         />
       </head>
-      <body>
+      <body className="min-h-full flex flex-col">
         <ServiceWorkerRegister />
         <AuthProvider>
-          <TopNav />
-          <main className="lh-page">{children}</main>
-          <BottomNav />
+          <FacturasProvider>
+            <TopNav />
+            <main className="flex-1 pb-nav-safe">{children}</main>
+            <BottomNav />
+          </FacturasProvider>
         </AuthProvider>
       </body>
     </html>

@@ -20,7 +20,11 @@ declare global {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div style={{ minHeight: '100dvh', background: 'var(--bg)' }} />}>
+    <Suspense
+      fallback={
+        <div style={{ minHeight: '100dvh', background: 'var(--bg)' }} />
+      }
+    >
       <LoginInner />
     </Suspense>
   );
@@ -34,7 +38,6 @@ function LoginInner() {
   const [loading, setLoading] = useState(false);
   const btnRef = useRef<HTMLDivElement>(null);
 
-  // Si ya hay sesión, redirigir.
   useEffect(() => {
     if (user) {
       const next = search.get('next') || '/';
@@ -45,10 +48,9 @@ function LoginInner() {
   useEffect(() => {
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
     if (!clientId) {
-      setError('Google OAuth no está configurado. Falta NEXT_PUBLIC_GOOGLE_CLIENT_ID.');
+      setError('Google OAuth no está configurado.');
       return;
     }
-
     const script = document.createElement('script');
     script.src = 'https://accounts.google.com/gsi/client';
     script.async = true;
@@ -111,39 +113,58 @@ function LoginInner() {
   }
 
   return (
-    <div
-      className="flex flex-col"
-      style={{ minHeight: '100dvh', background: 'var(--bg)' }}
-    >
-      <div className="lh-login-hero">
-        <div className="lh-login-hero-glow" />
-        <div className="relative z-10 text-center">
+    <div className="flex flex-col" style={{ minHeight: '100dvh', background: 'var(--bg)' }}>
+      {/* Hero (gradient + ambient glow + isotipo + wordmark + decorative line) */}
+      <div
+        className="relative overflow-hidden flex flex-col items-center justify-center"
+        style={{
+          minHeight: '52vh',
+          background:
+            'linear-gradient(165deg, #060403 0%, #1A100A 30%, #2A1810 70%, #0D0805 100%)',
+        }}
+      >
+        <div
+          className="absolute"
+          style={{
+            width: 220,
+            height: 220,
+            borderRadius: '50%',
+            background:
+              'radial-gradient(circle, rgba(196,160,103,0.16) 0%, transparent 70%)',
+            animation: 'glow-pulse 4s ease-in-out infinite',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -55%)',
+          }}
+        />
+        <div className="login-particles absolute inset-0 pointer-events-none">
+          <span /><span /><span /><span /><span />
+        </div>
+
+        <div className="relative z-10 text-center" style={{ animation: 'reveal-up 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) both' }}>
           <div
             style={{
               fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
-              fontSize: 38,
+              fontSize: 42,
               fontWeight: 500,
-              color: 'var(--header-text)',
+              color: '#F9F7F3',
               letterSpacing: '0.005em',
+              lineHeight: 1,
             }}
           >
             Lharmonie
           </div>
           <div
-            style={{
-              marginTop: 14,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 12,
-            }}
+            className="mt-4 inline-flex items-center gap-3"
+            style={{ opacity: 0, animation: 'reveal-up 0.5s ease-out 0.6s both' }}
           >
-            <span
+            <div
               style={{
                 height: 1,
-                width: 32,
-                background:
-                  'linear-gradient(to right, transparent, var(--header-accent))',
-                display: 'inline-block',
+                width: 40,
+                background: 'linear-gradient(to right, transparent, #C4A067)',
+                transformOrigin: 'right',
+                animation: 'line-expand 0.6s ease-out 0.8s both',
               }}
             />
             <span
@@ -151,68 +172,91 @@ function LoginInner() {
                 fontFamily: "'DM Sans', sans-serif",
                 fontSize: 11,
                 fontWeight: 600,
-                letterSpacing: '0.18em',
+                letterSpacing: '0.20em',
                 textTransform: 'uppercase',
-                color: 'var(--header-accent)',
-                opacity: 0.95,
+                color: '#C4A067',
+                opacity: 0,
+                animation: 'reveal-text 0.5s ease-out 0.9s both',
               }}
             >
               Management
             </span>
-            <span
+            <div
               style={{
                 height: 1,
-                width: 32,
-                background:
-                  'linear-gradient(to left, transparent, var(--header-accent))',
-                display: 'inline-block',
+                width: 40,
+                background: 'linear-gradient(to left, transparent, #C4A067)',
+                transformOrigin: 'left',
+                animation: 'line-expand 0.6s ease-out 0.8s both',
               }}
             />
           </div>
         </div>
+
+        <div
+          className="absolute bottom-0 left-0 right-0"
+          style={{
+            height: 60,
+            background:
+              'linear-gradient(to top, var(--bg) 0%, transparent 100%)',
+            borderRadius: 'var(--radius-xl) var(--radius-xl) 0 0',
+          }}
+        />
       </div>
 
+      {/* Card area (overlapping hero) */}
       <div
-        className="flex-1 px-6 pt-10 pb-12 flex flex-col items-center gap-6 relative z-10"
+        className="flex-1 px-5 pt-2 pb-10 relative z-20 lh-login-stagger"
         style={{
           background: 'var(--bg)',
-          marginTop: -28,
+          marginTop: -32,
           borderRadius: 'var(--radius-xl) var(--radius-xl) 0 0',
         }}
       >
+        <div className="flex justify-center pt-3 pb-2">
+          <div
+            style={{
+              width: 40,
+              height: 4,
+              borderRadius: 2,
+              background: 'var(--border-strong)',
+              opacity: 0.6,
+            }}
+          />
+        </div>
+
         <p
           style={{
             color: 'var(--text-muted)',
             fontSize: 14,
             textAlign: 'center',
             maxWidth: 320,
+            margin: '12px auto 22px',
             lineHeight: 1.5,
-            marginTop: 8,
           }}
         >
-          Ingresá con tu cuenta de Google autorizada para acceder al panel
-          privado de management.
+          Ingresá con tu cuenta de Google autorizada para acceder al panel privado de management.
         </p>
 
-        <div
-          ref={btnRef}
-          style={{ minHeight: 44, display: 'flex', justifyContent: 'center' }}
-        />
+        <div ref={btnRef} style={{ display: 'flex', justifyContent: 'center', minHeight: 44 }} />
 
         {loading && (
-          <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+          <div
+            style={{ color: 'var(--text-muted)', fontSize: 13, textAlign: 'center', marginTop: 16 }}
+          >
             Verificando…
           </div>
         )}
         {error && (
           <div
             style={{
-              color: 'var(--red)',
-              background: 'var(--red-bg)',
+              color: 'var(--red, #C84F3F)',
+              background: 'rgba(217,95,78,0.10)',
               padding: '10px 14px',
               borderRadius: 'var(--radius-md)',
               fontSize: 13,
               maxWidth: 320,
+              margin: '16px auto 0',
               textAlign: 'center',
             }}
           >
