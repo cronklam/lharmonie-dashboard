@@ -1,6 +1,3 @@
 {
-  "outputDirectory": "dash",
-  "buildCommand": null,
-  "installCommand": null,
-  "framework": null
+  "$schema": "https://openapi.vercel.sh/vercel.json"
 }
