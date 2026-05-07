@@ -1,11 +1,12 @@
+/* @import rules deben ir antes que cualquier otra regla CSS (sino el browser
+   los ignora silenciosamente y Tailwind avisa con warning).
+   Por eso van arriba; los @font-face self-hosted vienen después. */
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,100..900;1,9..144,100..900&family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap');
+@import "tailwindcss";
+
 /* Recoleta = tipografía oficial Lharmonie (manual de marca).
    Self-hosted .woff2 en /public/fonts/. Fraunces como fallback.
-   Archivos esperados (subir a /public/fonts/):
-     - Recoleta-Regular.woff2   (weight 400) ✓ presente
-     - Recoleta-Medium.woff2    (weight 500) — opcional, agrega cuando lo tengas
-     - Recoleta-SemiBold.woff2  (weight 600) — opcional
-     - Recoleta-Bold.woff2      (weight 700) — opcional
-   Si un archivo no existe, el browser cae al fallback (Fraunces) sin romper.
+   Si un archivo no existe, el browser cae al fallback sin romper.
    font-display: swap = nunca esconde texto, solo cambia tipografía cuando carga. */
 @font-face {
   font-family: 'Recoleta';
@@ -35,9 +36,6 @@
   font-style: normal;
   font-display: swap;
 }
-
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,100..900;1,9..144,100..900&family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap');
-@import "tailwindcss";
 
 :root {
   /* ── Core palette (warm coffee tones) ── */

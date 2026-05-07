@@ -7,20 +7,23 @@
 
 ## Que es este proyecto
 
-Dashboard web privado para el management de Lharmonie. Replica el shell
-de la app de staff (`cronklam/lharmonie-staff`) para que management tenga
-una experiencia visual y de auth idéntica, pero con un top nav más
-"exclusive" (oscuro/luxury) que diferencia este surface como privado.
+Dashboard web privado para el management de Lharmonie. Visualmente es una
+**réplica 1:1 del shell de lharmonie-staff** (mismo top nav, mismo bottom
+nav, mismo layout, mismas animaciones, misma tipografía y paleta), con
+**una sola diferencia visual**: el top nav es más oscuro/luxury (negro
+espresso `#0D0805` + tag dorado "MANAGEMENT") para diferenciar este
+surface como privado de management.
 
-La primera funcionalidad es **Facturas** — lee del Sheet que el bot de
-Telegram llena. Resto de modulos (P&L, Sueldos, Caja chica, Servicios)
-vienen en próximas fases como placeholders.
+Funcionalmente es el **dashboard de facturas** que antes vivía en
+`dash/app.js` (vanilla HTML/JS). Lee del Sheet de Facturas que llena
+el bot de Telegram, calcula KPIs, deuda por proveedor, charts, y
+expone la única operación de write: **marcar factura como pagada**
+(que pasa por el worker de Railway).
 
 **URL:** `lharmonie-dashboard.vercel.app`
 **Repo:** `cronklam/lharmonie-dashboard`
-**Deploy:** Vercel (auto-deploy desde `main`)
-
-**Dueno:** Martin Masri (martin.a.masri@gmail.com).
+**Deploy:** Vercel (auto-deploy desde `main`, sin PRs)
+**Dueño:** Martin Masri (martin.a.masri@gmail.com)
 **Nombre:** siempre "Lharmonie" (sin apostrofe). Nunca "L'Harmonie".
 
 ---
@@ -29,13 +32,14 @@ vienen en próximas fases como placeholders.
 
 - **Next.js 16** (App Router, Turbopack) + TypeScript
 - **React 19**
-- **Tailwind v4** (via `@tailwindcss/postcss`)
-- **googleapis** (verificación de Google ID tokens en `/api/auth/login`)
+- **Tailwind v4** (`@tailwindcss/postcss`)
+- **Chart.js 4** (NO Recharts — explícito)
+- **googleapis** (verificación de Google ID tokens)
 - **Web Crypto** (HMAC-SHA256 para cookie de sesión)
-- **PWA** estática (`public/manifest.json` + `public/sw.js`)
+- PWA estática (`public/manifest.json` + `public/sw.js`)
 
-Mismo stack que el staff app, salvo que el dashboard NO usa el Sheet de
-"Usuarios" para gating — usa una whitelist hardcoded en código.
+Mismo stack que el staff, salvo que el dashboard NO usa Sheet de
+"Usuarios" para gating — usa whitelist hardcoded.
 
 ---
 
@@ -45,181 +49,240 @@ Mismo stack que el staff app, salvo que el dashboard NO usa el Sheet de
 lharmonie-dashboard/
 ├── src/
 │   ├── app/
-│   │   ├── layout.tsx         ← top nav exclusive + bottom nav + AuthProvider
-│   │   ├── globals.css        ← paleta + tokens + variantes "exclusive"
-│   │   ├── page.tsx           ← Inicio (saludo + grid de accesos rápidos)
-│   │   ├── facturas/page.tsx  ← migración de la app vieja (lista + detalle)
-│   │   ├── operaciones/page.tsx (placeholder)
-│   │   ├── control/page.tsx     (placeholder)
-│   │   ├── equipo/page.tsx      (placeholder)
-│   │   ├── perfil/page.tsx      (info del usuario logueado + logout)
-│   │   ├── login/page.tsx       (Google Sign-In)
-│   │   ├── unauthorized/page.tsx (rebote para emails fuera de la whitelist)
+│   │   ├── layout.tsx               ← AuthProvider + FacturasProvider + TopNav + BottomNav
+│   │   ├── globals.css              ← Copia entera del staff + overrides al final
+│   │   ├── page.tsx                 ← / (Inicio): hero "Total a pagar" + KPIs + charts
+│   │   ├── a-pagar/page.tsx         ← Lista de pendientes con filtros
+│   │   ├── pagadas/page.tsx         ← Historial pagado con búsqueda
+│   │   ├── factura/[id]/page.tsx    ← Detalle + botón "Marcar pagada"
+│   │   ├── proveedores/page.tsx     ← Ranking con KPIs
+│   │   ├── proveedores/[nombre]/page.tsx ← Detalle proveedor + chart evolución
+│   │   ├── productos/page.tsx       ← Toggle Food Cost / Artículos
+│   │   ├── pyl/page.tsx             ← Admin-only (martin + cronklam) — placeholder
+│   │   ├── buscar/page.tsx          ← Búsqueda global (proveedor / cat / facturas)
+│   │   ├── perfil/page.tsx          ← Avatar + accesos + logout
+│   │   ├── login/page.tsx           ← Hero + Google Sign-In
+│   │   ├── unauthorized/page.tsx    ← Rebote para emails fuera de whitelist
 │   │   ├── components/
-│   │   │   ├── AuthProvider.tsx       ← context + redirect a /login
-│   │   │   ├── TopNav.tsx             ← variante exclusive
-│   │   │   ├── BottomNav.tsx          ← 5 tabs MercadoPago-style
-│   │   │   ├── PlaceholderScreen.tsx  ← reusable para módulos pendientes
+│   │   │   ├── AuthProvider.tsx       ← Context + redirect a /login
+│   │   │   ├── FacturasStore.tsx      ← Carga /api/facturas una vez + helpers + types
+│   │   │   ├── TopNav.tsx             ← Variante exclusive + ícono lupa → /buscar
+│   │   │   ├── BottomNav.tsx          ← Portal + 5 tabs glass blur + sliding pill
+│   │   │   ├── PageHeader.tsx         ← Header sticky con back para /factura, /proveedores/[n], etc.
+│   │   │   ├── FacturaCard.tsx        ← Card item de factura
+│   │   │   ├── Charts.tsx             ← BarChart + DoughnutChart (Chart.js wrapper)
+│   │   │   ├── AnimatedNumber.tsx     ← Copia del staff
+│   │   │   ├── EyebrowTag.tsx         ← Copia del staff
+│   │   │   ├── Button.tsx             ← Copia del staff
+│   │   │   ├── DoubleBezelCard.tsx    ← Copia del staff
+│   │   │   ├── FunctionBanner.tsx     ← Copia del staff
 │   │   │   └── ServiceWorkerRegister.tsx
 │   │   └── api/
-│   │       ├── auth/
-│   │       │   ├── login/route.ts    ← verifica Google JWT + whitelist + cookie HMAC
-│   │       │   ├── logout/route.ts   ← clear cookie
-│   │       │   └── session/route.ts  ← lee cookie + valida whitelist
-│   │       └── facturas/route.ts     ← lee Sheet server-side, valida sesión
+│   │       ├── auth/login/route.ts        ← Verifica Google JWT + whitelist + cookie HMAC
+│   │       ├── auth/logout/route.ts       ← Clear cookie
+│   │       ├── auth/session/route.ts      ← Lee cookie + valida whitelist
+│   │       ├── facturas/route.ts          ← Lee Sheet de Facturas server-side
+│   │       ├── foodcost/route.ts          ← Lee Recetario Sheet (Foodcost GRAL tab)
+│   │       └── factura/marcar-pagada/route.ts ← Proxy al worker Railway (única op. write)
 │   ├── lib/
-│   │   ├── authorized-emails.ts ← whitelist hardcoded (FUENTE DE GATING)
-│   │   ├── session.ts           ← cookie HMAC-SHA256
+│   │   ├── authorized-emails.ts ← Whitelist hardcoded (FUENTE DE GATING)
+│   │   ├── session.ts           ← Cookie HMAC-SHA256
 │   │   ├── auth-guard.ts        ← withAuth wrapper para API routes
-│   │   └── sheets.ts            ← cliente del Sheet de Facturas (READ-ONLY)
-│   └── proxy.ts                 ← edge proxy: bloquea /api/* sin sesión
+│   │   ├── sheets.ts            ← Cliente Sheets (Facturas + Recetario, READ-ONLY)
+│   │   └── worker.ts            ← Cliente del worker Railway (única op. write)
+│   └── proxy.ts                 ← Edge proxy: bloquea /api/* sin sesión
 ├── public/
+│   ├── fonts/Recoleta-Regular.woff2 (oficial)
 │   ├── manifest.json (PWA)
 │   ├── sw.js (service worker pasivo)
 │   ├── icon-192.png, icon-512.png, logo.png
 ├── CLAUDE.md (este archivo)
 ├── package.json, tsconfig.json, next.config.ts, postcss.config.mjs
-└── vercel.json (sin outputDirectory — Next standard)
+└── vercel.json (framework: nextjs)
 ```
 
 ---
 
-## Diseno visual
+## Bottom nav: 5 tabs (en orden)
 
-### Paleta base (idéntica al staff)
+| # | Tab | Ruta | Notas |
+|---|-----|------|-------|
+| 1 | Inicio | `/` | Hero "Total a pagar" + KPIs + deuda x proveedor + charts |
+| 2 | A pagar | `/a-pagar` | Lista filtrable. Badge dorado con count de pendientes |
+| 3 | Pagadas | `/pagadas` | Historial con búsqueda + filtros |
+| 4 | Proveedores | `/proveedores` | Ranking con KPIs |
+| 5 | Productos | `/productos` | Toggle Food Cost / Artículos |
 
-| Token | Valor | Uso |
-|------|-------|-----|
-| `--bg` | `#EDE8DE` | Fondo |
-| `--bg-card` | `#FDFBF8` | Tarjetas, inputs |
-| `--text` | `#1F1410` | Texto principal |
-| `--text-muted` | `#8B6D5A` | Texto secundario |
-| `--accent` | `#B8956F` | Acento (botones, tabs activas) |
-| `--green` / `--red` | `#4A7C3E` / `#C85A54` | Pagada / Pendiente |
+Páginas accesibles desde el TopNav o el Perfil (no en el bottom nav):
 
-### Top nav EXCLUSIVE — diferencia clave vs. staff
-
-| Token | Valor | Uso |
-|------|-------|-----|
-| `--header-bg` | `#0D0805` | Casi negro espresso (más oscuro que staff `#1E1512`) |
-| `--header-accent` | `#C4A067` | Dorado tenue del logo / tag |
-| `--header-text` | `#F9F7F3` | Cream blanco roto |
-| `--header-divider` | `rgba(196,160,103,0.20)` | Línea inferior dorada al 20% |
-| `--shadow-header-exclusive` | `0 1px 8px rgba(196,160,103,0.08)` | Tinte dorado |
-
-A la derecha del top nav va el tag `MANAGEMENT` en DM Sans uppercase
-10px, letter-spacing 0.15em, color `--header-accent`. Esto es lo que
-visualmente diferencia este dashboard como surface privado.
-
-### Tipografía
-
-- **Títulos:** `'Recoleta', 'Fraunces', Georgia, serif`
-  (Recoleta es la oficial; Fraunces es fallback web vía Google Fonts)
-- **Body:** `'DM Sans', system-ui, sans-serif` (Google Fonts)
-- Recoleta self-hosted opcional en `/public/fonts/Recoleta-*.woff2`.
-  Si no existen los archivos, el browser cae a Fraunces sin romper.
-
-### Layout
-
-- Mobile-first.
-- Top nav sticky 56px (alto + safe-area).
-- Bottom nav fija 5 tabs (Inicio / Operaciones / Control / Equipo / Perfil).
-- `<main className="lh-page">` agrega padding inferior para no quedar
-  tapado por la bottom nav.
+- **Buscar** (`/buscar`): ícono de lupa en el TopNav.
+- **Perfil** (`/perfil`): tap en la tab Perfil… espera, **NO** hay tab
+  Perfil en este dashboard. Perfil se accede entrando a `/perfil`
+  directamente o desde un futuro link. Por ahora solo se muestra
+  como esquema de navegación.
+  > **Decisión:** las 5 tabs reflejan el flujo de facturas (que es lo
+  > primero que hace Martín). Perfil no es una tab porque no se usa
+  > seguido. El usuario sigue tipándolo en la URL o lo agregamos al
+  > TopNav más adelante.
+- **P&L** (`/pyl`): solo admins (`martin.a.masri@gmail.com`,
+  `cronklam@gmail.com`). Si el usuario no es admin, redirect a `/`.
+  Por ahora es un placeholder.
+- **Detalle factura** (`/factura/[id]`): tap en una factura.
+- **Detalle proveedor** (`/proveedores/[nombre]`): tap en un proveedor.
 
 ---
 
-## Auth: Google OAuth + whitelist hardcoded
+## Diseño visual — qué se copia del staff y qué cambia
+
+### Lo que se copia 1:1 del staff (`~/Desktop/lharmonie-staff/`)
+
+- **`globals.css` entero** (1964 líneas). Paleta `:root`, todos los
+  `@keyframes`, todas las utility classes (`.tap-feedback`,
+  `.spring-tap`, `.page-enter`, `.page-back-enter`, `.lh-inicio-fade-up`,
+  `.lh-inicio-scale-in`, `.lh-inicio-stagger`, `.spring-in`,
+  `.btn-glow-*`, `.glass-card`, `.bezel-shell`, `.eyebrow`, etc.).
+- **Tipografía:** Recoleta self-hosted + Fraunces (Google) + DM Sans.
+- **Componentes core:** `AnimatedNumber`, `EyebrowTag`, `Button`,
+  `DoubleBezelCard`, `FunctionBanner`.
+- **BottomNav:** glass blur 86%, sliding pill con
+  `cubic-bezier(0.32, 0.72, 0, 1)`, crossfade outlined→filled icons,
+  portal a `document.body` (mismo patrón que `staff/page.tsx:1505-1619`).
+- **Login hero:** gradient + ambient glow + decorative line + badge.
+- **Animaciones de page:** `.page-enter` aplicado a cada page; los
+  contenidos usan `.lh-inicio-stagger` y `.spring-in` donde el staff
+  los usa.
+
+### Diferencias permitidas (top nav exclusive)
+
+| Token | Staff | Dashboard |
+|-------|-------|-----------|
+| `--header-bg` | `#1E1512` | `#0D0805` (más oscuro) |
+| Border-bottom del header | `var(--border)` | `rgba(196,160,103,0.20)` (dorado) |
+| Box-shadow del header | sutil neutral | `0 1px 8px rgba(196,160,103,0.08)` (tinte dorado) |
+| Tag a la derecha | "Staff" | "MANAGEMENT" en pill bordeado dorado |
+| Ícono extra | NotifBell | Lupa → `/buscar` |
+
+Esos overrides van AL FINAL de `globals.css` (`/* ── Lharmonie Dashboard
+— overrides exclusive ─ */`), nunca dentro de `:root`.
+
+---
+
+## Auth (sin tocar lo que ya funciona)
 
 ### Flujo
 
-1. El usuario abre `/login` y aprieta "Sign in with Google" (Google
-   Identity Services con `ux_mode: 'popup'` + `use_fedcm_for_prompt: true`).
-2. El cliente recibe el ID token y lo POSTea a `/api/auth/login`.
-3. El server verifica el token con `googleapis` (`OAuth2.verifyIdToken`).
-4. Si el email NO está en `src/lib/authorized-emails.ts` → 403 con
-   `error: 'not_authorized'`. El cliente redirige a `/unauthorized`.
-5. Si está autorizado → genera cookie HMAC-SHA256 (`lh-dash-session`,
-   30 días, HttpOnly, SameSite=Lax, Secure en prod) y devuelve user.
-6. `AuthProvider` polea `/api/auth/session` al iniciar la app y
-   redirige a `/login` si no hay sesión válida.
+1. Usuario abre `/login` y aprieta "Sign in with Google" (GIS popup +
+   FedCM + ITP support).
+2. Cliente recibe el ID token y POSTea a `/api/auth/login`.
+3. Server verifica el token con `googleapis` (`OAuth2.verifyIdToken`).
+4. Si email ∉ `src/lib/authorized-emails.ts` → 403 `error: 'not_authorized'`,
+   cliente redirige a `/unauthorized`.
+5. Si OK → cookie HMAC-SHA256 (`lh-dash-session`, 30 días, HttpOnly,
+   SameSite=Lax, Secure en prod).
+6. `AuthProvider` polea `/api/auth/session` al iniciar.
 
 ### Whitelist (única fuente de gating)
 
-Vive en `src/lib/authorized-emails.ts` y se chequea **dos veces**:
-- En `/api/auth/login` (al crear sesión)
-- En `/api/auth/session` y `withAuth` (defensa en profundidad — si alguien
-  sale de la whitelist y todavía tiene cookie, igual rebota)
+`src/lib/authorized-emails.ts`:
 
 ```ts
 export const AUTHORIZED_EMAILS = [
   'martin.a.masri@gmail.com',
   'cronklam@gmail.com',
-  // 'iara.zayat@gmail.com',  ← agregar cuando Martín confirme el email
+  // 'iara.zayat@gmail.com',  // ← agregar cuando Martín confirme
 ] as const;
 ```
 
+Se chequea **dos veces**: en `/api/auth/login` (al crear sesión) y
+en `/api/auth/session` + `withAuth` (defensa en profundidad).
+
+### Admin-only (P&L)
+
+`/pyl` está gated por `ADMIN_EMAILS = ['martin.a.masri@gmail.com', 'cronklam@gmail.com']`.
+Cualquier otro email autorizado entra al dashboard pero no a P&L.
+
 ### Defensa en profundidad
 
-- El edge proxy (`src/proxy.ts`, antes "middleware") bloquea cualquier
-  `/api/*` sin cookie válida (excepto `/api/auth/*`).
-- `withAuth` en `lib/auth-guard.ts` re-valida la cookie + whitelist en
-  cada API route que sirva data sensible (ej. `/api/facturas`).
-- CSP cerrado en `next.config.ts` (sólo Google OAuth + Google Sheets +
-  Google Fonts).
+- **Edge proxy** (`src/proxy.ts`, antes "middleware") bloquea `/api/*`
+  sin cookie válida (excepto `/api/auth/*`).
+- `withAuth` re-valida cookie + whitelist en cada API route que sirva
+  data sensible (`/api/facturas`, `/api/foodcost`, `/api/factura/marcar-pagada`).
+- CSP cerrado en `next.config.ts` (Google OAuth + Sheets + Fonts + jsdelivr
+  para charts).
 
 ---
 
-## Datos: Facturas (READ-ONLY)
+## Datos: Facturas (READ-ONLY) + Marcar pagada (única write)
 
-- **Sheet ID:** `1lZER27XWpUIaRIeosoJjMhXaclj8MS-6thOeQ3O3a8o` (env
-  `FACTURAS_SHEET_ID`)
-- **Tab:** `Facturas`
-- **API key del proyecto GCP:** env `GOOGLE_API_KEY` (server-side ONLY).
-- **Endpoint:** `GET /api/facturas` → devuelve `{ ok, facturas }` con
-  cada fila como `{ [columna]: string }`.
-- Revalidate de 60 segundos (Next fetch cache) para evitar 429 contra
-  Sheets API.
+### Lectura
 
-**El dashboard NUNCA escribe al Sheet** — es READ-ONLY. El bot de
-Telegram (`cronklam/lharmonie-bot`) es el único que escribe facturas.
+- **Sheet ID Facturas:** `1lZER27XWpUIaRIeosoJjMhXaclj8MS-6thOeQ3O3a8o` (env `FACTURAS_SHEET_ID`).
+- **Sheet ID Recetario:** `15tlHXgIKznAxjc8Accpe6xVK4ghaMcUo0Uwq1-A4b6E` (env `RECETARIO_SHEET_ID`, hay default en `lib/sheets.ts`).
+- **Tab Facturas:** `Facturas`. Tab Recetario: `Foodcost GRAL`.
+- **API key:** `GOOGLE_API_KEY` server-side, NUNCA expuesta al cliente.
+- **Endpoints:**
+  - `GET /api/facturas` → `{ ok, facturas }` cada fila como `{ [columna]: string }` + `_sheetRow` (numérico, fila exacta).
+  - `GET /api/foodcost` → `{ ok, items }` con `articulo`, `categoria`, `costoIVA`, `pv`, `fcPct`, `fcIdeal`, `revisar`, `faltaCosto`.
+- **Cache:** `revalidate: 60` para Facturas, `revalidate: 300` para Recetario.
 
-Las columnas se mapean en `src/app/facturas/page.tsx` con la constante
-`COL` (Fecha FC, Proveedor, CUIT, Tipo Doc, # PV, # Factura, Categoría,
-Local, Cajero, Importe Neto, IVA 21%, IVA 10.5%, Total, Medio de Pago,
-Estado, Fecha de Pago, Observaciones, Procesado, Imagen).
+### Escritura — única operación
+
+`POST /api/factura/marcar-pagada` con body
+`{ nroFactura, proveedor, fecha, filaExacta }`.
+
+Internamente proxea al **worker de Railway**:
+- `WORKER_URL = https://worker-production-7f89.up.railway.app`
+- `POST /update-estado` con header `x-api-secret: $API_SECRET`
+- Mismo body + `fechaPago = new Date().toLocaleDateString('es-AR')`.
+
+El worker es el único componente con permiso de escritura al Sheet
+(escribe el medio de pago + fecha en la fila exacta). El bot de Telegram
+también lo usa. **Nunca escribir directo desde Next.js al Sheet.**
+
+### Mapping de columnas (`COL` en `FacturasStore.tsx`)
+
+```
+fecha:'Fecha FC', proveedor:'Proveedor', cuit:'CUIT', tipoDoc:'Tipo Doc',
+pv:'# PV', nroFac:'# Factura', categoria:'Categoría', local:'Local',
+cajero:'Cajero', importeNeto:'Importe Neto', iva21:'IVA 21%',
+iva105:'IVA 10.5%', total:'Total', medioPago:'Medio de Pago',
+estado:'Estado', fechaPago:'Fecha de Pago', obs:'Observaciones',
+procesado:'Procesado', imagen:'Imagen', mes:'Mes', anio:'Año'
+```
 
 ---
 
-## Env vars (Vercel project: lharmonie-dashboard)
+## Env vars (Vercel project: `lharmonie-dashboard`)
 
 | Var | Valor / fuente | Notas |
-|-----|---------------|-------|
-| `GOOGLE_CLIENT_ID` | Mismo que el staff | Copiar del Vercel project `lharmonie-staff` |
-| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Idem | Idéntico al anterior |
-| `AUTH_SECRET` | `openssl rand -base64 32` | **NUEVO** — NO usar el del staff |
-| `GOOGLE_API_KEY` | API key con acceso a Sheets API | `AIzaSyCj1vL8svli0VUdZOPb7ADZkRBhCQBLe2o` (la del Sheet de Facturas) |
+|-----|----------------|-------|
+| `GOOGLE_CLIENT_ID` | mismo que el staff | copiar del project `lharmonie-staff` |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | idem | idéntico al de arriba |
+| `AUTH_SECRET` | `openssl rand -base64 32` | **DISTINTO** del staff |
+| `GOOGLE_API_KEY` | `AIzaSyCj1vL8svli0VUdZOPb7ADZkRBhCQBLe2o` | API key con acceso a Sheets API |
 | `FACTURAS_SHEET_ID` | `1lZER27XWpUIaRIeosoJjMhXaclj8MS-6thOeQ3O3a8o` | |
+| `RECETARIO_SHEET_ID` | `15tlHXgIKznAxjc8Accpe6xVK4ghaMcUo0Uwq1-A4b6E` | opcional, hay default en código |
+| `WORKER_URL` | `https://worker-production-7f89.up.railway.app` | worker Railway que escribe al Sheet |
+| `API_SECRET` | `lharmonie2026` | mismo que el dash viejo + bot Telegram |
 
-Ver `.env.example` para una plantilla local.
+`.env.example` tiene la plantilla local.
 
 ---
 
 ## Reglas que no se deben romper
 
-1. **El dashboard es READ-ONLY.** Solo lee del Sheet de Facturas. El bot
-   de Telegram es el único que escribe.
-2. **Mobile-first.** Todo cambio de UI debe verse bien en celular.
-3. **Whitelist hardcoded en código** — NO leer una lista de usuarios
-   desde Sheet ni DB. El control vive en commits.
-4. **No agregar a Iara a la whitelist** hasta que Martín confirme el email
-   exacto. La línea está marcada como comentario en `authorized-emails.ts`.
-5. **AUTH_SECRET distinto del staff.** Si compartimos secret, las cookies
+1. **READ-ONLY al Sheet, salvo "Marcar pagada"** que pasa por el worker.
+   Cualquier operación de write nueva debe revisar primero CON Martín.
+2. **Visualmente IDÉNTICO al staff** (excepto top nav exclusive).
+   No reinventar componentes ni animaciones — copiarlas.
+3. **Mobile-first.** Todo cambio de UI debe verse bien en celular.
+4. **Whitelist hardcoded.** No leer usuarios de Sheet ni DB.
+5. **No agregar a Iara** hasta que Martín confirme su email.
+6. **`AUTH_SECRET` distinto del staff.** Si compartimos secret, las cookies
    son intercambiables → fuga del modelo de auth.
-6. **CSP cerrado.** Si rompe algo del UI, los errores aparecen en consola
-   — primero entender por qué, no abrir la CSP.
-7. **El Sheet de Facturas es la única fuente de verdad.** No cachear
-   datos en una DB paralela.
+7. **Mantener Chart.js**, no migrar a Recharts.
+8. **El bot de Telegram** sigue siendo el único punto de entrada para
+   crear facturas; el dashboard solo lee y marca pagadas.
 
 ---
 
@@ -227,73 +290,66 @@ Ver `.env.example` para una plantilla local.
 
 ```bash
 # Local
-cp .env.example .env.local  # y completar valores
+cp .env.example .env.local  # completar valores
 npm install
 npm run dev   # http://localhost:3000
 
 # Build
 npm run build && npm start
 
-# Deploy: push a main → Vercel auto-deploys
+# Deploy: push a main → Vercel auto-deploys (sin PRs)
+git checkout main && git merge --ff-only feat/<branch> && git push origin main
 ```
-
----
-
-## Bottom nav: 5 tabs
-
-| Tab | Ruta | Estado |
-|-----|------|--------|
-| Inicio | `/` | Grid de accesos rápidos (Facturas + placeholders) |
-| Operaciones | `/operaciones` | Placeholder (P&L, Sueldos, Compras) |
-| Control | `/control` | Placeholder (Caja chica, Caja grande, Servicios) |
-| Equipo | `/equipo` | Placeholder (Directorio, Asistencia, Cumpleaños) |
-| Perfil | `/perfil` | Info del usuario logueado + logout |
-
-`/facturas` se accede desde el grid del Inicio, **no** es una tab del
-bottom nav (las 5 tabs son fijas, mismo patrón que el staff).
-
----
-
-## Ideas ya descartadas
-
-- Login user/pass con USERS hardcoded → reemplazado por Google OAuth.
-- Biometric login (WebAuthn/fingerprint) → no aplica con Google OAuth.
-- DB propia (SQLite/Postgres) → Sheet alcanza por ahora.
-- Reportes P&L en este dashboard → fase posterior, hoy sólo placeholder.
-- Dashboard con edición de facturas → el bot de Telegram es la única
-  entrada de escritura.
-
----
-
-## Bugs conocidos / estado actual
-
-- [ ] Verificar que el deploy en Vercel quede bien después del merge —
-      tirar un login real con `martin.a.masri@gmail.com` desde mobile.
-- [ ] Cuando Martín confirme el email de Iara, descomentar la línea en
-      `src/lib/authorized-emails.ts` y pushear.
 
 ---
 
 ## Lecciones aprendidas
 
-1. **`middleware.ts` deprecado en Next 16.** El archivo va en
-   `src/proxy.ts` y debe exportar `proxy(req)` en lugar de
-   `middleware(req)`.
-2. **`useSearchParams()` requiere `<Suspense>`.** En cualquier page que
-   lo use directamente, hay que envolver el inner component en
-   `<Suspense>` para que el build de Next 16 no falle al pre-renderizar.
-3. **Sheets API rate limits (429).** Por eso `next: { revalidate: 60 }`
-   en el fetch de `/api/facturas`.
+1. **Next.js 16:** `middleware.ts` deprecado → `proxy.ts` con
+   `export async function proxy(req)`.
+2. **`useSearchParams()`** requiere `<Suspense>` boundary en Next 16.
+   Wrappear el contenido en un componente interno.
+3. **Vercel "Root Directory"** se configura en Project Settings, NO en
+   `vercel.json`. Si el repo tenía pin a `dash/`, hay que cambiarlo
+   manualmente en la UI de Vercel.
+4. **CSS `@import` order:** todos los `@import` van antes de cualquier
+   otra regla CSS (incluyendo `@font-face`), sino el browser los ignora.
+5. **Tipo `Factura`:** Record<string, string> + `_sheetRow` numérico
+   genera conflicto de index signature en TS. Solución: en el server
+   guardamos `_sheetRow` como `Record<string, string | number>`, y al
+   recibirlo en el cliente lo convertimos a string (parsing a int
+   solo cuando llamamos al worker).
+6. **Sheets API rate limits (429):** `next: { revalidate: 60 }` para
+   Facturas y `300` para Recetario. Si el dashboard hace muchas
+   refresh, se cachea correctamente del lado de Next.
+7. **Bottom nav portal:** el BottomTabBar del staff usa `createPortal`
+   a `document.body` para escapar `transform` de wrappers que rompen
+   `position: fixed`. Replicado igual.
 
 ---
 
-## Relacion con otros repos
+## Bugs conocidos / próximos pasos
 
-- **lharmonie-staff** (`cronklam/lharmonie-staff`): App de staff. Misma
-  paleta y misma forma del bottom nav — este repo replica el shell.
-  Auth secret es **distinto** (cookies no intercambiables).
-- **lharmonie-bot** (`cronklam/lharmonie-bot`): El bot de Telegram que
+- [ ] Cuando Martín confirme el email de Iara, descomentar la línea
+      en `src/lib/authorized-emails.ts` y pushear.
+- [ ] `/pyl` es placeholder. Cuando esté listo el pipeline P&L
+      (`cronklam/lharmonie-pnl-upload`), conectar al pipeline real.
+- [ ] `/productos → Artículos` actualmente muestra agrupado por
+      proveedor + categoría (resumen útil pero no la lista granular
+      del Sheet "Artículos" — eso lo hacía la API key del dash viejo
+      contra el tab "Artículos" de Facturas. Ver si se quiere migrar
+      esa data específica más adelante).
+
+---
+
+## Relación con otros repos
+
+- **lharmonie-staff** (`cronklam/lharmonie-staff`): app de staff. Misma
+  paleta, mismo shell. Auth secret **distinto** (cookies no intercambiables).
+- **lharmonie-bot** (`cronklam/lharmonie-bot`): bot de Telegram que
   escribe facturas al Sheet que lee este dashboard.
-- **lharmonie-pnl-upload** (`cronklam/lharmonie-pnl-upload`): Pipeline
-  de P&L; el módulo `/operaciones → P&L` (placeholder hoy) eventualmente
-  se va a integrar acá o coexistir con un dashboard separado.
+- **lh-staff-whatsapp** (`cronklam/lh-staff-whatsapp`): worker de Railway
+  que también escribe al Sheet (`/update-estado`). El dashboard usa
+  este mismo worker para "marcar pagada".
+- **lharmonie-pnl-upload** (`cronklam/lharmonie-pnl-upload`): pipeline
+  de P&L; eventualmente alimenta `/pyl`.
