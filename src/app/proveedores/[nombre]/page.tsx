@@ -221,7 +221,7 @@ function SmallCard({
         {label}
       </div>
       <div
-        className="font-brand heading-tight"
+        className="font-brand heading-tight tabular-nums-strict"
         style={{
           fontSize: 18,
           fontWeight: 700,

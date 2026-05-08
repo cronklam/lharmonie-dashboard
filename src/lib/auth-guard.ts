@@ -4,7 +4,8 @@
 
 import { NextResponse } from 'next/server';
 import { verifySession, type SessionData } from './session';
-import { isAuthorized } from './authorized-emails';
+import { isAuthorized } from './users';
+import { refreshSheetUsersCache } from './users-server';
 
 export class AuthError extends Error {
   status: number;
@@ -18,9 +19,10 @@ export async function getSessionUser(req: Request): Promise<SessionData | null> 
   const cookieHeader = req.headers.get('cookie');
   const session = await verifySession(cookieHeader);
   if (!session) return null;
-  // Defensa en profundidad: aunque la cookie sea válida, re-chequear
-  // que el email siga en la whitelist (por si lo sacamos del archivo
-  // y la cookie todavía vive).
+  // Hidratar cache desde el Sheet (TTL 60s) antes de validar — para que
+  // un usuario recién agregado/quitado del Sheet impacte sin esperar al
+  // próximo cold start.
+  await refreshSheetUsersCache();
   if (!isAuthorized(session.email)) return null;
   return session;
 }

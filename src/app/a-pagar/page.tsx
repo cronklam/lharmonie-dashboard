@@ -89,7 +89,7 @@ export default function APagarPage() {
             Total a pagar
           </div>
           <div
-            className="font-brand heading-tight-lg"
+            className="font-brand heading-tight-lg tabular-nums-strict"
             style={{
               fontSize: 32,
               fontWeight: 700,
@@ -149,31 +149,67 @@ export default function APagarPage() {
         </div>
 
         {/* Lista */}
-        {loading && (
-          <div
-            style={{
-              padding: '24px 0',
-              color: 'var(--text-muted)',
-              textAlign: 'center',
-              fontSize: 14,
-            }}
-          >
-            Cargando facturas…
+        {loading && filtered.length === 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div
+                key={i}
+                className="shimmer-modern"
+                style={{ height: 76, borderRadius: 'var(--radius-md)' }}
+              />
+            ))}
           </div>
         )}
         {!loading && filtered.length === 0 && (
           <div
             style={{
-              padding: '40px 16px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
               textAlign: 'center',
-              color: 'var(--text-muted)',
+              padding: '40px 16px',
               background: 'var(--bg-card-alt)',
               border: '1px solid var(--border)',
               borderRadius: 'var(--radius-md)',
             }}
           >
-            <div style={{ fontSize: 28, marginBottom: 6 }}>🎉</div>
-            Todo al día
+            <svg
+              width="44"
+              height="44"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="var(--green)"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <circle cx="12" cy="12" r="9" />
+              <path d="m8 12 3 3 5-6" />
+            </svg>
+            <h3
+              style={{
+                fontSize: 16,
+                fontWeight: 600,
+                color: 'var(--text)',
+                marginTop: 10,
+              }}
+            >
+              Todo al día
+            </h3>
+            <p
+              style={{
+                fontSize: 13,
+                color: 'var(--text-muted)',
+                marginTop: 4,
+                maxWidth: 260,
+                lineHeight: 1.45,
+              }}
+            >
+              {localFilter || catFilter
+                ? 'No hay pendientes con esos filtros.'
+                : 'No hay facturas pendientes de pago.'}
+            </p>
           </div>
         )}
 

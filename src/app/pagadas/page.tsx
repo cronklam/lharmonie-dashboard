@@ -128,30 +128,54 @@ export default function PagadasPage() {
           </div>
         </div>
 
-        {loading && (
-          <div
-            style={{
-              padding: '24px 0',
-              textAlign: 'center',
-              color: 'var(--text-muted)',
-              fontSize: 14,
-            }}
-          >
-            Cargando…
+        {loading && filtered.length === 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div
+                key={i}
+                className="shimmer-modern"
+                style={{ height: 76, borderRadius: 'var(--radius-md)' }}
+              />
+            ))}
           </div>
         )}
         {!loading && filtered.length === 0 && (
           <div
             style={{
-              padding: '40px 16px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
               textAlign: 'center',
-              color: 'var(--text-muted)',
+              padding: '40px 16px',
               background: 'var(--bg-card-alt)',
               border: '1px solid var(--border)',
               borderRadius: 'var(--radius-md)',
             }}
           >
-            Sin resultados
+            <svg
+              width="44"
+              height="44"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="var(--text-dim)"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <rect x="3" y="6" width="18" height="13" rx="2" />
+              <path d="M3 10h18M7 15h3" />
+            </svg>
+            <p
+              style={{
+                fontSize: 13,
+                color: 'var(--text-muted)',
+                marginTop: 10,
+                lineHeight: 1.45,
+              }}
+            >
+              Sin resultados con esos filtros
+            </p>
           </div>
         )}
 
@@ -206,7 +230,7 @@ function SmallCard({ label, value }: { label: string; value: string }) {
         {label}
       </div>
       <div
-        className="font-brand heading-tight"
+        className="font-brand heading-tight tabular-nums-strict"
         style={{
           fontSize: 18,
           fontWeight: 700,

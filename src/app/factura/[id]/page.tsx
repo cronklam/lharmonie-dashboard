@@ -131,7 +131,7 @@ export default function FacturaDetailPage({
             Monto total
           </div>
           <div
-            className="font-brand heading-tight-lg"
+            className="font-brand heading-tight-lg tabular-nums-strict"
             style={{
               fontSize: 32,
               fontWeight: 700,

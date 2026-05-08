@@ -4,17 +4,10 @@ import Link from 'next/link';
 import { useAuth } from '../components/AuthProvider';
 import { PageHeader } from '../components/PageHeader';
 
-const ADMIN_EMAILS = ['martin.a.masri@gmail.com', 'cronklam@gmail.com'];
-
-function isAdmin(email: string | undefined): boolean {
-  if (!email) return false;
-  return ADMIN_EMAILS.includes(email.toLowerCase().trim());
-}
-
 export default function PerfilPage() {
-  const { user, loading, logout } = useAuth();
+  const { user, loading, logout, isOwner, isAdmin } = useAuth();
   if (loading || !user) return null;
-  const admin = isAdmin(user.email);
+  const admin = isAdmin;
 
   return (
     <div className="page-enter">
@@ -94,9 +87,16 @@ export default function PerfilPage() {
           <NavRow href="/buscar" label="Buscar" desc="Búsqueda global de facturas, proveedores, categorías" />
           {admin && (
             <NavRow
+              href="/perfil/usuarios"
+              label="Usuarios"
+              desc="Acceso al dashboard — solo administradores"
+            />
+          )}
+          {isOwner && (
+            <NavRow
               href="/pyl"
               label="P&L"
-              desc="Análisis financiero — solo administradores"
+              desc="Análisis financiero — solo owner"
               accent
             />
           )}

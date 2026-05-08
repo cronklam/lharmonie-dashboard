@@ -9,10 +9,13 @@ import {
 } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 
+export type AuthRole = 'owner' | 'admin' | 'viewer' | null;
+
 export interface AuthUser {
   email: string;
   name: string;
   picture: string;
+  role?: AuthRole;
 }
 
 interface AuthContextValue {
@@ -20,6 +23,8 @@ interface AuthContextValue {
   loading: boolean;
   setUser: (u: AuthUser | null) => void;
   logout: () => Promise<void>;
+  isOwner: boolean;
+  isAdmin: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -75,8 +80,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [router]);
 
+  const isOwner = user?.role === 'owner';
+  const isAdmin = user?.role === 'owner' || user?.role === 'admin';
+
   return (
-    <AuthContext.Provider value={{ user, loading, setUser, logout }}>
+    <AuthContext.Provider value={{ user, loading, setUser, logout, isOwner, isAdmin }}>
       {children}
     </AuthContext.Provider>
   );

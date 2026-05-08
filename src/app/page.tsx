@@ -299,7 +299,7 @@ export default function HomePage() {
             Total a pagar
           </div>
           <div
-            className="font-brand heading-tight-lg"
+            className="font-brand heading-tight-lg tabular-nums-strict"
             style={{
               fontSize: 40,
               fontWeight: 700,
@@ -320,7 +320,7 @@ export default function HomePage() {
           </div>
           <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>
             <Link
-              href="/a-pagar"
+              href="/pagos"
               className="btn-glow-accent spring-tap"
               style={{
                 height: 38,
@@ -332,7 +332,7 @@ export default function HomePage() {
                 fontSize: 13,
               }}
             >
-              Ver pendientes →
+              Ir a Pagos →
             </Link>
             <button
               onClick={refresh}
@@ -352,6 +352,77 @@ export default function HomePage() {
               ↻ {loading ? 'Cargando…' : 'Actualizar'}
             </button>
           </div>
+        </div>
+      </section>
+
+      {/* Acceso rápido — atajos a las funciones más usadas. Mantenido fijo
+          (4 items) para mantener el scope acotado; futuro: configurable
+          via localStorage como hace staff. */}
+      <section>
+        <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 4 }}>
+          <EyebrowTag>Acceso rápido</EyebrowTag>
+          <Link
+            href="/funciones"
+            className="spring-tap"
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: 'var(--accent)',
+              textDecoration: 'none',
+            }}
+          >
+            Ver todas →
+          </Link>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+          <QuickTile
+            href="/a-pagar"
+            label="A pagar"
+            iconBg="rgba(217,95,78,0.10)"
+            iconColor="#C84F3F"
+            badge={pendientes.length}
+            icon={
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.7" />
+                <path d="M12 7v5l3 2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            }
+          />
+          <QuickTile
+            href="/pagadas"
+            label="Pagadas"
+            iconBg="var(--green-bg)"
+            iconColor="var(--green)"
+            icon={
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.7" />
+                <path d="m8 12 3 3 5-6" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            }
+          />
+          <QuickTile
+            href="/proveedores"
+            label="Proveedores"
+            iconBg="rgba(78,52,46,0.10)"
+            iconColor="#4E342E"
+            icon={
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                <path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h2m2 0h2m-6 4h2m2 0h2m-6 4h2m2 0h2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            }
+          />
+          <QuickTile
+            href="/productos"
+            label="Productos"
+            iconBg="rgba(21,101,192,0.10)"
+            iconColor="#1565C0"
+            icon={
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                <path d="M21 8 12 3 3 8v8l9 5 9-5V8z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+                <path d="M3.3 8.3 12 13l8.7-4.7M12 22V13" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+              </svg>
+            }
+          />
         </div>
       </section>
 
@@ -407,7 +478,7 @@ export default function HomePage() {
             : 'Gasto total'}
         </div>
         <div
-          className="font-brand heading-tight-lg"
+          className="font-brand heading-tight-lg tabular-nums-strict"
           style={{
             fontSize: 28,
             fontWeight: 700,
@@ -557,6 +628,7 @@ export default function HomePage() {
                     </div>
                   </div>
                   <div
+                    className="tabular-nums-strict"
                     style={{
                       fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
                       fontWeight: 700,
@@ -684,6 +756,69 @@ export default function HomePage() {
         </section>
       )}
 
+      {/* Todas las funciones — atajo a la grilla completa */}
+      <section>
+        <Link
+          href="/funciones"
+          className="spring-tap"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            padding: 14,
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-md)',
+            boxShadow: 'var(--shadow-card)',
+            color: 'var(--text)',
+            minHeight: 'var(--touch-min)',
+          }}
+        >
+          <div
+            aria-hidden
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 14,
+              background: 'var(--accent-bg)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <rect x="3" y="3" width="7" height="7" rx="1.5" stroke="var(--accent)" strokeWidth="1.8" />
+              <rect x="14" y="3" width="7" height="7" rx="1.5" stroke="var(--accent)" strokeWidth="1.8" />
+              <rect x="3" y="14" width="7" height="7" rx="1.5" stroke="var(--accent)" strokeWidth="1.8" />
+              <rect x="14" y="14" width="7" height="7" rx="1.5" stroke="var(--accent)" strokeWidth="1.8" />
+            </svg>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14.5, fontWeight: 600, color: 'var(--text)' }}>
+              Todas las funciones
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+              Pagos, Revisar, Equipo y más
+            </div>
+          </div>
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="var(--text-muted)"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+            style={{ flexShrink: 0 }}
+          >
+            <path d="m9 18 6-6-6-6" />
+          </svg>
+        </Link>
+      </section>
+
       {/* Cargadas hoy (oculto si vacío) */}
       {hoyFacts.length > 0 && (
         <section>
@@ -747,6 +882,97 @@ export default function HomePage() {
       )}
 
     </div>
+  );
+}
+
+function QuickTile({
+  href,
+  label,
+  icon,
+  iconBg,
+  iconColor,
+  badge,
+}: {
+  href: string;
+  label: string;
+  icon: React.ReactNode;
+  iconBg: string;
+  iconColor: string;
+  badge?: number;
+}) {
+  const showBadge = typeof badge === 'number' && badge > 0;
+  return (
+    <Link
+      href={href}
+      className="spring-tap"
+      style={{
+        position: 'relative',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 6,
+        padding: '12px 6px',
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius-md)',
+        boxShadow: 'var(--shadow-card)',
+        color: 'var(--text)',
+        textAlign: 'center',
+        minHeight: 88,
+      }}
+    >
+      <div
+        aria-hidden
+        style={{
+          width: 44,
+          height: 44,
+          borderRadius: 14,
+          background: iconBg,
+          color: iconColor,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          position: 'relative',
+        }}
+      >
+        {icon}
+        {showBadge && (
+          <span
+            aria-hidden
+            className="tabular-nums-strict"
+            style={{
+              position: 'absolute',
+              top: -4,
+              right: -6,
+              minWidth: 18,
+              height: 18,
+              padding: '0 5px',
+              borderRadius: 999,
+              background: '#D95F4E',
+              color: '#FDFBF8',
+              fontSize: 9.5,
+              fontWeight: 700,
+              lineHeight: '18px',
+              textAlign: 'center',
+              boxShadow: '0 0 0 2px var(--bg-card)',
+            }}
+          >
+            {badge! > 99 ? '99+' : badge}
+          </span>
+        )}
+      </div>
+      <span
+        style={{
+          fontSize: 11,
+          fontWeight: 600,
+          color: 'var(--text)',
+          lineHeight: 1.15,
+          letterSpacing: '-0.005em',
+        }}
+      >
+        {label}
+      </span>
+    </Link>
   );
 }
 

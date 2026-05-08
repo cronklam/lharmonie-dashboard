@@ -105,30 +105,44 @@ lharmonie-dashboard/
 
 ## Bottom nav: 5 tabs (en orden)
 
-| # | Tab | Ruta | Notas |
-|---|-----|------|-------|
-| 1 | Inicio | `/` | Hero "Total a pagar" + KPIs + deuda x proveedor + charts |
-| 2 | A pagar | `/a-pagar` | Lista filtrable. Badge dorado con count de pendientes |
-| 3 | Pagadas | `/pagadas` | Historial con búsqueda + filtros |
-| 4 | Proveedores | `/proveedores` | Ranking con KPIs |
-| 5 | Productos | `/productos` | Toggle Food Cost / Artículos |
+Espejo del patrón staff (`page.tsx:1505-1619`): glass blur 86%, sliding
+pill con `cubic-bezier(0.32, 0.72, 0, 1)`, crossfade outlined→filled,
+portal a `document.body`. **No es SPA** — cada tab es un `<Link>` y la
+pill anima entre rutas (Next App Router preserva el layout).
 
-Páginas accesibles desde el TopNav o el Perfil (no en el bottom nav):
+| # | Tab | Ruta principal | Match (rutas hijas) | Visible para |
+|---|-----|----------------|---------------------|---------------|
+| 1 | **Home** | `/` | `/`, `/funciones` | Todos |
+| 2 | **Pagos** | `/pagos` | `/pagos`, `/a-pagar`, `/pagadas`, `/factura/*` | Todos |
+| 3 | **Revisar** | `/revisar` | `/revisar`, `/proveedores/*`, `/productos`, `/buscar` | Todos |
+| 4 | **P&L** | `/pyl` | `/pyl` | Solo `owner` |
+| 5 | **Perfil** | `/perfil` | `/perfil/*` | Todos |
 
-- **Buscar** (`/buscar`): ícono de lupa en el TopNav.
-- **Perfil** (`/perfil`): tap en la tab Perfil… espera, **NO** hay tab
-  Perfil en este dashboard. Perfil se accede entrando a `/perfil`
-  directamente o desde un futuro link. Por ahora solo se muestra
-  como esquema de navegación.
-  > **Decisión:** las 5 tabs reflejan el flujo de facturas (que es lo
-  > primero que hace Martín). Perfil no es una tab porque no se usa
-  > seguido. El usuario sigue tipándolo en la URL o lo agregamos al
-  > TopNav más adelante.
-- **P&L** (`/pyl`): solo admins (`martin.a.masri@gmail.com`,
-  `cronklam@gmail.com`). Si el usuario no es admin, redirect a `/`.
-  Por ahora es un placeholder.
-- **Detalle factura** (`/factura/[id]`): tap en una factura.
+Owner ve los 5 tabs; admin/viewer ven 4 (sin P&L).
+
+### Hubs
+
+- **`/pagos`** — hub de operación: hero deuda total + cards "A pagar"
+  (con badge), "Pagadas" (count del mes), "Buscar factura" + top 3
+  deudores. Las cards linkean a las páginas existentes (`/a-pagar`,
+  `/pagadas`, `/buscar`).
+- **`/revisar`** — hub de análisis: stats (proveedores únicos,
+  categorías) + cards "Proveedores", "Productos / Food Cost", "Buscar
+  global".
+- **`/funciones`** — grilla 4-col agrupada por sección (Pagos /
+  Revisar / Análisis / Equipo). Filtrada por capabilities del rol.
+  Accesible desde Home ("Acceso rápido → Ver todas") y desde el botón
+  "Todas las funciones" al pie del Home.
+
+### Otras rutas
+
+- **Buscar** (`/buscar`): lupa en TopNav + accesible desde Pagos / Revisar / Funciones.
+- **Usuarios** (`/perfil/usuarios`): admin (`owner` o `admin`) puede ver;
+  solo `owner` puede crear/editar/desactivar.
+- **Detalle factura** (`/factura/[id]`): tap en una card. Highlight en
+  tab "Pagos".
 - **Detalle proveedor** (`/proveedores/[nombre]`): tap en un proveedor.
+  Highlight en tab "Revisar".
 
 ---
 
@@ -181,25 +195,43 @@ Esos overrides van AL FINAL de `globals.css` (`/* ── Lharmonie Dashboard
    SameSite=Lax, Secure en prod).
 6. `AuthProvider` polea `/api/auth/session` al iniciar.
 
-### Whitelist (única fuente de gating)
+### Sistema de usuarios (Sheet-backed con fallback hardcoded)
 
-`src/lib/authorized-emails.ts`:
+**Fuente de verdad:** tab `Usuarios` del Sheet de Facturas
+(`FACTURAS_SHEET_ID`), columnas `Email | Nombre | Rol | Activo |
+Agregado por | Fecha`.
 
-```ts
-export const AUTHORIZED_EMAILS = [
-  'martin.a.masri@gmail.com',
-  'cronklam@gmail.com',
-  // 'iara.zayat@gmail.com',  // ← agregar cuando Martín confirme
-] as const;
-```
+**Fallback:** `AUTHORIZED_USERS` hardcoded en `src/lib/users.ts` —
+seed inicial de owners (Martin + Cronklam). Si el Sheet no responde
+(falta `GOOGLE_CREDENTIALS` o el tab no existe), el dashboard sigue
+funcionando con la lista hardcoded.
 
-Se chequea **dos veces**: en `/api/auth/login` (al crear sesión) y
-en `/api/auth/session` + `withAuth` (defensa en profundidad).
+**Cache runtime:** TTL 60s en proceso (`setSheetUsers/getSheetUsers`).
+Cada `getSessionUser` llama `refreshSheetUsersCache()` antes de validar
+para que cambios en el Sheet impacten al próximo poll de sesión.
 
-### Admin-only (P&L)
+**Roles del dashboard** (definidos en `lib/users.ts`):
 
-`/pyl` está gated por `ADMIN_EMAILS = ['martin.a.masri@gmail.com', 'cronklam@gmail.com']`.
-Cualquier otro email autorizado entra al dashboard pero no a P&L.
+| Rol | Capabilities |
+|-----|-------------|
+| `owner` | Todo + P&L + gestión de usuarios (CRUD) |
+| `admin` | Dashboard completo + marcar pagadas. Puede VER usuarios pero no editar |
+| `viewer` | Solo lectura — sin marcar pagadas |
+
+Espejo del patrón staff (`~/Desktop/lharmonie-staff/src/lib/users.ts`)
+pero simplificado: el dashboard tiene un universo más chico que el
+staff, así que 3 niveles claros en lugar de 11.
+
+**API:**
+- `GET /api/usuarios` (admin/owner) → `{ users, allRows, source }`.
+  Hidrata cache. Autocrea el tab "Usuarios" + headers + seed si no existe.
+- `POST /api/usuarios` (owner only) → upsert por email
+  (`{ email, name, role, activo }`). Validación email + rol server-side.
+
+**Defensa en profundidad:** se chequea isAuthorized en `/api/auth/login`
+(crear sesión) y en `withAuth` para cada request a /api/* que sirva data
+sensible. `getUserRole()` se usa en `/api/auth/session` para devolver el
+rol al cliente; `AuthProvider` expone `isOwner` / `isAdmin`.
 
 ### Defensa en profundidad
 
@@ -225,7 +257,9 @@ Cualquier otro email autorizado entra al dashboard pero no a P&L.
   - `GET /api/foodcost` → `{ ok, items }` con `articulo`, `categoria`, `costoIVA`, `pv`, `fcPct`, `fcIdeal`, `revisar`, `faltaCosto`.
 - **Cache:** `revalidate: 60` para Facturas, `revalidate: 300` para Recetario.
 
-### Escritura — única operación
+### Escrituras
+
+**(1) Marcar factura pagada** — proxea al worker.
 
 `POST /api/factura/marcar-pagada` con body
 `{ nroFactura, proveedor, fecha, filaExacta }`.
@@ -235,9 +269,18 @@ Internamente proxea al **worker de Railway**:
 - `POST /update-estado` con header `x-api-secret: $API_SECRET`
 - Mismo body + `fechaPago = new Date().toLocaleDateString('es-AR')`.
 
-El worker es el único componente con permiso de escritura al Sheet
-(escribe el medio de pago + fecha en la fila exacta). El bot de Telegram
-también lo usa. **Nunca escribir directo desde Next.js al Sheet.**
+El worker escribe medio de pago + fecha en la fila exacta. El bot de
+Telegram también lo usa. Para `marcar-pagada` **no escribir directo al
+Sheet desde Next.js** — sigue pasando por el worker.
+
+**(2) Tab "Usuarios"** — escribe directo desde Next.js con service
+account.
+
+`POST /api/usuarios` (owner only) usa `googleapis` con
+`GOOGLE_CREDENTIALS` (service account JSON) para hacer upsert en el tab
+"Usuarios" del Sheet de Facturas. Diferente de marcar-pagada porque la
+gestión de acceso es responsabilidad del dashboard mismo (no del
+worker), y el worker no expone endpoints genéricos de upsert.
 
 ### Mapping de columnas (`COL` en `FacturasStore.tsx`)
 
@@ -264,6 +307,7 @@ procesado:'Procesado', imagen:'Imagen', mes:'Mes', anio:'Año'
 | `RECETARIO_SHEET_ID` | `15tlHXgIKznAxjc8Accpe6xVK4ghaMcUo0Uwq1-A4b6E` | opcional, hay default en código |
 | `WORKER_URL` | `https://worker-production-7f89.up.railway.app` | worker Railway que escribe al Sheet |
 | `API_SECRET` | `lharmonie2026` | mismo que el dash viejo + bot Telegram |
+| `GOOGLE_CREDENTIALS` | JSON del service account | Necesario para escribir el tab "Usuarios". Si falta, el sistema cae a la lista hardcoded de `AUTHORIZED_USERS` y el botón "Agregar usuario" da error visible. Mismo service account que usa el staff sirve. |
 
 `.env.example` tiene la plantilla local.
 
@@ -271,18 +315,24 @@ procesado:'Procesado', imagen:'Imagen', mes:'Mes', anio:'Año'
 
 ## Reglas que no se deben romper
 
-1. **READ-ONLY al Sheet, salvo "Marcar pagada"** que pasa por el worker.
-   Cualquier operación de write nueva debe revisar primero CON Martín.
-2. **Visualmente IDÉNTICO al staff** (excepto top nav exclusive).
-   No reinventar componentes ni animaciones — copiarlas.
+1. **Sheet de Facturas es READ-ONLY desde Next.js,** salvo:
+   - `Marcar pagada` → worker Railway.
+   - Tab `Usuarios` → service account directo (`GOOGLE_CREDENTIALS`).
+
+   Cualquier write nuevo a otro tab debe revisar primero CON Martín.
+2. **Sistema de usuarios Sheet-backed con fallback hardcoded.**
+   Owner se mantiene en `AUTHORIZED_USERS` (`lib/users.ts`) por si el
+   Sheet se rompe — nunca quitar a Martin/Cronklam de ahí.
 3. **Mobile-first.** Todo cambio de UI debe verse bien en celular.
-4. **Whitelist hardcoded.** No leer usuarios de Sheet ni DB.
-5. **No agregar a Iara** hasta que Martín confirme su email.
-6. **`AUTH_SECRET` distinto del staff.** Si compartimos secret, las cookies
+4. **`AUTH_SECRET` distinto del staff.** Si compartimos secret, las cookies
    son intercambiables → fuga del modelo de auth.
-7. **Mantener Chart.js**, no migrar a Recharts.
-8. **El bot de Telegram** sigue siendo el único punto de entrada para
+5. **Mantener Chart.js**, no migrar a Recharts.
+6. **El bot de Telegram** sigue siendo el único punto de entrada para
    crear facturas; el dashboard solo lee y marca pagadas.
+7. **Diseño:** el shell visual (TopNav, BottomNav, animaciones, paleta,
+   tipografía) sigue siendo réplica del staff. `DESIGN.md` (raíz del
+   repo) es referencia/brújula — usalo cuando el staff no cubra un
+   patrón (datos sensibles, OTP, type-to-confirm, etc).
 
 ---
 

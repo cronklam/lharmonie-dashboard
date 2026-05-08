@@ -296,6 +296,7 @@ export default function ProveedoresPage() {
                       </div>
                     </div>
                     <div
+                      className="tabular-nums-strict"
                       style={{
                         fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
                         fontWeight: 700,
@@ -347,7 +348,7 @@ function KPI({
         {label}
       </div>
       <div
-        className="font-brand"
+        className="font-brand tabular-nums-strict"
         style={{
           fontSize: 14.5,
           fontWeight: 700,

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { google } from 'googleapis';
-import { isAuthorized } from '@/lib/authorized-emails';
+import { isAuthorized } from '@/lib/users';
+import { refreshSheetUsersCache } from '@/lib/users-server';
 import { createSessionCookie } from '@/lib/session';
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
@@ -32,6 +33,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Invalid token' }, { status: 401 });
     }
 
+    await refreshSheetUsersCache();
     if (!isAuthorized(payload.email)) {
       return NextResponse.json(
         { ok: false, error: 'not_authorized', email: payload.email },

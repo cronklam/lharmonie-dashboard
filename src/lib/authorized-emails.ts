@@ -1,20 +1,20 @@
-/**
- * Lista hardcoded de emails autorizados a entrar al dashboard.
- *
- * Este dashboard es PRIVADO — solo management de Lharmonie. A diferencia
- * del staff app (que lee usuarios desde un Sheet), acá la lista vive en
- * código para mantenerlo aislado y controlado por commit.
- *
- * Para agregar a alguien, agregá su email acá y pusheá. Vercel auto-deploy.
- */
-export const AUTHORIZED_EMAILS: readonly string[] = [
-  'martin.a.masri@gmail.com',
-  'cronklam@gmail.com',
-  // 'iara.zayat@gmail.com',  // ← agregar cuando Martín confirme el email exacto de Iara
-] as const;
+// Shim de compatibilidad. La fuente de verdad es `lib/users.ts` —
+// ahora con sistema Sheet-backed (tab "Usuarios" del Sheet de Facturas)
+// con fallback hardcoded a `AUTHORIZED_USERS`.
+//
+// Este archivo se mantiene para no romper imports existentes.
 
-export function isAuthorized(email: string | undefined | null): boolean {
-  if (!email) return false;
-  const normalized = email.toLowerCase().trim();
-  return AUTHORIZED_EMAILS.some((e) => e.toLowerCase().trim() === normalized);
-}
+export {
+  AUTHORIZED_USERS,
+  isAuthorized,
+  isAdmin,
+  isOwner,
+  findUserByEmail,
+  getUserRole,
+  hasCapability,
+  type Role,
+  type UserConfig,
+  type Capability,
+} from './users';
+
+export type AuthorizedUser = import('./users').UserConfig;

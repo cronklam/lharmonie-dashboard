@@ -6,25 +6,18 @@ import { useAuth } from '../components/AuthProvider';
 import { PageHeader } from '../components/PageHeader';
 import EyebrowTag from '../components/EyebrowTag';
 
-const ADMIN_EMAILS = ['martin.a.masri@gmail.com', 'cronklam@gmail.com'];
-
-function isAdmin(email: string | undefined): boolean {
-  if (!email) return false;
-  return ADMIN_EMAILS.includes(email.toLowerCase().trim());
-}
-
 export default function PylPage() {
-  const { user, loading } = useAuth();
+  const { user, loading, isOwner } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (!loading && user && !isAdmin(user.email)) {
+    if (!loading && user && !isOwner) {
       router.replace('/');
     }
-  }, [user, loading, router]);
+  }, [user, loading, isOwner, router]);
 
   if (loading || !user) return null;
-  if (!isAdmin(user.email)) return null;
+  if (!isOwner) return null;
 
   return (
     <div className="page-enter">
