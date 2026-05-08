@@ -518,6 +518,7 @@ export default function HomePage() {
               }}
             >
               {ultima[COL.proveedor] || '—'} · {ultima[COL.fecha] || '—'}
+              {ultima[COL.local] ? ` · ${shortLocal(ultima[COL.local])}` : ''}
             </div>
           </div>
         </section>
