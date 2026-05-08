@@ -1,7 +1,9 @@
 // Lharmonie Dashboard service worker — cache pasivo de la shell.
 // No cachea ni APIs ni Sheets — solo assets estáticos del shell.
-const CACHE = 'lharmonie-dash-v1';
-const SHELL = ['/', '/icon-192.png', '/icon-512.png', '/manifest.json'];
+const CACHE = 'lharmonie-dash-v2';
+// No precacheamos `/` porque después de un deploy el HTML cacheado referencia
+// chunks viejos que ya no existen → la PWA se rompe silenciosamente.
+const SHELL = ['/icon-192.png', '/icon-512.png', '/manifest.json'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)));

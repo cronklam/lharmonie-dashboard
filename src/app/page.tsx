@@ -96,7 +96,7 @@ function todayKey(): { ddmm: string; ddmmyyyy: string } {
 
 export default function HomePage() {
   const { user, loading: authLoading } = useAuth();
-  const { facturas, loading, error, refresh } = useFacturasStore();
+  const { facturas, loading, slowLoad, error, refresh } = useFacturasStore();
   const [periodo, setPeriodo] = useState<Periodo>('mes');
 
   // Pendientes / pagadas (sin filtro de periodo — el "Total a pagar"
@@ -230,6 +230,56 @@ export default function HomePage() {
 
   return (
     <div className="page-enter px-4 pt-4 lh-inicio-stagger" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      {/* Status banner — visible solo en estados anómalos (loading inicial,
+          slow load, o error). Mejor que mostrar zeros sin contexto. */}
+      {(loading && facturas.length === 0) || slowLoad || error ? (
+        <section
+          style={{
+            background: error
+              ? 'rgba(217,95,78,0.10)'
+              : 'rgba(196,160,103,0.10)',
+            color: error ? '#C84F3F' : 'var(--text-muted)',
+            border: `1px solid ${
+              error ? 'rgba(217,95,78,0.30)' : 'rgba(196,160,103,0.25)'
+            }`,
+            padding: '10px 14px',
+            borderRadius: 'var(--radius-md)',
+            fontSize: 13,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+          }}
+        >
+          <span>
+            {error
+              ? error
+              : slowLoad
+              ? 'Tardando más de lo normal… cold start del servidor.'
+              : 'Cargando facturas…'}
+          </span>
+          {(error || slowLoad) && (
+            <button
+              onClick={refresh}
+              disabled={loading}
+              className="spring-tap"
+              style={{
+                fontSize: 12,
+                fontWeight: 600,
+                padding: '6px 12px',
+                borderRadius: 'var(--radius-sm)',
+                background: 'rgba(255,255,255,0.06)',
+                color: 'var(--text)',
+                border: '1px solid rgba(196,160,103,0.30)',
+                opacity: loading ? 0.5 : 1,
+              }}
+            >
+              ↻ Reintentar
+            </button>
+          )}
+        </section>
+      ) : null}
+
       {/* Saludo + Hero "Total a pagar" */}
       <section>
         <div style={{ marginBottom: 8 }}>
@@ -695,19 +745,6 @@ export default function HomePage() {
         </section>
       )}
 
-      {error && (
-        <section
-          style={{
-            background: 'rgba(217,95,78,0.10)',
-            color: '#C84F3F',
-            padding: 14,
-            borderRadius: 'var(--radius-md)',
-            fontSize: 13.5,
-          }}
-        >
-          {error}
-        </section>
-      )}
     </div>
   );
 }

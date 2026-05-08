@@ -126,6 +126,8 @@ export function mesLabel(idx: number): string {
 interface StoreValue {
   facturas: Factura[];
   loading: boolean;
+  // True cuando un fetch está tardando >8s — para mostrar warning de cold start.
+  slowLoad: boolean;
   error: string | null;
   refresh: () => Promise<void>;
   pendingCount: number;
@@ -145,6 +147,7 @@ export function useFacturasStore(): StoreValue {
     return {
       facturas: [],
       loading: false,
+      slowLoad: false,
       error: null,
       refresh: async () => {},
       pendingCount: 0,
@@ -158,35 +161,72 @@ export function useFacturasStore(): StoreValue {
 export function FacturasProvider({ children }: { children: React.ReactNode }) {
   const [facturas, setFacturas] = useState<Factura[]>([]);
   const [loading, setLoading] = useState(true);
+  const [slowLoad, setSlowLoad] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
+    setSlowLoad(false);
     setError(null);
-    try {
-      const res = await fetch('/api/facturas', { cache: 'no-store' });
-      const data = await res.json();
-      if (data.ok) {
-        const rawRows = (data.facturas || []) as Array<
-          Record<string, string | number | undefined>
-        >;
-        // _sheetRow llega como number; lo convertimos a string para que el
-        // tipo Factura sea coherente con su index signature.
-        const withIds: Factura[] = rawRows.map((r, i) => {
-          const out: Factura = {};
-          for (const [k, v] of Object.entries(r)) {
-            out[k] = v === undefined || v === null ? '' : String(v);
-          }
-          out._id = String(r._sheetRow ?? i);
-          return out;
+
+    // Marcar como "slow" después de 8s para que la UI pueda avisar al usuario
+    // que es cold-start del Sheets API (sin abortar el fetch).
+    const slowTimer = setTimeout(() => setSlowLoad(true), 8000);
+
+    // Hace UN intento de fetch con timeout duro de 25s.
+    const attempt = async (): Promise<Response> => {
+      const ctrl = new AbortController();
+      const killer = setTimeout(() => ctrl.abort(), 25000);
+      try {
+        return await fetch('/api/facturas', {
+          cache: 'no-store',
+          signal: ctrl.signal,
         });
-        setFacturas(withIds);
-      } else {
-        setError(data.error || 'Error cargando facturas');
+      } finally {
+        clearTimeout(killer);
       }
-    } catch {
-      setError('Error de conexión');
+    };
+
+    let res: Response;
+    try {
+      try {
+        res = await attempt();
+      } catch (firstErr) {
+        // Retry una vez en caso de network error / abort (cubre cold start
+        // de Vercel donde la primera invocación puede 504 si el Sheet es grande).
+        console.warn('[facturas] primer intento falló, reintentando…', firstErr);
+        res = await attempt();
+      }
+
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        const msg =
+          data?.error || `Error ${res.status} cargando facturas`;
+        console.error('[facturas] respuesta no OK', { status: res.status, data });
+        setError(msg);
+        return;
+      }
+
+      const rawRows = (data.facturas || []) as Array<
+        Record<string, string | number | undefined>
+      >;
+      // _sheetRow llega como number; lo convertimos a string para que el
+      // tipo Factura sea coherente con su index signature.
+      const withIds: Factura[] = rawRows.map((r, i) => {
+        const out: Factura = {};
+        for (const [k, v] of Object.entries(r)) {
+          out[k] = v === undefined || v === null ? '' : String(v);
+        }
+        out._id = String(r._sheetRow ?? i);
+        return out;
+      });
+      setFacturas(withIds);
+    } catch (err) {
+      console.error('[facturas] error de red/timeout', err);
+      setError('Error de conexión — tocá Actualizar para reintentar.');
     } finally {
+      clearTimeout(slowTimer);
+      setSlowLoad(false);
       setLoading(false);
     }
   }, []);
@@ -229,6 +269,7 @@ export function FacturasProvider({ children }: { children: React.ReactNode }) {
   const value: StoreValue = {
     facturas,
     loading,
+    slowLoad,
     error,
     refresh,
     pendingCount,
