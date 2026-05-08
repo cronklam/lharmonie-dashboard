@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../components/AuthProvider';
 import { PageHeader } from '../components/PageHeader';
+import { CostosNav } from '../components/CostosNav';
 import {
   COL,
   fmtMoney,
@@ -33,10 +34,11 @@ export default function ProductosPage() {
   return (
     <div className="page-enter">
       <PageHeader
-        title="Productos"
+        title="Costos"
         subtitle={view === 'foodcost' ? 'Food Cost' : 'Artículos comprados'}
       />
-      <div className="px-4 pt-4" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <CostosNav />
+      <div className="px-4 pt-3" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {/* Toggle */}
         <div
           style={{

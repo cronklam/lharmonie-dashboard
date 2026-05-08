@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { useAuth } from '../components/AuthProvider';
 import { PageHeader } from '../components/PageHeader';
+import { CostosNav } from '../components/CostosNav';
 import {
   COL,
   fmtMoney,
@@ -112,10 +113,11 @@ export default function ProveedoresPage() {
   return (
     <div className="page-enter">
       <PageHeader
-        title="Proveedores"
+        title="Costos"
         subtitle={`${ranking.length} proveedor${ranking.length !== 1 ? 'es' : ''}`}
       />
-      <div className="px-4 pt-4" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <CostosNav />
+      <div className="px-4 pt-3" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {/* Filtros */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <input

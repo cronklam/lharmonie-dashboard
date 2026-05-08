@@ -8,16 +8,18 @@ import { useFacturasStore } from './FacturasStore';
 
 // Replica del BottomTabBar del staff: glass blur + sliding pill +
 // crossfade outline/filled icons. 5 tabs del dashboard:
-// Inicio, A pagar (con badge), Pagadas, Proveedores, Productos.
+// Inicio, A pagar (con badge), Pagadas, Costos (proveedores+productos), Perfil.
+// Costos unifica /proveedores y /productos; el toggle interno (CostosNav)
+// permite pasar de una vista a la otra sin salir de la sección.
 
-type TabId = 'inicio' | 'apagar' | 'pagadas' | 'proveedores' | 'productos';
+type TabId = 'inicio' | 'apagar' | 'pagadas' | 'costos' | 'perfil';
 
 const TABS: { id: TabId; label: string; href: string; match: (p: string) => boolean }[] = [
-  { id: 'inicio', label: 'Inicio', href: '/', match: (p) => p === '/' || p === '/perfil' || p === '/buscar' || p === '/pyl' },
+  { id: 'inicio', label: 'Inicio', href: '/', match: (p) => p === '/' || p === '/buscar' },
   { id: 'apagar', label: 'A pagar', href: '/a-pagar', match: (p) => p.startsWith('/a-pagar') || p.startsWith('/factura') },
   { id: 'pagadas', label: 'Pagadas', href: '/pagadas', match: (p) => p.startsWith('/pagadas') },
-  { id: 'proveedores', label: 'Proveedores', href: '/proveedores', match: (p) => p.startsWith('/proveedores') },
-  { id: 'productos', label: 'Productos', href: '/productos', match: (p) => p.startsWith('/productos') },
+  { id: 'costos', label: 'Costos', href: '/proveedores', match: (p) => p.startsWith('/proveedores') || p.startsWith('/productos') },
+  { id: 'perfil', label: 'Perfil', href: '/perfil', match: (p) => p.startsWith('/perfil') || p.startsWith('/pyl') },
 ];
 
 function NavIconOutline({ id, color }: { id: TabId; color: string }) {
@@ -44,7 +46,7 @@ function NavIconOutline({ id, color }: { id: TabId; color: string }) {
         <path d="m8 12 3 3 5-6" stroke={color} strokeWidth={sw + 0.2} strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     );
-  if (id === 'proveedores')
+  if (id === 'costos')
     return (
       <svg width={26} height={26} viewBox="0 0 24 24" fill="none">
         <path d="M3 9l1.5-4h15L21 9" stroke={color} strokeWidth={sw} strokeLinejoin="round" />
@@ -52,10 +54,11 @@ function NavIconOutline({ id, color }: { id: TabId; color: string }) {
         <path d="M9 14h6" stroke={color} strokeWidth={sw} strokeLinecap="round" />
       </svg>
     );
+  // perfil — círculo cabeza + arco hombros
   return (
     <svg width={26} height={26} viewBox="0 0 24 24" fill="none">
-      <path d="M12 3l9 4.5v9L12 21 3 16.5v-9z" stroke={color} strokeWidth={sw} strokeLinejoin="round" />
-      <path d="M3 7.5L12 12l9-4.5M12 12v9" stroke={color} strokeWidth={sw} strokeLinejoin="round" />
+      <circle cx="12" cy="8" r="4" stroke={color} strokeWidth={sw} />
+      <path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" stroke={color} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -82,18 +85,18 @@ function NavIconFilled({ id, color }: { id: TabId; color: string }) {
         <path d="m8 12 3 3 5-6" stroke="#FDFBF8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     );
-  if (id === 'proveedores')
+  if (id === 'costos')
     return (
       <svg width={26} height={26} viewBox="0 0 24 24" fill="none">
         <path d="M3 9l1.5-4h15L21 9z" fill={color} opacity="0.85" />
         <path d="M4 9v11a1 1 0 001 1h14a1 1 0 001-1V9H4z" fill={color} />
       </svg>
     );
+  // perfil filled
   return (
-    <svg width={26} height={26} viewBox="0 0 24 24" fill={color}>
-      <path d="M12 3l9 4.5L12 12 3 7.5z" />
-      <path d="M3 7.5L12 12v9L3 16.5z" opacity="0.85" />
-      <path d="M21 7.5L12 12v9l9-4.5z" opacity="0.7" />
+    <svg width={26} height={26} viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="8" r="4" fill={color} />
+      <path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6z" fill={color} />
     </svg>
   );
 }
