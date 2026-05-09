@@ -15,6 +15,7 @@ import {
   parseNum,
   useFacturasStore,
 } from '../components/FacturasStore';
+import { hasCapability } from '@/lib/users';
 
 // Hub /pagos — punto de entrada al ciclo de pagos. Muestra:
 //   1. Hero deuda total (tabular-nums) + chip count.
@@ -23,8 +24,10 @@ import {
 // Cada card linkea a la página existente para no romper deep-links.
 
 export default function PagosPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, isOwner } = useAuth();
   const { facturas, loading } = useFacturasStore();
+  const showServicios = isOwner && hasCapability(user?.email, 'servicios');
+  const showCaja = isOwner && hasCapability(user?.email, 'caja');
 
   const pendientes = useMemo(() => facturas.filter(esAPagar), [facturas]);
   const pagadas = useMemo(() => facturas.filter(esPagado), [facturas]);
@@ -148,6 +151,26 @@ export default function PagosPage() {
             label="Buscar factura"
             description="Por proveedor, número, CUIT o local"
           />
+          {showServicios && (
+            <ActionCard
+              href="/servicios"
+              iconBg="var(--warn-strong-bg)"
+              iconColor="var(--warn-strong)"
+              icon={<BoltIcon />}
+              label="Servicios"
+              description="Luz, agua, gas, alquiler, IVA, expensas"
+            />
+          )}
+          {showCaja && (
+            <ActionCard
+              href="/caja"
+              iconBg="var(--secure-bg)"
+              iconColor="var(--secure)"
+              icon={<CashIcon />}
+              label="Caja"
+              description="Saldo central · caja chica + grande"
+            />
+          )}
         </section>
 
         {/* Top 3 deudores */}
@@ -377,6 +400,29 @@ function SearchIcon() {
         strokeWidth="1.9"
         strokeLinecap="round"
       />
+    </svg>
+  );
+}
+
+function BoltIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="m13 2-9 13h7l-2 7 9-13h-7l2-7z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function CashIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <rect x="3" y="6" width="18" height="13" rx="2" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="12" cy="12.5" r="2.5" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M7 9h.01M17 16h.01" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
     </svg>
   );
 }

@@ -46,12 +46,18 @@ export type Capability =
   | 'productos'
   | 'pyl'
   | 'usuarios'
-  | 'marcar-pagada';
+  | 'marcar-pagada'
+  | 'servicios'
+  | 'caja'
+  | 'baigun';
 
 export const ROLE_CAPABILITIES: Record<Role, Capability[]> = {
   owner: [
     'inicio', 'a-pagar', 'pagadas', 'proveedores', 'productos',
     'pyl', 'usuarios', 'marcar-pagada',
+    // Servicios + Caja + Baigun: owner-only por seguridad (datos
+    // sensibles: cuentas bancarias, CBUs, saldos centrales, MyP).
+    'servicios', 'caja', 'baigun',
   ],
   admin: [
     'inicio', 'a-pagar', 'pagadas', 'proveedores', 'productos',

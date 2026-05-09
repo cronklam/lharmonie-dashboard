@@ -52,6 +52,22 @@ export default function FuncionesPage() {
         capability: 'pagadas',
       },
       {
+        href: '/servicios',
+        label: 'Servicios',
+        icon: <BoltIcon />,
+        color: 'var(--warn-strong)',
+        bg: 'var(--warn-strong-bg)',
+        capability: 'servicios',
+      },
+      {
+        href: '/caja',
+        label: 'Caja',
+        icon: <CashIcon />,
+        color: 'var(--secure)',
+        bg: 'var(--secure-bg)',
+        capability: 'caja',
+      },
+      {
         href: '/buscar',
         label: 'Buscar',
         icon: <SearchIcon />,
@@ -86,6 +102,14 @@ export default function FuncionesPage() {
         color: '#7C3AED',
         bg: 'rgba(124,58,237,0.10)',
         capability: 'pyl',
+      },
+      {
+        href: '/baigun',
+        label: 'Baigun',
+        icon: <ScrollIcon />,
+        color: '#4E342E',
+        bg: 'rgba(78,52,46,0.10)',
+        capability: 'baigun',
       },
     ];
     const equipo: FnItem[] = [
@@ -316,6 +340,40 @@ function UserIcon() {
         d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"
         stroke="currentColor"
         strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+function BoltIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="m13 2-9 13h7l-2 7 9-13h-7l2-7z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+function CashIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <rect x="3" y="6" width="18" height="13" rx="2" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="12" cy="12.5" r="2.5" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M7 9h.01M17 16h.01" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+function ScrollIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M8 2h12a2 2 0 0 1 2 2v15a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V8a2 2 0 0 1 2-2h3M8 2v6H5M8 2a2 2 0 0 1 2 2v15a3 3 0 0 0 3 3"
+        stroke="currentColor"
+        strokeWidth="1.6"
         strokeLinecap="round"
         strokeLinejoin="round"
       />

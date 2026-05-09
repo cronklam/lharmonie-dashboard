@@ -139,10 +139,33 @@ Owner ve los 5 tabs; admin/viewer ven 4 (sin P&L).
 - **Buscar** (`/buscar`): lupa en TopNav + accesible desde Pagos / Revisar / Funciones.
 - **Usuarios** (`/perfil/usuarios`): admin (`owner` o `admin`) puede ver;
   solo `owner` puede crear/editar/desactivar.
+- **Servicios** (`/servicios`): owner-only. Catálogo de servicios
+  recurrentes (luz/agua/gas/internet/alquiler/IVA/expensas/sistema/
+  impositivo) agrupado por ancla, con registro de pagos individuales.
+- **Caja** (`/caja`): owner-only. Saldo central (caja grande) +
+  movimientos chica/grande. Caja grande arma su saldo sumando todos
+  los movimientos; saldo después se anota en cada fila para auditoría.
+- **Baigun** (`/baigun`): owner-only. Cuenta corriente del subarriendo
+  Libertador (LH5).
 - **Detalle factura** (`/factura/[id]`): tap en una card. Highlight en
   tab "Pagos".
 - **Detalle proveedor** (`/proveedores/[nombre]`): tap en un proveedor.
   Highlight en tab "Revisar".
+
+### Anclas (taxonomía transversal)
+
+`lib/anclas.ts` define 8 anclas: `LH1 LH2 LH3 LH4 LH5 LH6` (locales),
+`CRONKLAM` (empresa, gastos corporativos / IVA / impositivo) y `MyP`
+(personal Martín y Melanie — NO entra en métricas operativas, solo
+owner ve/carga). Cada movimiento de Servicios y Caja se asigna a una.
+
+### Servicios y Caja — TODO de configuración
+
+Ver `TODO_TOMORROW.md` (raíz) para los pasos pendientes: compartir
+los dos Sheets con el service account, setear las env vars en Vercel,
+confirmar nombres de tabs y headers de columnas. Hasta que se
+completen, los endpoints `/api/servicios/*`, `/api/caja/*` y
+`/api/baigun` devuelven error con texto claro.
 
 ---
 
@@ -307,7 +330,10 @@ procesado:'Procesado', imagen:'Imagen', mes:'Mes', anio:'Año'
 | `RECETARIO_SHEET_ID` | `15tlHXgIKznAxjc8Accpe6xVK4ghaMcUo0Uwq1-A4b6E` | opcional, hay default en código |
 | `WORKER_URL` | `https://worker-production-7f89.up.railway.app` | worker Railway que escribe al Sheet |
 | `API_SECRET` | `lharmonie2026` | mismo que el dash viejo + bot Telegram |
-| `GOOGLE_CREDENTIALS` | JSON del service account | Necesario para escribir el tab "Usuarios". Si falta, el sistema cae a la lista hardcoded de `AUTHORIZED_USERS` y el botón "Agregar usuario" da error visible. Mismo service account que usa el staff sirve. |
+| `GOOGLE_CREDENTIALS` | JSON del service account | Necesario para escribir el tab "Usuarios", Servicios y Caja. Si falta, el sistema cae a la lista hardcoded de `AUTHORIZED_USERS` y los módulos Servicios/Caja devuelven error visible. Mismo service account del staff sirve. |
+| `SERVICIOS_SHEET_ID` | `1u6zH3X5MB1EyMQJ59YEkGFhbuQwzv7TsZbz2XZKZ_kM` | Sheet con tabs `Servicios Catalogo`, `Servicios Pagos`, `Baigun CtaCte`. Service account compartido como Editor. |
+| `CAJA_SHEET_ID` | `1Vx2aOlbf79GKSL-LaZUBYiluWnqiCv3EWaVv1oEej1Q` | Sheet con tabs `CajaChica_Movimientos`, `CajaChica_Sesiones`, `CajaGrande_Movimientos`. |
+| `SERVICIOS_CATALOGO_TAB`, `SERVICIOS_PAGOS_TAB`, `BAIGUN_CTA_CTE_TAB`, `CAJA_CHICA_MOV_TAB`, `CAJA_CHICA_SES_TAB`, `CAJA_GRANDE_TAB` | (overrides) | Defaults heredados del staff. Si los tabs reales tienen otros nombres, sobrescribir acá. NO se autocrean — el tab tiene que existir. |
 
 `.env.example` tiene la plantilla local.
 
