@@ -2059,3 +2059,14 @@ button:hover .btn-trailing-icon-on-dark {
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-card);
 }
+
+/* TopNav exclusive — la pill MANAGEMENT cede espacio en pantallas
+   muy angostas (iPhone mini / SE) para que brand + nombre + lupa
+   quepan sin truncar. El nombre de usuario también esconde su texto
+   por debajo de 360px y se queda solo con el círculo dorado. */
+@media (max-width: 419px) {
+  .lh-topnav-pill { display: none; }
+}
+@media (max-width: 339px) {
+  .lh-topnav-name { display: none; }
+}

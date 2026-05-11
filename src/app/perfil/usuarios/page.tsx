@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../components/AuthProvider';
 import { PageHeader } from '../../components/PageHeader';
+import EyebrowTag from '../../components/EyebrowTag';
 import {
   ROLE_LABELS,
   ROLE_DESCRIPTIONS,
@@ -22,6 +23,11 @@ interface UsuarioRow {
 
 const ROLE_ORDER: Role[] = ['owner', 'admin', 'viewer'];
 
+// /perfil/usuarios — pensado para un equipo chico (owner + 1-3 más).
+// Por eso lista PLANA (sin accordion por rol). Hero con total +
+// "Agregar usuario" prominente, cards de usuario con avatar + chip
+// rol + lápiz de edición. Tap en el lápiz despliega el editor inline.
+
 export default function UsuariosPage() {
   const { user, loading, isOwner, isAdmin } = useAuth();
   const router = useRouter();
@@ -29,7 +35,6 @@ export default function UsuariosPage() {
   const [rows, setRows] = useState<UsuarioRow[]>([]);
   const [fetching, setFetching] = useState(true);
   const [source, setSource] = useState<'sheet' | 'hardcoded' | null>(null);
-  const [openRole, setOpenRole] = useState<Role | null>(null);
   const [editingEmail, setEditingEmail] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [toast, setToast] = useState('');
@@ -61,111 +66,176 @@ export default function UsuariosPage() {
     window.setTimeout(() => setToast(''), 2400);
   }, []);
 
-  const grouped = useMemo(() => {
-    const byRole = new Map<Role, UsuarioRow[]>();
-    for (const r of rows) {
-      const role = (ROLE_LABELS[r.role as Role] ? r.role : 'viewer') as Role;
-      const arr = byRole.get(role) || [];
-      arr.push(r);
-      byRole.set(role, arr);
-    }
-    const ordered: { role: Role; users: UsuarioRow[] }[] = [];
-    for (const r of ROLE_ORDER) {
-      if (byRole.has(r)) ordered.push({ role: r, users: byRole.get(r)! });
-    }
-    return ordered;
+  // Lista ordenada: primero owner, después admin, después viewer.
+  // Dentro de cada bloque, alfabético por nombre.
+  const sorted = useMemo(() => {
+    const order = new Map(ROLE_ORDER.map((r, i) => [r, i]));
+    return rows.slice().sort((a, b) => {
+      const oa = order.get(a.role as Role) ?? 99;
+      const ob = order.get(b.role as Role) ?? 99;
+      if (oa !== ob) return oa - ob;
+      return (a.name || a.email).localeCompare(b.name || b.email);
+    });
   }, [rows]);
 
-  if (loading || !user || fetching) {
-    return (
-      <div className="page-enter">
-        <PageHeader title="Usuarios" subtitle="Acceso al dashboard" showBack />
-        <div className="px-4 pt-6">
-          <SkeletonRow />
-          <SkeletonRow />
-          <SkeletonRow />
-        </div>
-      </div>
-    );
-  }
+  const activos = sorted.filter((u) => u.activo !== 'No').length;
+
+  if (loading || !user) return null;
 
   return (
     <div className="page-enter">
-      <PageHeader title="Usuarios" subtitle="Acceso al dashboard" showBack />
+      <PageHeader title="Usuarios" subtitle="Accesos al dashboard" showBack />
       <div
-        className="px-4 pt-4"
+        className="px-4 pt-4 lh-inicio-stagger"
         style={{
           display: 'flex',
           flexDirection: 'column',
-          gap: 12,
+          gap: 14,
           paddingBottom: 'calc(var(--nav-height) + var(--safe-bottom) + 24px)',
         }}
       >
-        {source === 'hardcoded' && (
-          <FallbackBanner />
-        )}
-
-        {isOwner && (
-          <button
-            type="button"
-            onClick={() => {
-              setEditingEmail(null);
-              setShowAdd(true);
-            }}
-            className="press-feedback"
+        {/* Hero: count + "Agregar" */}
+        <section
+          style={{
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-lg)',
+            padding: 20,
+            boxShadow: 'var(--shadow-card)',
+            position: 'relative',
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            aria-hidden
             style={{
-              minHeight: 'var(--touch-min)',
-              borderRadius: 'var(--radius-md)',
-              padding: '12px 16px',
-              background: 'var(--accent)',
-              color: '#FDFBF8',
-              fontWeight: 600,
-              fontSize: 14,
-              letterSpacing: '-0.01em',
-              border: 0,
-              boxShadow:
-                'inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -1px 0 rgba(0,0,0,0.10), 0 1px 2px rgba(31,20,16,0.08), 0 6px 16px -4px rgba(184,149,111,0.45)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
+              position: 'absolute',
+              top: -40,
+              right: -40,
+              width: 140,
+              height: 140,
+              borderRadius: '50%',
+              background:
+                'radial-gradient(circle, rgba(196,160,103,0.12) 0%, transparent 70%)',
+              pointerEvents: 'none',
+            }}
+          />
+          <div
+            style={{
+              fontSize: 11,
+              letterSpacing: '0.18em',
+              textTransform: 'uppercase',
+              color: 'var(--text-muted)',
+              fontWeight: 700,
+              marginBottom: 6,
             }}
           >
-            <PlusIcon />
-            Agregar usuario
-          </button>
+            Equipo autorizado
+          </div>
+          <div
+            className="font-brand heading-tight tabular-nums-strict"
+            style={{
+              fontSize: 28,
+              fontWeight: 700,
+              color: 'var(--text)',
+              lineHeight: 1,
+              fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
+            }}
+          >
+            {sorted.length} {sorted.length === 1 ? 'persona' : 'personas'}
+          </div>
+          <div
+            style={{
+              fontSize: 12.5,
+              color: 'var(--text-muted)',
+              marginTop: 6,
+            }}
+          >
+            {activos === sorted.length
+              ? 'Todas activas'
+              : `${activos} activas · ${sorted.length - activos} inactivas`}
+          </div>
+          {isOwner && (
+            <button
+              type="button"
+              onClick={() => {
+                setEditingEmail(null);
+                setShowAdd(true);
+              }}
+              className="press-feedback"
+              style={{
+                marginTop: 14,
+                minHeight: 'var(--touch-min)',
+                borderRadius: 'var(--radius-md)',
+                padding: '10px 18px',
+                background: 'var(--accent)',
+                color: '#FDFBF8',
+                fontWeight: 600,
+                fontSize: 13.5,
+                border: 0,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                boxShadow:
+                  'inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -1px 0 rgba(0,0,0,0.10), 0 6px 16px -4px rgba(184,149,111,0.45)',
+              }}
+            >
+              <PlusIcon /> Agregar usuario
+            </button>
+          )}
+        </section>
+
+        {source === 'hardcoded' && <FallbackBanner />}
+
+        {/* Skeleton inicial */}
+        {fetching && sorted.length === 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div
+                key={i}
+                className="shimmer-modern"
+                style={{ height: 76, borderRadius: 14 }}
+              />
+            ))}
+          </div>
         )}
 
-        {grouped.length === 0 ? (
+        {/* Empty */}
+        {!fetching && sorted.length === 0 && (
           <EmptyState owner={isOwner} onAdd={() => setShowAdd(true)} />
-        ) : (
-          grouped.map(({ role, users }) => (
-            <RoleCard
-              key={role}
-              role={role}
-              users={users}
-              isOpen={openRole === role}
-              onToggle={() => setOpenRole((p) => (p === role ? null : role))}
-              canEdit={isOwner}
-              onEdit={(email) => {
-                setShowAdd(false);
-                setEditingEmail((p) => (p === email ? null : email));
-              }}
-              editingEmail={editingEmail}
-              onSaved={async (msg) => {
-                setEditingEmail(null);
-                await refresh();
-                flashToast(msg);
-              }}
-              onError={flashToast}
-            />
-          ))
+        )}
+
+        {/* Lista plana */}
+        {sorted.length > 0 && (
+          <section>
+            <div style={{ marginBottom: 8, paddingLeft: 4 }}>
+              <EyebrowTag>Lista</EyebrowTag>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {sorted.map((u) => (
+                <UserCard
+                  key={u.email}
+                  user={u}
+                  canEdit={isOwner}
+                  isEditing={editingEmail === u.email}
+                  onToggleEdit={() =>
+                    setEditingEmail((p) => (p === u.email ? null : u.email))
+                  }
+                  onSaved={async (msg) => {
+                    setEditingEmail(null);
+                    await refresh();
+                    flashToast(msg);
+                  }}
+                  onError={flashToast}
+                />
+              ))}
+            </div>
+          </section>
         )}
       </div>
 
       {showAdd && isOwner && (
-        <UserSheet
-          mode="add"
+        <AddUserSheet
           onClose={() => setShowAdd(false)}
           onSaved={async (msg) => {
             setShowAdd(false);
@@ -181,223 +251,10 @@ export default function UsuariosPage() {
   );
 }
 
-// ─── Banner cuando no hay Sheet ─────────────────────────────────────
+// ─── User card ───────────────────────────────────────────────────
 
-function FallbackBanner() {
-  return (
-    <div
-      role="status"
-      style={{
-        background: 'var(--warn-strong-bg)',
-        border: '1px solid var(--warn-strong)',
-        borderRadius: 'var(--radius-md)',
-        padding: 12,
-        fontSize: 12.5,
-        color: 'var(--warn-strong)',
-        lineHeight: 1.45,
-      }}
-    >
-      <strong style={{ display: 'block', marginBottom: 2 }}>
-        Modo fallback
-      </strong>
-      Mostrando lista hardcoded. Configurá <code>GOOGLE_CREDENTIALS</code> en
-      Vercel para habilitar lectura/escritura del tab &ldquo;Usuarios&rdquo;.
-    </div>
-  );
-}
-
-// ─── Empty state ────────────────────────────────────────────────────
-
-function EmptyState({ owner, onAdd }: { owner: boolean; onAdd: () => void }) {
-  return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        textAlign: 'center',
-        padding: '48px 16px',
-      }}
-    >
-      <UsersOutlineIcon />
-      <h3
-        style={{
-          fontSize: 16,
-          fontWeight: 600,
-          color: 'var(--text)',
-          marginTop: 12,
-        }}
-      >
-        Todavía no hay usuarios cargados
-      </h3>
-      <p
-        style={{
-          fontSize: 13,
-          color: 'var(--text-muted)',
-          marginTop: 4,
-          maxWidth: 280,
-          lineHeight: 1.45,
-        }}
-      >
-        Agregá el primero para que aparezca en la lista.
-      </p>
-      {owner && (
-        <button
-          type="button"
-          onClick={onAdd}
-          className="press-feedback"
-          style={{
-            marginTop: 16,
-            minHeight: 'var(--touch-min)',
-            borderRadius: 'var(--radius-md)',
-            padding: '0 20px',
-            background: 'var(--accent)',
-            color: '#FDFBF8',
-            fontWeight: 600,
-            fontSize: 14,
-            border: 0,
-          }}
-        >
-          Agregar usuario
-        </button>
-      )}
-    </div>
-  );
-}
-
-// ─── Card de rol con accordion ──────────────────────────────────────
-
-function RoleCard({
-  role,
-  users,
-  isOpen,
-  onToggle,
-  canEdit,
-  onEdit,
-  editingEmail,
-  onSaved,
-  onError,
-}: {
-  role: Role;
-  users: UsuarioRow[];
-  isOpen: boolean;
-  onToggle: () => void;
-  canEdit: boolean;
-  onEdit: (email: string) => void;
-  editingEmail: string | null;
-  onSaved: (msg: string) => Promise<void> | void;
-  onError: (msg: string) => void;
-}) {
-  const color = ROLE_COLORS[role];
-  const activos = users.filter((u) => u.activo !== 'No').length;
-  return (
-    <div
-      style={{
-        background: 'var(--bg-card)',
-        border: `1px solid ${isOpen ? color : 'var(--border)'}`,
-        borderRadius: 'var(--radius-md)',
-        boxShadow: 'var(--shadow-card)',
-        overflow: 'hidden',
-        transition: 'border-color 220ms var(--ease-ios)',
-      }}
-    >
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={isOpen}
-        className="press-feedback"
-        style={{
-          width: '100%',
-          minHeight: 'var(--touch-min)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          padding: 14,
-          background: 'transparent',
-          border: 0,
-          textAlign: 'left',
-          color: 'var(--text)',
-          cursor: 'pointer',
-        }}
-      >
-        <div
-          aria-hidden
-          style={{
-            width: 40,
-            height: 40,
-            borderRadius: '50%',
-            background: color,
-            color: '#FDFBF8',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-          }}
-        >
-          <UserIcon />
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)' }}>
-            {ROLE_LABELS[role]}
-          </div>
-          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>
-            {users.length} {users.length === 1 ? 'persona' : 'personas'}
-            {activos !== users.length && ` · ${activos} activas`}
-          </div>
-        </div>
-        <Chevron isOpen={isOpen} />
-      </button>
-
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateRows: isOpen ? '1fr' : '0fr',
-          transition: 'grid-template-rows 240ms var(--ease-ios)',
-        }}
-      >
-        <div style={{ overflow: 'hidden', minHeight: 0 }}>
-          <div
-            style={{
-              borderTop: '1px solid var(--border)',
-              padding: '4px 0',
-            }}
-          >
-            <p
-              style={{
-                fontSize: 11,
-                color: 'var(--text-muted)',
-                padding: '8px 14px 4px',
-                lineHeight: 1.4,
-              }}
-            >
-              {ROLE_DESCRIPTIONS[role]}
-            </p>
-            {users.map((u, i) => (
-              <UserRow
-                key={u.email + i}
-                user={u}
-                isFirst={i === 0}
-                color={color}
-                canEdit={canEdit}
-                isEditing={editingEmail === u.email}
-                onToggleEdit={() => onEdit(u.email)}
-                onSaved={onSaved}
-                onError={onError}
-              />
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Fila de usuario ────────────────────────────────────────────────
-
-function UserRow({
+function UserCard({
   user,
-  isFirst,
-  color,
   canEdit,
   isEditing,
   onToggleEdit,
@@ -405,8 +262,6 @@ function UserRow({
   onError,
 }: {
   user: UsuarioRow;
-  isFirst: boolean;
-  color: string;
   canEdit: boolean;
   isEditing: boolean;
   onToggleEdit: () => void;
@@ -414,11 +269,19 @@ function UserRow({
   onError: (msg: string) => void;
 }) {
   const isActive = user.activo !== 'No';
+  const role = (ROLE_LABELS[user.role as Role] ? user.role : 'viewer') as Role;
+  const roleColor = ROLE_COLORS[role];
+
   return (
     <div
       style={{
-        borderTop: isFirst ? '1px solid var(--border)' : '1px solid var(--border)',
-        opacity: isActive ? 1 : 0.55,
+        background: 'var(--bg-card)',
+        border: `1px solid ${isEditing ? 'var(--border-accent)' : 'var(--border)'}`,
+        borderRadius: 'var(--radius-md)',
+        boxShadow: 'var(--shadow-card)',
+        overflow: 'hidden',
+        transition: 'border-color 220ms var(--ease-ios)',
+        opacity: isActive ? 1 : 0.6,
       }}
     >
       <div
@@ -426,24 +289,25 @@ function UserRow({
           display: 'flex',
           alignItems: 'center',
           gap: 12,
-          padding: '10px 14px',
+          padding: 14,
         }}
       >
         <div
           aria-hidden
           style={{
-            width: 36,
-            height: 36,
+            width: 44,
+            height: 44,
             borderRadius: '50%',
             background: 'var(--bg-subtle)',
-            color,
+            color: roleColor,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             fontWeight: 700,
-            fontSize: 13,
+            fontSize: 16,
             fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
             flexShrink: 0,
+            border: `1.5px solid ${roleColor}`,
           }}
         >
           {(user.name || user.email).slice(0, 1).toUpperCase()}
@@ -451,7 +315,7 @@ function UserRow({
         <div style={{ flex: 1, minWidth: 0 }}>
           <div
             style={{
-              fontSize: 13.5,
+              fontSize: 14.5,
               fontWeight: 600,
               color: 'var(--text)',
               whiteSpace: 'nowrap',
@@ -459,45 +323,62 @@ function UserRow({
               textOverflow: 'ellipsis',
             }}
           >
-            {user.name || user.email}
+            {user.name || user.email.split('@')[0]}
           </div>
           <div
             style={{
               fontSize: 11.5,
               color: 'var(--text-muted)',
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
               whiteSpace: 'nowrap',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
-              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
             }}
           >
             {user.email}
           </div>
-          {!isActive && (
+          <div style={{ marginTop: 5, display: 'flex', gap: 5, flexWrap: 'wrap' }}>
             <span
               style={{
-                display: 'inline-block',
-                marginTop: 4,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
                 fontSize: 9.5,
                 fontWeight: 700,
                 letterSpacing: '0.06em',
                 textTransform: 'uppercase',
-                background: 'var(--red-bg)',
-                color: 'var(--red)',
-                padding: '2px 7px',
+                background: 'var(--accent-bg)',
+                color: roleColor,
+                padding: '2px 8px',
                 borderRadius: 999,
               }}
             >
-              Inactivo
+              {ROLE_LABELS[role]}
             </span>
-          )}
+            {!isActive && (
+              <span
+                style={{
+                  fontSize: 9.5,
+                  fontWeight: 700,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  background: 'var(--red-bg)',
+                  color: 'var(--red)',
+                  padding: '2px 8px',
+                  borderRadius: 999,
+                }}
+              >
+                Inactivo
+              </span>
+            )}
+          </div>
         </div>
         {canEdit && (
           <button
             type="button"
             onClick={onToggleEdit}
             className="press-feedback"
-            aria-label={isEditing ? 'Cerrar edición' : 'Editar'}
+            aria-label={isEditing ? 'Cerrar edición' : 'Editar usuario'}
             aria-expanded={isEditing}
             style={{
               width: 'var(--touch-min)',
@@ -510,9 +391,11 @@ function UserRow({
               alignItems: 'center',
               justifyContent: 'center',
               color: isEditing ? 'var(--accent)' : 'var(--text-muted)',
+              cursor: 'pointer',
+              flexShrink: 0,
             }}
           >
-            <PencilIcon />
+            {isEditing ? <CloseIcon /> : <PencilIcon />}
           </button>
         )}
       </div>
@@ -526,7 +409,12 @@ function UserRow({
       >
         <div style={{ overflow: 'hidden', minHeight: 0 }}>
           {isEditing && (
-            <div style={{ padding: '0 14px 14px' }}>
+            <div
+              style={{
+                borderTop: '1px solid var(--border)',
+                padding: 14,
+              }}
+            >
               <UserEditor user={user} onSaved={onSaved} onError={onError} />
             </div>
           )}
@@ -536,7 +424,7 @@ function UserRow({
   );
 }
 
-// ─── Editor inline (rol + activo/inactivo) ──────────────────────────
+// ─── Editor inline ───────────────────────────────────────────────
 
 function UserEditor({
   user,
@@ -571,11 +459,8 @@ function UserEditor({
         }),
       });
       const data = await res.json();
-      if (data.ok) {
-        onSaved('Usuario actualizado');
-      } else {
-        onError(data.error || 'Error guardando');
-      }
+      if (data.ok) onSaved('Usuario actualizado');
+      else onError(data.error || 'Error guardando');
     } catch {
       onError('Error de conexión');
     } finally {
@@ -584,18 +469,8 @@ function UserEditor({
   }, [activo, name, onError, onSaved, role, saving, user.email]);
 
   return (
-    <div
-      style={{
-        background: 'var(--bg-card-alt)',
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--radius-md)',
-        padding: 12,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 12,
-      }}
-    >
-      <Field label="Nombre">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <FieldLabel label="Nombre">
         <input
           type="text"
           value={name}
@@ -604,18 +479,18 @@ function UserEditor({
           className="input-pro"
           style={{ minHeight: 'var(--touch-min)' }}
         />
-      </Field>
-      <Field label="Rol">
+      </FieldLabel>
+      <FieldLabel label="Rol">
         <RolePicker value={role} onChange={setRole} />
-      </Field>
-      <Field label="Estado">
+      </FieldLabel>
+      <FieldLabel label="Estado">
         <ToggleRow
           checked={activo}
           onChange={setActivo}
           labelOn="Activo"
           labelOff="Inactivo"
         />
-      </Field>
+      </FieldLabel>
       <button
         type="button"
         onClick={submit}
@@ -639,24 +514,21 @@ function UserEditor({
   );
 }
 
-// ─── Bottom sheet para "Agregar usuario" ────────────────────────────
+// ─── Bottom sheet: Agregar usuario ───────────────────────────────
 
-function UserSheet({
-  mode,
+function AddUserSheet({
   onClose,
   onSaved,
   onError,
 }: {
-  mode: 'add';
   onClose: () => void;
   onSaved: (msg: string) => Promise<void> | void;
   onError: (msg: string) => void;
 }) {
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
-  const [role, setRole] = useState<Role>('viewer');
+  const [role, setRole] = useState<Role>('admin');
   const [saving, setSaving] = useState(false);
-  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => {
@@ -712,12 +584,11 @@ function UserSheet({
           inset: 0,
           background: 'rgba(0,0,0,0.45)',
           backdropFilter: 'blur(4px)',
-          zIndex: 'var(--z-overlay)' as unknown as number,
+          zIndex: 90,
           animation: 'fadeIn 0.22s var(--ease-ios) both',
         }}
       />
       <div
-        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="Agregar usuario"
@@ -731,7 +602,7 @@ function UserSheet({
           borderTopLeftRadius: 22,
           borderTopRightRadius: 22,
           boxShadow: '0 -16px 40px rgba(0,0,0,0.18)',
-          zIndex: 'var(--z-modal)' as unknown as number,
+          zIndex: 100,
           display: 'flex',
           flexDirection: 'column',
           paddingBottom: 'var(--safe-bottom)',
@@ -768,18 +639,13 @@ function UserSheet({
                 color: 'var(--text-muted)',
               }}
             >
-              · Nuevo usuario
+              · Nuevo
             </div>
             <h2
               className="font-brand"
-              style={{
-                fontSize: 22,
-                fontWeight: 600,
-                letterSpacing: '-0.022em',
-                marginTop: 2,
-              }}
+              style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-0.022em', marginTop: 2 }}
             >
-              {mode === 'add' ? 'Agregar usuario' : 'Editar usuario'}
+              Agregar usuario
             </h2>
           </div>
           <button
@@ -812,7 +678,7 @@ function UserSheet({
             gap: 14,
           }}
         >
-          <Field label="Email">
+          <FieldLabel label="Email">
             <input
               type="email"
               inputMode="email"
@@ -823,8 +689,8 @@ function UserSheet({
               className="input-pro"
               style={{ minHeight: 'var(--touch-min)' }}
             />
-          </Field>
-          <Field label="Nombre">
+          </FieldLabel>
+          <FieldLabel label="Nombre">
             <input
               type="text"
               value={name}
@@ -834,10 +700,10 @@ function UserSheet({
               className="input-pro"
               style={{ minHeight: 'var(--touch-min)' }}
             />
-          </Field>
-          <Field label="Rol">
+          </FieldLabel>
+          <FieldLabel label="Rol">
             <RolePicker value={role} onChange={setRole} />
-          </Field>
+          </FieldLabel>
         </div>
         <div
           style={{
@@ -889,9 +755,15 @@ function UserSheet({
   );
 }
 
-// ─── Subcomponentes utilitarios ─────────────────────────────────────
+// ─── Utilities ────────────────────────────────────────────────────
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function FieldLabel({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <span
@@ -918,7 +790,7 @@ function RolePicker({
   onChange: (r: Role) => void;
 }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
       {ROLE_ORDER.map((r) => {
         const selected = value === r;
         return (
@@ -931,22 +803,22 @@ function RolePicker({
             style={{
               minHeight: 'var(--touch-min)',
               borderRadius: 'var(--radius-md)',
-              padding: '10px 12px',
-              textAlign: 'left',
+              padding: '8px 6px',
+              textAlign: 'center',
               background: selected ? 'var(--accent-bg)' : 'var(--bg-card)',
               border: `1.5px solid ${selected ? 'var(--accent)' : 'var(--border)'}`,
               color: selected ? 'var(--accent-hover)' : 'var(--text)',
               cursor: 'pointer',
             }}
           >
-            <div style={{ fontWeight: 700, fontSize: 13 }}>{ROLE_LABELS[r]}</div>
+            <div style={{ fontWeight: 700, fontSize: 12.5 }}>{ROLE_LABELS[r]}</div>
             <div
               style={{
-                fontSize: 11,
+                fontSize: 9.5,
                 marginTop: 2,
                 color: selected ? 'var(--accent-hover)' : 'var(--text-muted)',
-                opacity: 0.85,
-                lineHeight: 1.35,
+                lineHeight: 1.2,
+                fontWeight: 500,
               }}
             >
               {ROLE_DESCRIPTIONS[r]}
@@ -1021,16 +893,96 @@ function ToggleRow({
   );
 }
 
-function SkeletonRow() {
+function FallbackBanner() {
   return (
     <div
-      className="shimmer-modern"
+      role="status"
       style={{
-        height: 64,
+        background: 'var(--warn-strong-bg)',
+        border: '1px solid var(--warn-strong)',
         borderRadius: 'var(--radius-md)',
-        marginBottom: 10,
+        padding: 12,
+        fontSize: 12.5,
+        color: 'var(--warn-strong)',
+        lineHeight: 1.45,
       }}
-    />
+    >
+      <strong style={{ display: 'block', marginBottom: 2 }}>Modo fallback</strong>
+      Mostrando lista hardcoded. Configurá <code>GOOGLE_CREDENTIALS</code> en
+      Vercel para habilitar lectura/escritura del tab &ldquo;Usuarios&rdquo;.
+    </div>
+  );
+}
+
+function EmptyState({ owner, onAdd }: { owner: boolean; onAdd: () => void }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        textAlign: 'center',
+        padding: '48px 16px',
+      }}
+    >
+      <svg
+        width="44"
+        height="44"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="var(--text-dim)"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+      >
+        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+      </svg>
+      <h3
+        style={{
+          fontSize: 16,
+          fontWeight: 600,
+          color: 'var(--text)',
+          marginTop: 12,
+        }}
+      >
+        Sin usuarios todavía
+      </h3>
+      <p
+        style={{
+          fontSize: 13,
+          color: 'var(--text-muted)',
+          marginTop: 4,
+          maxWidth: 280,
+          lineHeight: 1.45,
+        }}
+      >
+        Agregá el primero para habilitarle el acceso al dashboard.
+      </p>
+      {owner && (
+        <button
+          type="button"
+          onClick={onAdd}
+          className="press-feedback"
+          style={{
+            marginTop: 16,
+            minHeight: 'var(--touch-min)',
+            borderRadius: 'var(--radius-md)',
+            padding: '0 20px',
+            background: 'var(--accent)',
+            color: '#FDFBF8',
+            fontWeight: 600,
+            fontSize: 14,
+            border: 0,
+          }}
+        >
+          Agregar usuario
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -1044,7 +996,7 @@ function Toast({ message }: { message: string }) {
         left: '50%',
         transform: 'translateX(-50%)',
         bottom: 'calc(var(--nav-height) + var(--safe-bottom) + 14px)',
-        zIndex: 'var(--z-toast)' as unknown as number,
+        zIndex: 1000,
         background: 'var(--header-bg)',
         color: 'var(--text-inverse)',
         borderRadius: 14,
@@ -1061,40 +1013,10 @@ function Toast({ message }: { message: string }) {
   );
 }
 
-// ─── Iconos (SVG inline, stroke 1.6) ────────────────────────────────
-
-function Chevron({ isOpen }: { isOpen: boolean }) {
-  return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="var(--text-muted)"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-      style={{
-        transition: 'transform 220ms var(--ease-ios)',
-        transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-        flexShrink: 0,
-      }}
-    >
-      <path d="m6 9 6 6 6-6" />
-    </svg>
-  );
-}
-
 function PlusIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path
-        d="M12 5v14M5 12h14"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     </svg>
   );
 }
@@ -1102,12 +1024,7 @@ function PlusIcon() {
 function CloseIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
-      <path
-        d="M3 3l8 8M11 3l-8 8"
-        stroke="var(--text)"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
+      <path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
   );
 }
@@ -1122,41 +1039,6 @@ function PencilIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-    </svg>
-  );
-}
-
-function UserIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path
-        d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function UsersOutlineIcon() {
-  return (
-    <svg
-      width="44"
-      height="44"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="var(--text-dim)"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
     </svg>
   );
 }
