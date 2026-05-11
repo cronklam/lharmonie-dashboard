@@ -26,3 +26,6 @@ build
 # IDE
 .idea
 .vscode
+
+# claude code internal
+.claude/
