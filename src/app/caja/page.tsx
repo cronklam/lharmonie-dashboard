@@ -19,6 +19,23 @@ import {
   type MovimientoCaja,
   type Tipo,
 } from '@/lib/caja';
+import { SesionWizard } from './SesionWizard';
+
+type CajaTab = 'sesion' | 'movs' | 'conciliacion';
+
+interface SesionResumenAPI {
+  prefijo: string;
+  fechaSesion: string;
+  iso: string;
+  local: string;
+  retiradoArs: number;
+  gastadoArs: number;
+  diferenciaArs: number;
+  retiradoUsd: number;
+  gastadoUsd: number;
+  diferenciaUsd: number;
+  totalRows: number;
+}
 
 // /caja — Caja efectivo. Owner-only.
 //
@@ -59,6 +76,13 @@ export default function CajaPage() {
   // Filtros
   const [filterMoneda, setFilterMoneda] = useState<Moneda | 'todas'>('todas');
   const [filterCategoria, setFilterCategoria] = useState<Categoria | 'todas'>('todas');
+
+  // Tabs + sesiones
+  const [tab, setTab] = useState<CajaTab>('sesion');
+  const [sesiones, setSesiones] = useState<SesionResumenAPI[]>([]);
+  const [sesionesError, setSesionesError] = useState<string | null>(null);
+  const [wizardActive, setWizardActive] = useState(false);
+  const [deletingPrefijo, setDeletingPrefijo] = useState<string | null>(null);
 
   const refreshMes = useCallback(async (m: string) => {
     setFetching(true);
@@ -103,6 +127,21 @@ export default function CajaPage() {
     }
   }, []);
 
+  const refreshSesiones = useCallback(async () => {
+    try {
+      const r = await fetch('/api/caja/sesiones', { cache: 'no-store' });
+      const d = await r.json();
+      if (d.ok) {
+        setSesiones(d.items || []);
+        setSesionesError(null);
+      } else {
+        setSesionesError(d.error || 'Error');
+      }
+    } catch {
+      setSesionesError('Error de red');
+    }
+  }, []);
+
   useEffect(() => {
     if (loading || !user) return;
     if (!isOwner) {
@@ -111,7 +150,8 @@ export default function CajaPage() {
     }
     refreshMes(mes);
     refreshSaldos();
-  }, [loading, user, isOwner, mes, refreshMes, refreshSaldos, router]);
+    refreshSesiones();
+  }, [loading, user, isOwner, mes, refreshMes, refreshSaldos, refreshSesiones, router]);
 
   const flashToast = useCallback((m: string) => {
     setToast(m);
@@ -248,10 +288,38 @@ export default function CajaPage() {
     [mes, refreshMes, refreshSaldos, flashToast],
   );
 
+  const deleteSesion = useCallback(
+    async (prefijo: string) => {
+      setDeletingPrefijo(null);
+      // Optimistic remove
+      setSesiones((prev) => prev.filter((s) => s.prefijo !== prefijo));
+      try {
+        const res = await fetch(
+          `/api/caja/sesion?id=${encodeURIComponent(prefijo)}`,
+          { method: 'DELETE' },
+        );
+        const data = await res.json();
+        if (!data.ok) {
+          await refreshSesiones();
+          flashToast(data.error || 'No se pudo borrar');
+          return;
+        }
+        flashToast(`Sesión borrada (${data.borradas} filas)`);
+        refreshSaldos();
+        refreshMes(mes);
+      } catch {
+        await refreshSesiones();
+        flashToast('Error de red');
+      }
+    },
+    [mes, refreshSesiones, refreshSaldos, refreshMes, flashToast],
+  );
+
   if (loading || !user) return null;
   if (!isOwner) return null;
 
   const tabDisplay = tabName || mesTabFromISO(`${mes}-01`) || mes;
+  const lastSesion = sesiones[0];
 
   return (
     <div className="page-enter">
@@ -309,7 +377,9 @@ export default function CajaPage() {
             </div>
           )}
           <div style={{ marginTop: 8, color: 'rgba(249,247,243,0.72)', fontSize: 13 }}>
-            Acumulado en todas las pestañas del Sheet
+            {lastSesion
+              ? `Última sesión ${lastSesion.fechaSesion} · ${lastSesion.local}`
+              : 'Sin sesiones de control registradas'}
           </div>
         </section>
 
@@ -317,6 +387,207 @@ export default function CajaPage() {
           <ErrorBanner text={error} />
         )}
 
+        {/* Tabs */}
+        {!wizardActive && (
+          <section>
+            <div
+              style={{
+                display: 'inline-flex',
+                gap: 6,
+                background: 'var(--bg-card)',
+                border: '1px solid var(--border)',
+                borderRadius: 999,
+                padding: 4,
+                boxShadow: 'var(--shadow-card)',
+              }}
+            >
+              {([
+                { id: 'sesion', label: 'Sesión de control' },
+                { id: 'movs', label: 'Movimientos' },
+                { id: 'conciliacion', label: 'Conciliación' },
+              ] as { id: CajaTab; label: string }[]).map((t) => {
+                const selected = tab === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setTab(t.id)}
+                    aria-pressed={selected}
+                    className="press-feedback"
+                    style={{
+                      minHeight: 32,
+                      padding: '0 14px',
+                      borderRadius: 999,
+                      background: selected ? 'var(--header-bg)' : 'transparent',
+                      color: selected ? '#FDFBF8' : 'var(--text-muted)',
+                      border: 0,
+                      fontSize: 12.5,
+                      fontWeight: 600,
+                      whiteSpace: 'nowrap',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {t.label}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* Wizard activo: ocupa toda la pantalla */}
+        {wizardActive && (
+          <SesionWizard
+            saldoRegistradoArs={saldos?.pesos ?? 0}
+            saldoRegistradoUsd={saldos?.dolares ?? 0}
+            onClose={() => setWizardActive(false)}
+            onCompleted={async (m) => {
+              setWizardActive(false);
+              await refreshSesiones();
+              refreshSaldos();
+              refreshMes(mes);
+              flashToast(m);
+            }}
+            onError={flashToast}
+          />
+        )}
+
+        {/* TAB SESION */}
+        {!wizardActive && tab === 'sesion' && (
+          <section style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <button
+              type="button"
+              onClick={() => setWizardActive(true)}
+              className="press-feedback"
+              style={{
+                minHeight: 56,
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--header-bg)',
+                color: '#FDFBF8',
+                fontWeight: 700,
+                fontSize: 15,
+                border: 0,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                boxShadow:
+                  'inset 0 1px 0 rgba(255,255,255,0.10), 0 6px 16px -4px rgba(0,0,0,0.25)',
+              }}
+            >
+              <PlusIcon /> Nueva sesión
+            </button>
+
+            {sesionesError && (
+              <ErrorBanner text={sesionesError} />
+            )}
+
+            {sesiones.length > 0 && (
+              <div>
+                <div style={{ marginBottom: 10, paddingLeft: 4 }}>
+                  <EyebrowTag>Sesiones recientes</EyebrowTag>
+                </div>
+                <ul
+                  style={{
+                    listStyle: 'none',
+                    padding: 0,
+                    margin: 0,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 8,
+                  }}
+                >
+                  {sesiones.map((s) => (
+                    <li key={s.prefijo}>
+                      <SesionRow
+                        sesion={s}
+                        confirming={deletingPrefijo === s.prefijo}
+                        onAskDelete={() => setDeletingPrefijo(s.prefijo)}
+                        onCancelDelete={() => setDeletingPrefijo(null)}
+                        onConfirmDelete={() => deleteSesion(s.prefijo)}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {sesiones.length === 0 && !sesionesError && (
+              <div
+                style={{
+                  padding: '40px 16px',
+                  textAlign: 'center',
+                  color: 'var(--text-muted)',
+                  background: 'var(--bg-card-alt)',
+                  border: '1px dashed var(--border-strong)',
+                  borderRadius: 'var(--radius-md)',
+                  fontSize: 13,
+                  lineHeight: 1.5,
+                }}
+              >
+                Sin sesiones registradas todavía. Iniciá la primera tocando &ldquo;Nueva sesión&rdquo;.
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* TAB CONCILIACION (placeholder) */}
+        {!wizardActive && tab === 'conciliacion' && (
+          <section
+            style={{
+              padding: '32px 18px',
+              textAlign: 'center',
+              background: 'var(--bg-card-alt)',
+              border: '1px dashed var(--border-strong)',
+              borderRadius: 'var(--radius-md)',
+            }}
+          >
+            <div
+              style={{
+                fontSize: 9.5,
+                fontWeight: 700,
+                letterSpacing: '0.18em',
+                textTransform: 'uppercase',
+                color: 'var(--accent-hover)',
+                padding: '4px 10px',
+                border: '1px solid var(--border-accent)',
+                borderRadius: 999,
+                display: 'inline-block',
+                marginBottom: 10,
+              }}
+            >
+              Próximo
+            </div>
+            <h3
+              className="font-brand"
+              style={{
+                fontSize: 18,
+                fontWeight: 700,
+                color: 'var(--text)',
+                fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
+              }}
+            >
+              Conciliación con Bistrosoft
+            </h3>
+            <p
+              style={{
+                fontSize: 12.5,
+                color: 'var(--text-muted)',
+                marginTop: 6,
+                maxWidth: 320,
+                margin: '6px auto 0',
+                lineHeight: 1.5,
+              }}
+            >
+              Cruce automático de los retiros declarados contra los reportes de
+              Bistrosoft. Pronto.
+            </p>
+          </section>
+        )}
+
+        {/* TAB MOVIMIENTOS (vista clásica) */}
+        {!wizardActive && tab === 'movs' && (
+          <>
         {/* Selector mes + filtros + CTA */}
         <section
           style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
@@ -398,85 +669,6 @@ export default function CajaPage() {
           </div>
         </section>
 
-        {/* Sesiones de Control — placeholder hasta que tengamos el
-            schema del Sheet para sesiones. Iara carga acá los
-            controles periódicos de retiros desde locales; conciliación
-            con Bistrosoft viene después. */}
-        <section
-          aria-label="Sesiones de control"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            padding: 14,
-            background: 'var(--bg-card-alt)',
-            border: '1px dashed var(--border-strong)',
-            borderRadius: 'var(--radius-md)',
-          }}
-        >
-          <div
-            aria-hidden
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: 12,
-              background: 'var(--accent-bg)',
-              color: 'var(--accent)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
-              <path
-                d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"
-                stroke="currentColor"
-                strokeWidth="1.7"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div
-              style={{
-                fontSize: 13.5,
-                fontWeight: 600,
-                color: 'var(--text)',
-              }}
-            >
-              Sesiones de control · Iara
-            </div>
-            <div
-              style={{
-                fontSize: 11.5,
-                color: 'var(--text-muted)',
-                marginTop: 2,
-                lineHeight: 1.4,
-              }}
-            >
-              Controles periódicos de retiros desde locales + conciliación con Bistrosoft. Pronto.
-            </div>
-          </div>
-          <span
-            style={{
-              fontSize: 9.5,
-              fontWeight: 700,
-              letterSpacing: '0.10em',
-              textTransform: 'uppercase',
-              color: 'var(--accent-hover)',
-              padding: '4px 9px',
-              border: '1px solid var(--border-accent)',
-              borderRadius: 999,
-              background: 'var(--accent-bg)',
-              flexShrink: 0,
-            }}
-          >
-            Próximo
-          </span>
-        </section>
-
         {/* Filtros */}
         <section style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <FilterRow
@@ -543,6 +735,8 @@ export default function CajaPage() {
               ))}
             </ul>
           </section>
+        )}
+          </>
         )}
       </div>
 
@@ -1534,5 +1728,154 @@ function ArrowUpIcon() {
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
       <path d="M12 19V5m6 6-6-6-6 6" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
+  );
+}
+
+// ─── Sesion row ──────────────────────────────────────────────────
+
+function SesionRow({
+  sesion,
+  confirming,
+  onAskDelete,
+  onCancelDelete,
+  onConfirmDelete,
+}: {
+  sesion: SesionResumenAPI;
+  confirming: boolean;
+  onAskDelete: () => void;
+  onCancelDelete: () => void;
+  onConfirmDelete: () => void;
+}) {
+  const totalArs = sesion.retiradoArs - sesion.gastadoArs + sesion.diferenciaArs;
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        padding: 14,
+        background: confirming ? 'var(--red-bg)' : 'var(--bg-card)',
+        border: `1px solid ${confirming ? 'var(--red)' : 'var(--border)'}`,
+        borderRadius: 'var(--radius-md)',
+        boxShadow: 'var(--shadow-card)',
+        transition: 'background 180ms var(--ease-ios), border-color 180ms var(--ease-ios)',
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 600,
+            color: 'var(--text)',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {sesion.fechaSesion} · {sesion.local}
+        </div>
+        <div
+          style={{
+            fontSize: 11.5,
+            color: 'var(--text-muted)',
+            marginTop: 3,
+          }}
+        >
+          Retiró {fmtMonto(sesion.retiradoArs, 'PESO')} · Gastó {fmtMonto(sesion.gastadoArs, 'PESO')}
+          {Math.round(sesion.diferenciaArs) !== 0 && (
+            <span style={{ color: 'var(--warn-strong)', fontWeight: 600 }}>
+              {' · '}dif {fmtMonto(sesion.diferenciaArs, 'PESO')}
+            </span>
+          )}
+        </div>
+      </div>
+      <div
+        className="tabular-nums-strict"
+        style={{
+          fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
+          fontWeight: 700,
+          fontSize: 16,
+          color: 'var(--text)',
+          whiteSpace: 'nowrap',
+          flexShrink: 0,
+        }}
+      >
+        {fmtMonto(totalArs, 'PESO')}
+      </div>
+      {!confirming ? (
+        <button
+          type="button"
+          onClick={onAskDelete}
+          aria-label="Eliminar sesión"
+          className="press-feedback"
+          style={{
+            width: 36,
+            height: 36,
+            minWidth: 36,
+            borderRadius: '50%',
+            background: 'var(--bg-subtle)',
+            border: 0,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--text-muted)',
+            cursor: 'pointer',
+            flexShrink: 0,
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+            <path
+              d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14zM10 11v6M14 11v6"
+              stroke="currentColor"
+              strokeWidth="1.7"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      ) : (
+        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+          <button
+            type="button"
+            onClick={onCancelDelete}
+            aria-label="Cancelar"
+            className="press-feedback"
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: '50%',
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'var(--text-muted)',
+              cursor: 'pointer',
+            }}
+          >
+            <CloseIcon />
+          </button>
+          <button
+            type="button"
+            onClick={onConfirmDelete}
+            aria-label="Confirmar eliminar"
+            className="press-feedback"
+            style={{
+              minHeight: 36,
+              padding: '0 12px',
+              borderRadius: 18,
+              background: 'var(--red)',
+              color: '#FDFBF8',
+              border: 0,
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            Borrar
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

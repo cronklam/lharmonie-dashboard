@@ -23,8 +23,17 @@ interface SaldosPayload {
 }
 
 interface UltimoControlInfo {
-  fecha: string;
-  por: string;
+  fechaSesion: string;        // DD/MM/YYYY
+  iso: string;                // YYYY-MM-DD
+  local: string;
+}
+
+function diasDesde(iso: string): number {
+  if (!iso) return 0;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return 0;
+  const now = new Date();
+  return Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
 }
 
 export function CajaCard({
@@ -36,10 +45,7 @@ export function CajaCard({
   const [saldos, setSaldos] = useState<SaldosPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fetching, setFetching] = useState(true);
-  // TODO: cuando esté el endpoint de sesiones, hidratar último control
-  // con datos reales. Por ahora queda null y el subtítulo dice "Sin
-  // control registrado".
-  const [ultimo] = useState<UltimoControlInfo | null>(null);
+  const [ultimo, setUltimo] = useState<UltimoControlInfo | null>(null);
 
   useEffect(() => {
     if (!isOwner) {
@@ -49,14 +55,28 @@ export function CajaCard({
     let cancelled = false;
     (async () => {
       try {
-        const r = await fetch('/api/caja/saldos', { cache: 'no-store' });
-        const d = await r.json();
+        const [rSaldos, rSesiones] = await Promise.all([
+          fetch('/api/caja/saldos', { cache: 'no-store' }).then((r) => r.json()),
+          fetch('/api/caja/sesiones', { cache: 'no-store' }).then((r) => r.json()),
+        ]);
         if (cancelled) return;
-        if (d.ok) {
-          setSaldos({ pesos: d.pesos, dolares: d.dolares });
+        if (rSaldos.ok) {
+          setSaldos({ pesos: rSaldos.pesos, dolares: rSaldos.dolares });
           setError(null);
         } else {
-          setError(d.error || 'Error');
+          setError(rSaldos.error || 'Error');
+        }
+        if (rSesiones.ok && Array.isArray(rSesiones.items) && rSesiones.items.length > 0) {
+          const last = rSesiones.items[0] as {
+            fechaSesion: string;
+            iso: string;
+            local: string;
+          };
+          setUltimo({
+            fechaSesion: last.fechaSesion,
+            iso: last.iso,
+            local: last.local,
+          });
         }
       } catch {
         if (!cancelled) setError('Error de red');
@@ -194,8 +214,17 @@ export function CajaCard({
               }}
             >
               {ultimo
-                ? `Último control: ${ultimo.fecha} · ${ultimo.por}`
-                : 'Sin control de Iara registrado todavía'}
+                ? (() => {
+                    const dias = diasDesde(ultimo.iso);
+                    const diasLabel =
+                      dias <= 0
+                        ? 'hoy'
+                        : dias === 1
+                        ? 'hace 1 día'
+                        : `hace ${dias} días`;
+                    return `Última sesión ${diasLabel} · ${ultimo.local}`;
+                  })()
+                : 'Sin sesión de Iara registrada todavía'}
             </div>
           </>
         )}

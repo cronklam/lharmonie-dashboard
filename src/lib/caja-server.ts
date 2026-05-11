@@ -15,16 +15,24 @@ import type { sheets_v4 } from 'googleapis';
 import {
   CATEGORIAS,
   MONEDAS,
+  categoriaSheetParaSesion,
+  descripcionSesionMov,
+  esRowDeSesion,
   fechaFromSheet,
   fechaToSheet,
+  importeSignedSesion,
   isCategoria,
   isMonthTab,
   isoMesFromTab,
   mesTabFromISO,
+  parsePrefijoSesion,
+  prefijoSesion,
   type Categoria,
   type Moneda,
   type MovimientoCaja,
   type SaldoMes,
+  type SesionInput,
+  type SesionMovInput,
 } from './caja';
 
 const SHEET_ID = process.env.CAJA_SHEET_ID || '';
@@ -350,6 +358,313 @@ export async function appendMovimiento(input: AppendInput): Promise<AppendResult
   });
 
   return { tab: tab.title, fila: filaDestino };
+}
+
+// ─── Sesiones de Control ────────────────────────────────────────
+//
+// Una sesión de Iara → escribe N filas al Sheet (una por mov declarado +
+// opcionalmente una fila de ajuste de cierre si el saldo confirmado no
+// coincide con el sugerido por (registrado + Σ retiros − Σ gastos)).
+//
+// Todas las filas comparten el mismo prefijo en DESCRIPCION
+// ("SESION DD/MM/YYYY - LOCAL"), que es la "clave" de la sesión.
+// listSesiones agrupa por prefijo. deleteSesion borra por prefijo.
+
+export interface WriteSesionResult {
+  prefijo: string;
+  filasEscritas: { tab: string; fila: number }[];
+  diferenciaCierreArs: number;
+  diferenciaCierreUsd: number;
+}
+
+export async function writeSesion(input: SesionInput): Promise<WriteSesionResult> {
+  const sheets = ensureConfigured();
+  if (!input.local) throw new CajaError(400, 'Falta local');
+  if (!input.fechaSesion.match(/^\d{4}-\d{2}-\d{2}$/)) {
+    throw new CajaError(400, 'fechaSesion inválida (YYYY-MM-DD)');
+  }
+  const prefijo = prefijoSesion(input.fechaSesion, input.local);
+
+  // Suma ARS/USD de los movs declarados (con signo según tipo)
+  const sumaArs = input.movs.reduce(
+    (s, m) => s + importeSignedSesion(m, Math.abs(m.montoArs)),
+    0,
+  );
+  const sumaUsd = input.movs.reduce(
+    (s, m) => s + importeSignedSesion(m, Math.abs(m.montoUsd)),
+    0,
+  );
+  // Saldo sugerido = lo que había + lo que la sesión agrega
+  const sugeridoArs = input.saldoRegistradoArs + sumaArs;
+  const sugeridoUsd = input.saldoRegistradoUsd + sumaUsd;
+  // Diferencia entre lo confirmado y lo sugerido (queda como ajuste)
+  const diferenciaArs = (input.saldoConfirmadoArs ?? sugeridoArs) - sugeridoArs;
+  const diferenciaUsd = (input.saldoConfirmadoUsd ?? sugeridoUsd) - sugeridoUsd;
+
+  interface MovRow {
+    fecha: string;
+    moneda: Moneda;
+    descripcion: string;
+    categoria: Categoria;
+    importe: number;
+  }
+  const rowsToWrite: MovRow[] = [];
+
+  for (const mov of input.movs) {
+    const desc = descripcionSesionMov(input.fechaSesion, input.local, mov);
+    const cat = categoriaSheetParaSesion(mov.tipo);
+    if (Math.abs(mov.montoArs) > 0) {
+      rowsToWrite.push({
+        fecha: mov.fecha,
+        moneda: 'PESO',
+        descripcion: desc,
+        categoria: cat,
+        importe: importeSignedSesion(mov, Math.abs(mov.montoArs)),
+      });
+    }
+    if (Math.abs(mov.montoUsd) > 0) {
+      rowsToWrite.push({
+        fecha: mov.fecha,
+        moneda: 'DOLAR',
+        descripcion: desc,
+        categoria: cat,
+        importe: importeSignedSesion(mov, Math.abs(mov.montoUsd)),
+      });
+    }
+  }
+
+  // Fila de ajuste de cierre si hay diferencia
+  const cierreNota = input.notas ? ` · ${input.notas.slice(0, 80)}` : '';
+  if (Math.round(diferenciaArs) !== 0) {
+    rowsToWrite.push({
+      fecha: input.fechaSesion,
+      moneda: 'PESO',
+      descripcion: `${prefijo} · cierre · ajuste físico${cierreNota}`,
+      categoria: 'DIFERENCIA',
+      importe: diferenciaArs,
+    });
+  }
+  if (Math.round(diferenciaUsd) !== 0) {
+    rowsToWrite.push({
+      fecha: input.fechaSesion,
+      moneda: 'DOLAR',
+      descripcion: `${prefijo} · cierre · ajuste físico${cierreNota}`,
+      categoria: 'DIFERENCIA',
+      importe: diferenciaUsd,
+    });
+  }
+
+  // Si no hay nada que escribir (sesión vacía sin diff), error claro.
+  if (rowsToWrite.length === 0) {
+    throw new CajaError(400, 'La sesión no tiene movimientos ni diferencia.');
+  }
+
+  // Agrupar por tab destino (mes de la fecha de cada row).
+  const rowsByTab = new Map<string, MovRow[]>();
+  for (const r of rowsToWrite) {
+    const isoMes = r.fecha.slice(0, 7);
+    const tab = await findTabByISO(sheets, isoMes);
+    if (!tab) {
+      const target = mesTabFromISO(`${isoMes}-01`) || isoMes;
+      throw new CajaError(
+        404,
+        `La pestaña "${target}" no existe en el Sheet. Pedile a Martín que la cree.`,
+      );
+    }
+    const arr = rowsByTab.get(tab.title) || [];
+    arr.push(r);
+    rowsByTab.set(tab.title, arr);
+  }
+
+  const filasEscritas: { tab: string; fila: number }[] = [];
+
+  // Escribir tab por tab (una sola batchUpdate por tab).
+  for (const [tabTitle, rows] of rowsByTab.entries()) {
+    const inspect = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: `'${tabTitle}'!C${FIRST_DATA_ROW}:D${MAX_ROW}`,
+      valueRenderOption: 'FORMULA',
+    });
+    const cdRows = inspect.data.values || [];
+    // Primera fila libre
+    let cursorIdx = -1;
+    for (let i = 0; i < cdRows.length; i++) {
+      const cVal = cdRows[i]?.[0];
+      if (cVal === undefined || cVal === null || String(cVal).trim() === '') {
+        cursorIdx = i;
+        break;
+      }
+    }
+    if (cursorIdx === -1) cursorIdx = cdRows.length;
+
+    const data: sheets_v4.Schema$ValueRange[] = [];
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const filaDestino = FIRST_DATA_ROW + cursorIdx + i;
+      const fechaSheet = fechaToSheet(r.fecha) || r.fecha;
+      data.push({
+        range: `'${tabTitle}'!A${filaDestino}:C${filaDestino}`,
+        values: [[fechaSheet, r.moneda, r.descripcion]],
+      });
+      data.push({
+        range: `'${tabTitle}'!E${filaDestino}:F${filaDestino}`,
+        values: [[r.categoria, r.importe]],
+      });
+      const dValRaw = cdRows[cursorIdx + i]?.[1];
+      const tieneFormulaD = typeof dValRaw === 'string' && dValRaw.startsWith('=');
+      if (!tieneFormulaD) {
+        const formulaD = `=SI(C${filaDestino}<>"";FILA()-2;"")`;
+        const formulaG = `=SI(C${filaDestino}="";"";SUMAR.SI.CONJUNTO($F$3:F${filaDestino};$B$3:B${filaDestino};B${filaDestino}))`;
+        data.push({ range: `'${tabTitle}'!D${filaDestino}`, values: [[formulaD]] });
+        data.push({ range: `'${tabTitle}'!G${filaDestino}`, values: [[formulaG]] });
+      }
+      filasEscritas.push({ tab: tabTitle, fila: filaDestino });
+    }
+
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      requestBody: { valueInputOption: 'USER_ENTERED', data },
+    });
+  }
+
+  return {
+    prefijo,
+    filasEscritas,
+    diferenciaCierreArs: diferenciaArs,
+    diferenciaCierreUsd: diferenciaUsd,
+  };
+}
+
+export interface SesionResumen {
+  prefijo: string;            // "SESION DD/MM/YYYY - LH5"
+  fechaSesion: string;        // DD/MM/YYYY
+  iso: string;                // YYYY-MM-DD para sort/cálculo
+  local: string;              // "LH5"
+  retiradoArs: number;        // suma positiva
+  gastadoArs: number;         // suma positiva (valor absoluto)
+  diferenciaArs: number;      // signed (puede ser ±)
+  retiradoUsd: number;
+  gastadoUsd: number;
+  diferenciaUsd: number;
+  totalRows: number;
+  filas: { tab: string; fila: number }[];
+}
+
+export async function listSesiones(maxMonthsBack = 6): Promise<SesionResumen[]> {
+  const sheets = ensureConfigured();
+  const tabs = await listMeses();
+  const tabsRecent = tabs.slice(0, maxMonthsBack);
+  if (tabsRecent.length === 0) return [];
+
+  const ranges = tabsRecent.map(
+    (t) => `'${t.title}'!A${FIRST_DATA_ROW}:G${MAX_ROW}`,
+  );
+  const res = await sheets.spreadsheets.values.batchGet({
+    spreadsheetId: SHEET_ID,
+    ranges,
+    valueRenderOption: 'UNFORMATTED_VALUE',
+  });
+
+  const map = new Map<string, SesionResumen>();
+  res.data.valueRanges?.forEach((block, blockIdx) => {
+    const tab = tabsRecent[blockIdx].title;
+    const rows = block.values || [];
+    rows.forEach((row, i) => {
+      const fila = FIRST_DATA_ROW + i;
+      const monedaRaw = String(row[1] || '').trim().toUpperCase();
+      const desc = String(row[2] || '');
+      const catRaw = String(row[4] || '').trim().toUpperCase();
+      const impRaw = row[5];
+      if (!esRowDeSesion(desc)) return;
+      const parsed = parsePrefijoSesion(desc);
+      if (!parsed) return;
+
+      const importe =
+        typeof impRaw === 'number'
+          ? impRaw
+          : parseFloat(String(impRaw || '0').replace(',', '.'));
+      const isUsd = monedaRaw === 'DOLAR' || monedaRaw === 'USD';
+
+      let resumen = map.get(parsed.prefijo);
+      if (!resumen) {
+        const dm = parsed.fechaSesion.split('/');
+        const iso =
+          dm.length === 3
+            ? `${dm[2]}-${dm[1].padStart(2, '0')}-${dm[0].padStart(2, '0')}`
+            : '';
+        resumen = {
+          prefijo: parsed.prefijo,
+          fechaSesion: parsed.fechaSesion,
+          iso,
+          local: parsed.local,
+          retiradoArs: 0,
+          gastadoArs: 0,
+          diferenciaArs: 0,
+          retiradoUsd: 0,
+          gastadoUsd: 0,
+          diferenciaUsd: 0,
+          totalRows: 0,
+          filas: [],
+        };
+        map.set(parsed.prefijo, resumen);
+      }
+      resumen.totalRows++;
+      resumen.filas.push({ tab, fila });
+
+      // Clasificar por la CATEGORIA del Sheet (no confiable a 100% si
+      // alguien edita el row a mano, pero es nuestra fuente).
+      if (catRaw === 'CA') {
+        // Retiro: importe positivo entra
+        if (isUsd) resumen.retiradoUsd += importe;
+        else resumen.retiradoArs += importe;
+      } else if (catRaw === 'DIFERENCIA') {
+        if (isUsd) resumen.diferenciaUsd += importe;
+        else resumen.diferenciaArs += importe;
+      } else {
+        // BISTRO u otros → gasto. El importe llega negativo en col F.
+        if (isUsd) resumen.gastadoUsd += Math.abs(importe);
+        else resumen.gastadoArs += Math.abs(importe);
+      }
+    });
+  });
+
+  return Array.from(map.values()).sort((a, b) => b.iso.localeCompare(a.iso));
+}
+
+export async function deleteSesionByPrefix(prefijo: string): Promise<{
+  borradas: number;
+}> {
+  if (!prefijo.trim().startsWith('SESION ')) {
+    throw new CajaError(400, 'Prefijo inválido');
+  }
+  const sheets = ensureConfigured();
+  const tabs = await listMeses();
+  let borradas = 0;
+  for (const t of tabs) {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: `'${t.title}'!A${FIRST_DATA_ROW}:G${MAX_ROW}`,
+    });
+    const rows = res.data.values || [];
+    const toClear: number[] = [];
+    rows.forEach((row, i) => {
+      const desc = String(row[2] || '').trim();
+      if (desc.startsWith(prefijo)) toClear.push(FIRST_DATA_ROW + i);
+    });
+    if (toClear.length === 0) continue;
+
+    const data: sheets_v4.Schema$ValueRange[] = [];
+    for (const fila of toClear) {
+      data.push({ range: `'${t.title}'!A${fila}:C${fila}`, values: [['', '', '']] });
+      data.push({ range: `'${t.title}'!E${fila}:F${fila}`, values: [['', '']] });
+    }
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      requestBody: { valueInputOption: 'USER_ENTERED', data },
+    });
+    borradas += toClear.length;
+  }
+  return { borradas };
 }
 
 // ─── Borrar movimiento ──────────────────────────────────────────

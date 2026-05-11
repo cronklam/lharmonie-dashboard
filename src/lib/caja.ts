@@ -176,3 +176,141 @@ export interface SaldoMes {
 export function nuevoIdMov(): string {
   return `mov_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
 }
+
+// ─── Sesiones de Control (Iara) ─────────────────────────────────
+//
+// Una sesión = control periódico de Iara: anota retiros de locales,
+// gastos chicos, ajustes, cuenta cuánto hay en caja grande, y confirma
+// el saldo final. Cada movimiento individual de la sesión se persiste
+// como una fila en el Sheet de Caja con DESCRIPCION prefijada para
+// que después podamos agruparlas como una sola sesión.
+//
+// Formato del prefijo de DESCRIPCION:
+//   "SESION DD/MM/YYYY - LOCAL · {concepto del mov}"
+// Donde DD/MM/YYYY es la fecha de la sesión (cuando Iara controló) y
+// LOCAL es el ancla (LH1..LH6). Eso permite group-by exacto al leer.
+
+export type SesionTipoMov = 'RETIRO' | 'GASTO' | 'AJUSTE';
+export const SESION_TIPOS_MOV: SesionTipoMov[] = ['RETIRO', 'GASTO', 'AJUSTE'];
+
+export const SESION_TIPO_LABEL: Record<SesionTipoMov, string> = {
+  RETIRO: 'Retiro',
+  GASTO: 'Gasto',
+  AJUSTE: 'Ajuste',
+};
+
+export const SESION_TIPO_COLOR: Record<
+  SesionTipoMov,
+  { fg: string; bg: string }
+> = {
+  RETIRO: { fg: 'var(--green)', bg: 'var(--green-bg)' },
+  GASTO: { fg: 'var(--red)', bg: 'var(--red-bg)' },
+  AJUSTE: { fg: 'var(--text-muted)', bg: 'var(--bg-subtle)' },
+};
+
+export type SesionEstadoMov = 'COMPLETO' | 'PARCIAL';
+export const SESION_ESTADOS_MOV: SesionEstadoMov[] = ['COMPLETO', 'PARCIAL'];
+
+/** Categorías finas de GASTO en la sesión (estilo staff). Se preservan
+ *  en CONCEPTO al escribir al Sheet (la CATEGORIA del Sheet queda
+ *  fija a BISTRO para gastos, CA para retiros, DIFERENCIA para ajustes). */
+export const SESION_CATEGORIAS_GASTO = [
+  'Limpieza',
+  'Insumos',
+  'Bebidas',
+  'Mantenimiento',
+  'Mensajería',
+  'Servicios',
+  'Papelería',
+  'Personal',
+  'Imprevistos',
+  'Otros',
+] as const;
+
+export type SesionCategoriaGasto = (typeof SESION_CATEGORIAS_GASTO)[number];
+
+export function isSesionCategoriaGasto(s: string): s is SesionCategoriaGasto {
+  return (SESION_CATEGORIAS_GASTO as readonly string[]).includes(s);
+}
+
+export interface SesionMovInput {
+  tipo: SesionTipoMov;
+  fecha: string;             // YYYY-MM-DD del movimiento (puede diferir de fechaSesion)
+  local: string;             // ej "LH5" — el ancla del staff
+  montoArs: number;          // positivo, sin signo
+  montoUsd: number;          // positivo
+  concepto: string;
+  categoriaFina?: SesionCategoriaGasto | '';
+  estado: SesionEstadoMov;
+}
+
+export interface SesionInput {
+  fechaSesion: string;       // YYYY-MM-DD cuando Iara controló
+  local: string;             // local "activo" inicial de la sesión
+  movs: SesionMovInput[];
+  // Conteo físico
+  encontradoArs: number;
+  encontradoUsd: number;
+  // Saldo registrado en sistema ANTES de esta sesión (snapshot al abrir)
+  saldoRegistradoArs: number;
+  saldoRegistradoUsd: number;
+  // Saldo confirmado final (por default = saldo sugerido; el user puede ajustarlo)
+  saldoConfirmadoArs: number;
+  saldoConfirmadoUsd: number;
+  notas: string;
+}
+
+/** Prefijo único de la sesión, base del agrupamiento al leer rows. */
+export function prefijoSesion(fechaSesion: string, local: string): string {
+  const fecha = fechaToSheet(fechaSesion) || fechaSesion;
+  return `SESION ${fecha} - ${local}`;
+}
+
+/** Descripción de un mov individual dentro de una sesión.
+ *  Si la categoría fina existe se prepende al concepto: "Limpieza · concepto". */
+export function descripcionSesionMov(
+  fechaSesion: string,
+  local: string,
+  mov: SesionMovInput,
+): string {
+  const base = prefijoSesion(fechaSesion, local);
+  const partes: string[] = [];
+  if (mov.categoriaFina) partes.push(mov.categoriaFina);
+  if (mov.concepto.trim()) partes.push(mov.concepto.trim());
+  if (mov.estado === 'PARCIAL') partes.push('parcial');
+  return partes.length > 0 ? `${base} · ${partes.join(' · ')}` : base;
+}
+
+/** Mapea un mov de sesión a la CATEGORIA whitelist del Sheet. */
+export function categoriaSheetParaSesion(tipo: SesionTipoMov): Categoria {
+  if (tipo === 'RETIRO') return 'CA';
+  if (tipo === 'AJUSTE') return 'DIFERENCIA';
+  return 'BISTRO';
+}
+
+/** Convierte un mov de sesión a importe signed (lo que va a col F):
+ *  RETIRO suma (sale del local → entra a caja grande), GASTO resta,
+ *  AJUSTE puede ser cualquier signo (lo dejamos como vino). */
+export function importeSignedSesion(mov: SesionMovInput, monto: number): number {
+  if (mov.tipo === 'GASTO') return -Math.abs(monto);
+  if (mov.tipo === 'RETIRO') return Math.abs(monto);
+  return monto; // AJUSTE — preserva signo si vino con signo, sino positivo
+}
+
+/** True si el row del Sheet es parte de una sesión (concepto arranca con SESION). */
+export function esRowDeSesion(desc: string): boolean {
+  return /^SESION\s+\d{1,2}\/\d{1,2}\/\d{4}\s+-\s+/.test(desc.trim());
+}
+
+/** Parsea el prefijo de un row de sesión. Devuelve { prefijo, fechaSesion, local }
+ *  o null si no matchea. */
+export function parsePrefijoSesion(desc: string): {
+  prefijo: string;
+  fechaSesion: string;       // DD/MM/YYYY
+  local: string;
+} | null {
+  const m = desc.trim().match(/^(SESION\s+(\d{1,2}\/\d{1,2}\/\d{4})\s+-\s+(\S+))/);
+  if (!m) return null;
+  return { prefijo: m[1], fechaSesion: m[2], local: m[3] };
+}
+
