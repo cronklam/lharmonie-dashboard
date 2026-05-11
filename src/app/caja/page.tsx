@@ -1148,11 +1148,12 @@ function NuevoMovSheet({
     importeAbs: number;
   }) => Promise<boolean>;
 }) {
-  const [tipo, setTipo] = useState<Tipo>('EGRESO');
   const [fecha, setFecha] = useState(defaultFecha);
   const [moneda, setMoneda] = useState<Moneda>('PESO');
   const [categoria, setCategoria] = useState<Categoria>('BISTRO');
   const [descripcion, setDescripcion] = useState('');
+  // Importe puede ser positivo (ingreso) o negativo (egreso). El signo
+  // determina el tipo: + = INGRESO, − = EGRESO. Sin botones aparte.
   const [importeRaw, setImporteRaw] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1169,8 +1170,15 @@ function NuevoMovSheet({
     };
   }, [onClose]);
 
+  // El raw es lo que tipea el user (puede tener "-", separadores, etc).
+  // Lo parseamos a número con signo para validar y previsualizar.
   const importeNum = parseMontoInput(importeRaw);
-  const importeDisplay = importeNum > 0 ? Math.round(importeNum).toLocaleString('es-AR') : '';
+  const tipo: Tipo = importeNum >= 0 ? 'INGRESO' : 'EGRESO';
+  const tipoColor = importeNum > 0
+    ? 'var(--green)'
+    : importeNum < 0
+    ? 'var(--red)'
+    : 'var(--text-muted)';
 
   const submit = useCallback(async () => {
     if (saving) return;
@@ -1179,8 +1187,8 @@ function NuevoMovSheet({
       setError('Descripción vacía');
       return;
     }
-    if (importeNum <= 0) {
-      setError('Importe inválido (mayor a 0)');
+    if (importeNum === 0) {
+      setError('Importe en 0 — ingresá un monto');
       return;
     }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
@@ -1194,7 +1202,7 @@ function NuevoMovSheet({
       moneda,
       categoria,
       descripcion: descripcion.trim(),
-      importeAbs: importeNum,
+      importeAbs: Math.abs(importeNum),
     });
     setSaving(false);
     if (ok) onClose();
@@ -1305,22 +1313,6 @@ function NuevoMovSheet({
             gap: 14,
           }}
         >
-          {/* Tipo */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            <BigToggle
-              label="Ingreso"
-              selected={tipo === 'INGRESO'}
-              tone="green"
-              onClick={() => setTipo('INGRESO')}
-            />
-            <BigToggle
-              label="Egreso"
-              selected={tipo === 'EGRESO'}
-              tone="red"
-              onClick={() => setTipo('EGRESO')}
-            />
-          </div>
-
           {/* Fecha */}
           <FieldLabel
             label="Fecha"
@@ -1335,41 +1327,33 @@ function NuevoMovSheet({
             />
           </FieldLabel>
 
-          {/* Moneda */}
+          {/* Moneda — dropdown compacto en lugar de 2 botones grandes */}
           <FieldLabel label="Moneda">
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              <ChipButton
-                label="Pesos · $"
-                selected={moneda === 'PESO'}
-                onClick={() => setMoneda('PESO')}
-              />
-              <ChipButton
-                label="Dólares · US$"
-                selected={moneda === 'DOLAR'}
-                onClick={() => setMoneda('DOLAR')}
-              />
-            </div>
+            <select
+              value={moneda}
+              onChange={(e) => setMoneda(e.target.value as Moneda)}
+              className="input-pro"
+              style={{ minHeight: 'var(--touch-min)' }}
+            >
+              <option value="PESO">Pesos · $</option>
+              <option value="DOLAR">Dólares · US$</option>
+            </select>
           </FieldLabel>
 
-          {/* Categoría */}
+          {/* Categoría — dropdown compacto en lugar de grid 3×4 */}
           <FieldLabel label="Categoría">
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(3, 1fr)',
-                gap: 6,
-              }}
+            <select
+              value={categoria}
+              onChange={(e) => setCategoria(e.target.value as Categoria)}
+              className="input-pro"
+              style={{ minHeight: 'var(--touch-min)' }}
             >
               {CATEGORIAS.map((c) => (
-                <ChipButton
-                  key={c}
-                  label={c}
-                  selected={categoria === c}
-                  onClick={() => setCategoria(c)}
-                  small
-                />
+                <option key={c} value={c}>
+                  {c}
+                </option>
               ))}
-            </div>
+            </select>
           </FieldLabel>
 
           {/* Descripción */}
@@ -1385,8 +1369,11 @@ function NuevoMovSheet({
             />
           </FieldLabel>
 
-          {/* Importe */}
-          <FieldLabel label="Importe (positivo)" help="Mostrá el valor absoluto. El signo lo aplica el tipo.">
+          {/* Importe con signo — − = egreso (rojo), + = ingreso (verde) */}
+          <FieldLabel
+            label="Importe"
+            help="Anteponé un menos si es egreso. Ej: -50000 = egreso de $50.000."
+          >
             <div style={{ position: 'relative' }}>
               <span
                 style={{
@@ -1405,8 +1392,9 @@ function NuevoMovSheet({
               </span>
               <input
                 type="text"
-                inputMode="decimal"
-                value={importeDisplay}
+                inputMode="numeric"
+                pattern="[0-9\-.,]*"
+                value={importeRaw}
                 onChange={(e) => setImporteRaw(e.target.value)}
                 placeholder="0"
                 className="input-pro tabular-nums-strict"
@@ -1416,9 +1404,45 @@ function NuevoMovSheet({
                   fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
                   fontSize: 17,
                   fontWeight: 700,
+                  color: tipoColor,
+                  borderColor:
+                    importeNum > 0
+                      ? 'var(--green)'
+                      : importeNum < 0
+                      ? 'var(--red)'
+                      : undefined,
                 }}
               />
             </div>
+            {importeNum !== 0 && (
+              <span
+                className="tabular-nums-strict"
+                style={{
+                  marginTop: 6,
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  color: tipoColor,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                <span
+                  aria-hidden
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    background: tipoColor,
+                  }}
+                />
+                {tipo === 'INGRESO' ? 'Ingreso' : 'Egreso'} ·{' '}
+                {Math.round(Math.abs(importeNum)).toLocaleString('es-AR')}{' '}
+                {MONEDA_SYMBOLS[moneda]}
+              </span>
+            )}
           </FieldLabel>
 
           {error && (
@@ -1467,21 +1491,30 @@ function NuevoMovSheet({
           <button
             type="button"
             onClick={submit}
-            disabled={saving}
+            disabled={saving || importeNum === 0}
             className="press-feedback"
             style={{
               minHeight: 'var(--touch-min)',
               borderRadius: 'var(--radius-md)',
-              background: tipo === 'INGRESO' ? 'var(--green)' : 'var(--accent)',
-              color: '#FDFBF8',
+              background:
+                importeNum > 0
+                  ? 'var(--green)'
+                  : importeNum < 0
+                  ? 'var(--red)'
+                  : 'var(--bg-subtle)',
+              color: importeNum !== 0 ? '#FDFBF8' : 'var(--text-muted)',
               fontWeight: 700,
               fontSize: 14,
               border: 0,
               opacity: saving ? 0.6 : 1,
-              cursor: saving ? 'wait' : 'pointer',
+              cursor: saving ? 'wait' : importeNum === 0 ? 'not-allowed' : 'pointer',
             }}
           >
-            {saving ? 'Guardando…' : `Agregar ${TIPO_LABELS[tipo].toLowerCase()}`}
+            {saving
+              ? 'Guardando…'
+              : importeNum === 0
+              ? 'Ingresá un monto'
+              : `Agregar ${TIPO_LABELS[tipo].toLowerCase()}`}
           </button>
         </div>
       </div>
