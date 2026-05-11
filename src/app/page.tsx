@@ -19,6 +19,7 @@ import {
 import AnimatedNumber from './components/AnimatedNumber';
 import EyebrowTag from './components/EyebrowTag';
 import { BarChart, DoughnutChart } from './components/Charts';
+import { CajaCard } from './components/CajaCard';
 
 type Periodo = 'semana' | 'mes' | 'pasado' | 'todo';
 
@@ -354,6 +355,10 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* Caja grande — widget owner-only. Saldo total efectivo +
+          fecha del último control de Iara. Tap → /caja. */}
+      <CajaCard />
 
       {/* Acceso rápido — atajos a las funciones más usadas. Mantenido fijo
           (4 items) para mantener el scope acotado; futuro: configurable

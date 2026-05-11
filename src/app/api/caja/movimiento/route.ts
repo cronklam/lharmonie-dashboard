@@ -9,7 +9,7 @@ import {
   type Moneda,
   type Tipo,
 } from '@/lib/caja';
-import { appendMovimiento, CajaError } from '@/lib/caja-server';
+import { appendMovimiento, clearMovimiento, CajaError } from '@/lib/caja-server';
 
 // POST /api/caja/movimiento
 // Body: { fecha: "YYYY-MM-DD", moneda: "PESO"|"DOLAR",
@@ -106,6 +106,43 @@ export const POST = withAuth(async (req, user) => {
     }
     console.error('[CAJA/MOV] POST error:', err);
     const msg = err instanceof Error ? err.message : 'Error guardando';
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+  }
+});
+
+// DELETE /api/caja/movimiento?tab=Mayo%202026&fila=42
+// Limpia A B C E F de esa fila (no toca D y G porque tienen fórmulas
+// que se recalculan automáticamente al cambiar los datos).
+export const DELETE = withAuth(async (req, user) => {
+  if (!hasCapability(user.email, 'caja')) {
+    throw new AuthError(403, 'No tenés acceso a Caja');
+  }
+  const url = new URL(req.url);
+  const tab = (url.searchParams.get('tab') || '').trim();
+  const filaRaw = url.searchParams.get('fila');
+  const fila = filaRaw ? parseInt(filaRaw, 10) : NaN;
+  if (!tab) {
+    return NextResponse.json(
+      { ok: false, error: 'Falta query param "tab"' },
+      { status: 400 },
+    );
+  }
+  if (!Number.isFinite(fila) || fila < 3) {
+    return NextResponse.json(
+      { ok: false, error: 'Fila inválida (debe ser entero ≥ 3)' },
+      { status: 400 },
+    );
+  }
+  try {
+    await clearMovimiento(tab, fila);
+    console.log(`[CAJA/MOV] ${user.email} cleared ${tab}#${fila}`);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    if (err instanceof CajaError) {
+      return NextResponse.json({ ok: false, error: err.message }, { status: err.status });
+    }
+    console.error('[CAJA/MOV] DELETE error:', err);
+    const msg = err instanceof Error ? err.message : 'Error borrando';
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 });

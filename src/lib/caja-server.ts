@@ -351,3 +351,48 @@ export async function appendMovimiento(input: AppendInput): Promise<AppendResult
 
   return { tab: tab.title, fila: filaDestino };
 }
+
+// ─── Borrar movimiento ──────────────────────────────────────────
+
+/** Borra la fila exacta del tab dado. Limpia solo A, B, C, E, F (no
+ *  toca D y G porque tienen fórmulas que dependen del rango). El
+ *  resultado: la fila queda visualmente vacía con sus fórmulas
+ *  recalculando saldos automáticamente.
+ *
+ *  No usamos deleteDimension porque correría las filas siguientes y
+ *  rompería el patrón pre-llenado del Sheet (formato, dropdowns,
+ *  fórmulas en filas siguientes). Borrar contenido es más seguro. */
+export async function clearMovimiento(
+  tab: string,
+  fila: number,
+): Promise<void> {
+  if (fila < FIRST_DATA_ROW) {
+    throw new CajaError(400, `Fila ${fila} fuera de rango`);
+  }
+  const sheets = ensureConfigured();
+  // Verificar que el tab existe
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: SHEET_ID,
+    fields: 'sheets.properties.title',
+  });
+  const exists = meta.data.sheets?.some((s) => s.properties?.title === tab);
+  if (!exists) {
+    throw new CajaError(404, `La pestaña "${tab}" no existe.`);
+  }
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: {
+      valueInputOption: 'USER_ENTERED',
+      data: [
+        {
+          range: `'${tab}'!A${fila}:C${fila}`,
+          values: [['', '', '']],
+        },
+        {
+          range: `'${tab}'!E${fila}:F${fila}`,
+          values: [['', '']],
+        },
+      ],
+    },
+  });
+}

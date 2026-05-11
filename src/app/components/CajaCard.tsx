@@ -1,0 +1,219 @@
+'use client';
+
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { fmtMonto } from '@/lib/caja';
+import { useAuth } from './AuthProvider';
+
+// CajaCard — chip "CAJA GRANDE · OWNER", saldo serif grande,
+// subtítulo con info del último control (cuando exista). Tap → /caja.
+//
+// Visualmente espejo del staff `CajaGrandeWidget` pero con la paleta
+// editorial luxury del dashboard: borde dorado sutil, fondo crema,
+// halo de fondo radial.
+//
+// Renderiza null si el user no es owner. Auto-fetchea /api/caja/saldos
+// al montar (no requiere prop drilling). Si vas a renderizarlo en
+// múltiples lugares en la misma página, considerá levantar el state
+// en el padre — por ahora el fetch es liviano.
+
+interface SaldosPayload {
+  pesos: number;
+  dolares: number;
+}
+
+interface UltimoControlInfo {
+  fecha: string;
+  por: string;
+}
+
+export function CajaCard({
+  showChip = true,
+}: {
+  showChip?: boolean;
+}) {
+  const { isOwner } = useAuth();
+  const [saldos, setSaldos] = useState<SaldosPayload | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [fetching, setFetching] = useState(true);
+  // TODO: cuando esté el endpoint de sesiones, hidratar último control
+  // con datos reales. Por ahora queda null y el subtítulo dice "Sin
+  // control registrado".
+  const [ultimo] = useState<UltimoControlInfo | null>(null);
+
+  useEffect(() => {
+    if (!isOwner) {
+      setFetching(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch('/api/caja/saldos', { cache: 'no-store' });
+        const d = await r.json();
+        if (cancelled) return;
+        if (d.ok) {
+          setSaldos({ pesos: d.pesos, dolares: d.dolares });
+          setError(null);
+        } else {
+          setError(d.error || 'Error');
+        }
+      } catch {
+        if (!cancelled) setError('Error de red');
+      } finally {
+        if (!cancelled) setFetching(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOwner]);
+
+  if (!isOwner) return null;
+
+  return (
+    <Link
+      href="/caja"
+      aria-label="Ir a Caja efectivo"
+      className="spring-tap"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 14,
+        padding: '16px 18px',
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border-accent)',
+        borderRadius: 'var(--radius-lg)',
+        boxShadow: 'var(--shadow-card)',
+        color: 'var(--text)',
+        position: 'relative',
+        overflow: 'hidden',
+      }}
+    >
+      {/* Halo dorado de fondo */}
+      <div
+        aria-hidden
+        style={{
+          position: 'absolute',
+          top: -40,
+          right: -40,
+          width: 140,
+          height: 140,
+          borderRadius: '50%',
+          background:
+            'radial-gradient(circle, rgba(196,160,103,0.14) 0%, transparent 70%)',
+          pointerEvents: 'none',
+        }}
+      />
+      <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
+        {showChip && (
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 9.5,
+              fontWeight: 700,
+              letterSpacing: '0.18em',
+              textTransform: 'uppercase',
+              color: 'var(--accent-hover)',
+              padding: '4px 9px',
+              border: '1px solid var(--border-accent)',
+              borderRadius: 999,
+              marginBottom: 8,
+            }}
+          >
+            <span
+              aria-hidden
+              style={{
+                width: 5,
+                height: 5,
+                borderRadius: '50%',
+                background: 'var(--accent)',
+              }}
+            />
+            Caja grande · Owner
+          </div>
+        )}
+        {fetching && !saldos && (
+          <div
+            className="shimmer-modern"
+            style={{
+              height: 28,
+              width: '60%',
+              borderRadius: 6,
+            }}
+          />
+        )}
+        {!fetching && error && (
+          <div
+            style={{
+              fontSize: 13,
+              color: 'var(--red)',
+              fontWeight: 600,
+            }}
+          >
+            {error}
+          </div>
+        )}
+        {saldos && (
+          <>
+            <div
+              className="font-brand tabular-nums-strict"
+              style={{
+                fontSize: 26,
+                fontWeight: 700,
+                color: 'var(--text)',
+                lineHeight: 1.05,
+                letterSpacing: '-0.02em',
+                fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
+              }}
+            >
+              {fmtMonto(saldos.pesos, 'PESO')}
+              {saldos.dolares !== 0 && (
+                <span
+                  style={{
+                    color: 'var(--text-muted)',
+                    fontWeight: 600,
+                    fontSize: 18,
+                    marginLeft: 8,
+                  }}
+                >
+                  · {fmtMonto(saldos.dolares, 'DOLAR')}
+                </span>
+              )}
+            </div>
+            <div
+              style={{
+                fontSize: 12,
+                color: 'var(--text-muted)',
+                marginTop: 6,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {ultimo
+                ? `Último control: ${ultimo.fecha} · ${ultimo.por}`
+                : 'Sin control de Iara registrado todavía'}
+            </div>
+          </>
+        )}
+      </div>
+      <svg
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="var(--accent)"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+        style={{ flexShrink: 0, position: 'relative' }}
+      >
+        <path d="m9 18 6-6-6-6" />
+      </svg>
+    </Link>
+  );
+}

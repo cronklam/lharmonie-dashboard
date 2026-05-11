@@ -118,6 +118,35 @@ export default function CajaPage() {
     window.setTimeout(() => setToast(''), 2400);
   }, []);
 
+  const deleteMov = useCallback(
+    async (mov: OptimisticMov) => {
+      if (!tabName || mov.fila < 3) return false;
+      // Optimistic remove
+      setItems((prev) => prev.filter((i) => i._localId !== mov._localId));
+      try {
+        const res = await fetch(
+          `/api/caja/movimiento?tab=${encodeURIComponent(tabName)}&fila=${mov.fila}`,
+          { method: 'DELETE' },
+        );
+        const data = await res.json();
+        if (!data.ok) {
+          // Rollback: refetch para traer la fila de vuelta
+          await refreshMes(mes);
+          flashToast(data.error || 'No se pudo borrar');
+          return false;
+        }
+        flashToast('Movimiento borrado');
+        refreshSaldos();
+        return true;
+      } catch {
+        await refreshMes(mes);
+        flashToast('Error de red');
+        return false;
+      }
+    },
+    [tabName, mes, refreshMes, refreshSaldos, flashToast],
+  );
+
   // Filtros aplicados a items
   const itemsFiltered = useMemo(() => {
     let list = items;
@@ -369,6 +398,85 @@ export default function CajaPage() {
           </div>
         </section>
 
+        {/* Sesiones de Control — placeholder hasta que tengamos el
+            schema del Sheet para sesiones. Iara carga acá los
+            controles periódicos de retiros desde locales; conciliación
+            con Bistrosoft viene después. */}
+        <section
+          aria-label="Sesiones de control"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            padding: 14,
+            background: 'var(--bg-card-alt)',
+            border: '1px dashed var(--border-strong)',
+            borderRadius: 'var(--radius-md)',
+          }}
+        >
+          <div
+            aria-hidden
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 12,
+              background: 'var(--accent-bg)',
+              color: 'var(--accent)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
+              <path
+                d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div
+              style={{
+                fontSize: 13.5,
+                fontWeight: 600,
+                color: 'var(--text)',
+              }}
+            >
+              Sesiones de control · Iara
+            </div>
+            <div
+              style={{
+                fontSize: 11.5,
+                color: 'var(--text-muted)',
+                marginTop: 2,
+                lineHeight: 1.4,
+              }}
+            >
+              Controles periódicos de retiros desde locales + conciliación con Bistrosoft. Pronto.
+            </div>
+          </div>
+          <span
+            style={{
+              fontSize: 9.5,
+              fontWeight: 700,
+              letterSpacing: '0.10em',
+              textTransform: 'uppercase',
+              color: 'var(--accent-hover)',
+              padding: '4px 9px',
+              border: '1px solid var(--border-accent)',
+              borderRadius: 999,
+              background: 'var(--accent-bg)',
+              flexShrink: 0,
+            }}
+          >
+            Próximo
+          </span>
+        </section>
+
         {/* Filtros */}
         <section style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <FilterRow
@@ -430,7 +538,7 @@ export default function CajaPage() {
             >
               {itemsFiltered.map((m) => (
                 <li key={m._localId}>
-                  <MovRow mov={m} />
+                  <MovRow mov={m} onDelete={deleteMov} />
                 </li>
               ))}
             </ul>
@@ -453,11 +561,20 @@ export default function CajaPage() {
 
 // ─── Mov row ─────────────────────────────────────────────────────
 
-function MovRow({ mov }: { mov: OptimisticMov }) {
+function MovRow({
+  mov,
+  onDelete,
+}: {
+  mov: OptimisticMov;
+  onDelete: (m: OptimisticMov) => Promise<boolean>;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const isIngreso = mov.importe >= 0;
   const catColors = mov.categoria
     ? CATEGORIA_COLORS[mov.categoria]
     : { fg: 'var(--text-muted)', bg: 'var(--bg-subtle)' };
+  const canDelete = !mov._pending && !mov._failed && mov.fila >= 3;
   return (
     <div
       style={{
@@ -465,11 +582,16 @@ function MovRow({ mov }: { mov: OptimisticMov }) {
         alignItems: 'center',
         gap: 12,
         padding: 14,
-        background: mov._failed ? 'var(--red-bg)' : 'var(--bg-card)',
-        border: `1px solid ${mov._failed ? 'var(--red)' : 'var(--border)'}`,
+        background: mov._failed
+          ? 'var(--red-bg)'
+          : confirming
+          ? 'var(--red-bg)'
+          : 'var(--bg-card)',
+        border: `1px solid ${mov._failed || confirming ? 'var(--red)' : 'var(--border)'}`,
         borderRadius: 'var(--radius-md)',
         boxShadow: 'var(--shadow-card)',
         opacity: mov._pending ? 0.7 : 1,
+        transition: 'background 180ms var(--ease-ios), border-color 180ms var(--ease-ios)',
       }}
     >
       <div
@@ -572,7 +694,101 @@ function MovRow({ mov }: { mov: OptimisticMov }) {
       >
         {isIngreso ? '+' : ''}{fmtMonto(mov.importe, mov.moneda)}
       </div>
+      {canDelete && !confirming && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setConfirming(true);
+          }}
+          aria-label="Eliminar movimiento"
+          className="press-feedback"
+          style={{
+            width: 36,
+            height: 36,
+            minWidth: 36,
+            borderRadius: '50%',
+            background: 'var(--bg-subtle)',
+            border: 0,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--text-muted)',
+            cursor: 'pointer',
+            flexShrink: 0,
+          }}
+        >
+          <TrashIcon />
+        </button>
+      )}
+      {canDelete && confirming && (
+        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+          <button
+            type="button"
+            onClick={() => setConfirming(false)}
+            disabled={deleting}
+            aria-label="Cancelar"
+            className="press-feedback"
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: '50%',
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'var(--text-muted)',
+              cursor: 'pointer',
+            }}
+          >
+            <CloseIcon />
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              setDeleting(true);
+              await onDelete(mov);
+              // si falló, el row se re-render con refresh y este state se pierde
+            }}
+            disabled={deleting}
+            aria-label="Confirmar eliminar"
+            className="press-feedback"
+            style={{
+              minHeight: 36,
+              padding: '0 12px',
+              borderRadius: 18,
+              background: 'var(--red)',
+              color: '#FDFBF8',
+              border: 0,
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: deleting ? 'wait' : 'pointer',
+              opacity: deleting ? 0.6 : 1,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+            }}
+          >
+            {deleting ? '...' : 'Borrar'}
+          </button>
+        </div>
+      )}
     </div>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14zM10 11v6M14 11v6"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 
