@@ -21,7 +21,11 @@ export class SheetsError extends Error {
   }
 }
 
-async function fetchTab(sheetId: string, tab: string): Promise<string[][]> {
+async function fetchTab(
+  sheetId: string,
+  tab: string,
+  opts: { tag?: string; revalidate?: number } = {},
+): Promise<string[][]> {
   if (!sheetId || !API_KEY) {
     throw new SheetsError(
       500,
@@ -31,9 +35,19 @@ async function fetchTab(sheetId: string, tab: string): Promise<string[][]> {
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(
     tab,
   )}?key=${API_KEY}`;
+  // Por default NO cacheamos. La caché vieja de 60s causó un bug:
+  // después de un write (marcar pagada / eliminar), el read seguía
+  // devolviendo data vieja por hasta 1 min, así que la UI mostraba la
+  // factura todavía pendiente. Llamadas tag-based: el caller puede
+  // pasar `tag` para habilitar revalidación selectiva via
+  // `revalidateTag(tag)` después de un write.
+  const next: { revalidate?: number; tags?: string[] } = opts.tag
+    ? { revalidate: opts.revalidate ?? 300, tags: [opts.tag] }
+    : { revalidate: 0 };
   const res = await fetch(url, {
     signal: AbortSignal.timeout(20000),
-    next: { revalidate: 60 },
+    next,
+    cache: opts.tag ? 'force-cache' : 'no-store',
   });
   if (!res.ok) throw new SheetsError(res.status, `Sheets API ${res.status}`);
   const data = (await res.json()) as { values?: string[][] };

@@ -278,6 +278,18 @@ export async function appendPago(p: ServicioPago): Promise<void> {
   });
 }
 
+/** Append batch — para bulk marcar-mes-pagado, una sola API call. */
+export async function appendPagosBatch(pagos: ServicioPago[]): Promise<void> {
+  if (pagos.length === 0) return;
+  const sheets = ensureConfigured();
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SHEET_ID,
+    range: `'${SERVICIOS_PAGOS_TAB}'!A2`,
+    valueInputOption: 'RAW',
+    requestBody: { values: pagos.map(pagoToRow) },
+  });
+}
+
 // ─── Baigun ───────────────────────────────────────────────────────
 
 function rowToBaigun(row: string[]): BaigunMovimiento | null {
