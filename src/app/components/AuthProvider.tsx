@@ -25,6 +25,12 @@ interface AuthContextValue {
   logout: () => Promise<void>;
   isOwner: boolean;
   isAdmin: boolean;
+  // Morph del wordmark "Lharmonie" del login al header del home.
+  // El login lo activa al autenticarse OK; el controlador en layout lo
+  // ejecuta y dispara onComplete. Persiste a través de la navegación.
+  logoMorphActive: boolean;
+  triggerLogoMorph: () => void;
+  endLogoMorph: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -83,8 +89,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isOwner = user?.role === 'owner';
   const isAdmin = user?.role === 'owner' || user?.role === 'admin';
 
+  const [logoMorphActive, setLogoMorphActive] = useState(false);
+  const triggerLogoMorph = useCallback(() => setLogoMorphActive(true), []);
+  const endLogoMorph = useCallback(() => setLogoMorphActive(false), []);
+
   return (
-    <AuthContext.Provider value={{ user, loading, setUser, logout, isOwner, isAdmin }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        setUser,
+        logout,
+        isOwner,
+        isAdmin,
+        logoMorphActive,
+        triggerLogoMorph,
+        endLogoMorph,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

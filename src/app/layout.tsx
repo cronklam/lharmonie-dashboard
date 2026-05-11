@@ -5,6 +5,7 @@ import { FacturasProvider } from './components/FacturasStore';
 import { TopNav } from './components/TopNav';
 import { BottomNav } from './components/BottomNav';
 import { ServiceWorkerRegister } from './components/ServiceWorkerRegister';
+import { LogoMorphMount } from './components/LogoMorphMount';
 
 export const metadata: Metadata = {
   title: 'Lharmonie — Management',
@@ -59,6 +60,7 @@ export default function RootLayout({
             <main className="flex-1 pb-nav-safe">{children}</main>
             <BottomNav />
           </FacturasProvider>
+          <LogoMorphMount />
         </AuthProvider>
       </body>
     </html>

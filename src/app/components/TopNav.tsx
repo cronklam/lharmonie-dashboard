@@ -59,11 +59,13 @@ export function TopNav() {
           gap: 10,
         }}
       >
-        {/* Brand */}
+        {/* Brand — `data-logo-anchor="header-target"` para el morph
+            del wordmark desde el login (LogoMorphController). */}
         <Link
           href="/"
           aria-label="Inicio"
           className="spring-tap"
+          data-logo-anchor="header-target"
           style={{
             display: 'inline-flex',
             alignItems: 'center',

@@ -33,7 +33,7 @@ export default function LoginPage() {
 function LoginInner() {
   const router = useRouter();
   const search = useSearchParams();
-  const { user, setUser } = useAuth();
+  const { user, setUser, triggerLogoMorph } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const btnRef = useRef<HTMLDivElement>(null);
@@ -99,6 +99,11 @@ function LoginInner() {
       if (data.ok && data.user) {
         setUser(data.user as AuthUser);
         const next = search.get('next') || '/';
+        // Dispara morph del wordmark login → topnav (1300ms). El
+        // LogoMorphMount vive en el layout, así que sobrevive la
+        // navegación. El target del header aparece al renderizar /,
+        // el controller hace polling de hasta ~500ms para encontrarlo.
+        triggerLogoMorph();
         router.replace(next);
       } else if (data.error === 'not_authorized') {
         const email = data.email ? encodeURIComponent(data.email) : '';
@@ -143,6 +148,7 @@ function LoginInner() {
 
         <div className="relative z-10 text-center" style={{ animation: 'reveal-up 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) both' }}>
           <div
+            data-logo-anchor="login-source"
             style={{
               fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
               fontSize: 42,
@@ -150,6 +156,7 @@ function LoginInner() {
               color: '#F9F7F3',
               letterSpacing: '0.005em',
               lineHeight: 1,
+              display: 'inline-block',
             }}
           >
             Lharmonie
