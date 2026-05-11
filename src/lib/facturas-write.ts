@@ -21,6 +21,7 @@ const TAB = 'Facturas';
 // 'use client' desde código server-side.
 const COL_ESTADO = 'Estado';
 const COL_FECHA_PAGO = 'Fecha de Pago';
+const COL_MEDIO_PAGO = 'Medio de Pago';
 
 function getAuth() {
   const creds = process.env.GOOGLE_CREDENTIALS;
@@ -135,6 +136,46 @@ export async function markFacturaPagadaDirect(
           },
         ],
       },
+    });
+    return { ok: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Error desconocido';
+    return { ok: false, error: `Sheets API: ${msg}` };
+  }
+}
+
+/** Actualiza la columna "Medio de Pago" de una fila exacta. Usado por
+ *  Iara cuando una factura quedó cargada con el método equivocado
+ *  (ej: dice Transferencia pero en realidad fue Efectivo). NO toca
+ *  Estado ni Fecha de Pago. */
+export async function setMedioPagoDirect(
+  filaExacta: number,
+  medioPago: string,
+): Promise<WriteResult> {
+  if (!Number.isFinite(filaExacta) || filaExacta < 2) {
+    return { ok: false, error: 'filaExacta inválida (debe ser entero ≥ 2)' };
+  }
+  if (!medioPago || !medioPago.trim()) {
+    return { ok: false, error: 'medioPago vacío' };
+  }
+  const cfg = ensureConfigured();
+  if ('error' in cfg) return { ok: false, error: cfg.error };
+  const { sheets } = cfg;
+  try {
+    const { headers } = await readHeaders(sheets);
+    const idx = headers.findIndex((h) => h === COL_MEDIO_PAGO);
+    if (idx < 0) {
+      return {
+        ok: false,
+        error: `Columna "${COL_MEDIO_PAGO}" no encontrada en el Sheet.`,
+      };
+    }
+    const letter = colLetter(idx);
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID,
+      range: `'${TAB}'!${letter}${filaExacta}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [[medioPago.trim()]] },
     });
     return { ok: true };
   } catch (err) {

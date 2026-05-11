@@ -141,6 +141,8 @@ interface StoreValue {
   marcarPagada: (f: Factura) => Promise<WriteOpResult>;
   // Eliminar factura — limpia la fila del Sheet (no shift). Hace refresh si OK.
   eliminarFactura: (f: Factura) => Promise<WriteOpResult>;
+  // Cambia "Medio de Pago" en el Sheet (NO toca Estado ni Fecha de Pago).
+  actualizarMedioPago: (f: Factura, medio: string) => Promise<WriteOpResult>;
 }
 
 const FacturasContext = createContext<StoreValue | null>(null);
@@ -161,6 +163,7 @@ export function useFacturasStore(): StoreValue {
       totalPending: 0,
       marcarPagada: async () => ({ ok: false, error: 'Sin sesión' }),
       eliminarFactura: async () => ({ ok: false, error: 'Sin sesión' }),
+      actualizarMedioPago: async () => ({ ok: false, error: 'Sin sesión' }),
     };
   }
   return ctx;
@@ -309,6 +312,39 @@ export function FacturasProvider({ children }: { children: React.ReactNode }) {
     [refresh],
   );
 
+  const actualizarMedioPago = useCallback(
+    async (f: Factura, medio: string): Promise<WriteOpResult> => {
+      const filaExacta = f._sheetRow ? parseInt(f._sheetRow, 10) || null : null;
+      if (!filaExacta) {
+        return { ok: false, error: 'Esta factura no tiene fila exacta en el Sheet (recargá).' };
+      }
+      try {
+        const res = await fetch('/api/factura/medio-pago', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filaExacta, medioPago: medio }),
+        });
+        const data = (await res.json().catch(() => null)) as
+          | { ok?: boolean; error?: string }
+          | null;
+        if (!res.ok || !data?.ok) {
+          return {
+            ok: false,
+            error: data?.error || `Error ${res.status} actualizando medio de pago`,
+          };
+        }
+        await refresh();
+        return { ok: true };
+      } catch (e) {
+        return {
+          ok: false,
+          error: e instanceof Error ? e.message : 'Error de red',
+        };
+      }
+    },
+    [refresh],
+  );
+
   const { pendingCount, totalPending } = useMemo(() => {
     const pend = facturas.filter(esAPagar);
     return {
@@ -327,6 +363,7 @@ export function FacturasProvider({ children }: { children: React.ReactNode }) {
     totalPending,
     marcarPagada,
     eliminarFactura,
+    actualizarMedioPago,
   };
 
   return <FacturasContext.Provider value={value}>{children}</FacturasContext.Provider>;

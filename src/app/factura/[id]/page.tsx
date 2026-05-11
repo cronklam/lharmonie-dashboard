@@ -22,11 +22,14 @@ export default function FacturaDetailPage({
   const { id } = use(params);
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const { facturas, marcarPagada, eliminarFactura, loading } = useFacturasStore();
+  const { facturas, marcarPagada, eliminarFactura, actualizarMedioPago, loading } =
+    useFacturasStore();
   const [confirmingPay, setConfirmingPay] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [editingMedio, setEditingMedio] = useState(false);
   const [marking, setMarking] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [savingMedio, setSavingMedio] = useState<string | null>(null);
   const [errMsg, setErrMsg] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
 
@@ -101,6 +104,21 @@ export default function FacturaDetailPage({
     } else {
       // Bubble up el error real del Sheet API / server.
       setErrMsg(res.error || 'No se pudo marcar como pagada. Intentá de nuevo.');
+    }
+  }
+
+  async function handleChangeMedio(medio: string) {
+    if (!f || savingMedio) return;
+    setSavingMedio(medio);
+    setErrMsg(null);
+    setOkMsg(null);
+    const res = await actualizarMedioPago(f, medio);
+    setSavingMedio(null);
+    if (res.ok) {
+      setOkMsg(`Método de pago actualizado a ${medio}`);
+      setEditingMedio(false);
+    } else {
+      setErrMsg(res.error || 'No se pudo actualizar el método de pago.');
     }
   }
 
@@ -346,6 +364,107 @@ export default function FacturaDetailPage({
                   {deleting ? 'Eliminando…' : 'Sí, eliminar'}
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* Cambiar método de pago (siempre visible salvo durante confirm de pago/borrado).
+              Útil cuando la bot la cargó con "Transferencia" pero fue "Efectivo", o viceversa. */}
+          {!confirmingPay && !confirmingDelete && (
+            <div>
+              {!editingMedio ? (
+                <button
+                  onClick={() => {
+                    setErrMsg(null);
+                    setOkMsg(null);
+                    setEditingMedio(true);
+                  }}
+                  className="spring-tap"
+                  style={{
+                    width: '100%',
+                    height: 44,
+                    borderRadius: 'var(--radius-md)',
+                    background: 'transparent',
+                    color: 'var(--text)',
+                    fontWeight: 500,
+                    fontSize: 13.5,
+                    border: '1px dashed var(--border)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cambiar método de pago{f[COL.medioPago] ? ` (actual: ${f[COL.medioPago]})` : ''}
+                </button>
+              ) : (
+                <div
+                  style={{
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-lg)',
+                    padding: 14,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 10,
+                  }}
+                >
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text)' }}>
+                    Nuevo método de pago
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                    Se escribe en la columna <strong>Medio de Pago</strong> de la fila{' '}
+                    {f._sheetRow || '?'}. No se modifica Estado ni Fecha de Pago.
+                  </div>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: 8,
+                    }}
+                  >
+                    {['Efectivo', 'Transferencia', 'Tarjeta', 'Mix', 'Cheque', 'Mercado Pago'].map(
+                      (medio) => {
+                        const actual = (f[COL.medioPago] || '').trim() === medio;
+                        const loadingThis = savingMedio === medio;
+                        return (
+                          <button
+                            key={medio}
+                            onClick={() => handleChangeMedio(medio)}
+                            disabled={!!savingMedio || actual}
+                            className="spring-tap"
+                            style={{
+                              height: 40,
+                              borderRadius: 'var(--radius-md)',
+                              background: actual ? 'var(--accent-bg)' : 'var(--bg-subtle)',
+                              color: actual ? 'var(--accent-hover)' : 'var(--text)',
+                              fontWeight: 600,
+                              fontSize: 13,
+                              border: `1px solid ${actual ? 'var(--accent)' : 'var(--border)'}`,
+                              cursor: actual ? 'default' : 'pointer',
+                              opacity: savingMedio && !loadingThis ? 0.5 : 1,
+                            }}
+                          >
+                            {loadingThis ? 'Guardando…' : medio}
+                            {actual && !loadingThis ? ' ✓' : ''}
+                          </button>
+                        );
+                      },
+                    )}
+                  </div>
+                  <button
+                    onClick={() => setEditingMedio(false)}
+                    className="spring-tap"
+                    style={{
+                      height: 38,
+                      borderRadius: 'var(--radius-md)',
+                      background: 'transparent',
+                      color: 'var(--text-muted)',
+                      fontWeight: 500,
+                      fontSize: 13,
+                      border: '1px solid var(--border)',
+                    }}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
