@@ -194,6 +194,10 @@ export default function ServiciosPage() {
           <EmptyState onAdd={() => setShowNuevo(true)} />
         )}
 
+        {/* Mantenimiento: regenerar tab ÍNDICE del Sheet (owner only).
+            Botón pegado al final como link discreto. */}
+        <SeedIndiceButton onDone={flashToast} />
+
         {grouped.map((g) => (
           <section key={g.ancla}>
             <div
@@ -1411,5 +1415,109 @@ function CloseIcon() {
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
       <path d="M3 3l8 8M11 3l-8 8" stroke="var(--text)" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
+  );
+}
+
+// ─── Botón: regenerar tab ÍNDICE en el Sheet (owner only) ─────────
+function SeedIndiceButton({ onDone }: { onDone: (msg: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+
+  const run = useCallback(async () => {
+    setBusy(true);
+    try {
+      const r = await fetch('/api/servicios/seed-indice', { method: 'POST' });
+      const d = await r.json();
+      if (d.ok) onDone('Tab ÍNDICE creado / regenerado en el Sheet');
+      else onDone(d.error || 'Error generando ÍNDICE');
+    } catch {
+      onDone('Error de red');
+    } finally {
+      setBusy(false);
+      setConfirming(false);
+    }
+  }, [onDone]);
+
+  if (!confirming) {
+    return (
+      <button
+        type="button"
+        onClick={() => setConfirming(true)}
+        className="press-feedback"
+        style={{
+          minHeight: 38,
+          borderRadius: 'var(--radius-md)',
+          padding: '8px 12px',
+          background: 'transparent',
+          color: 'var(--text-muted)',
+          fontWeight: 500,
+          fontSize: 12,
+          border: '1px dashed var(--border)',
+          letterSpacing: '0.02em',
+        }}
+      >
+        Regenerar tab ÍNDICE en el Sheet
+      </button>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border-accent, #C4A067)',
+        borderRadius: 'var(--radius-md)',
+        padding: 12,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+      }}
+    >
+      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+        Regenerar ÍNDICE
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+        Esto va a borrar y recrear el tab <strong>ÍNDICE</strong> del Sheet de
+        Servicios con la estructura canónica de la app. Cualquier edición
+        manual que hayas hecho en ese tab se pierde. ¿Seguir?
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          type="button"
+          onClick={() => setConfirming(false)}
+          disabled={busy}
+          style={{
+            flex: 1,
+            height: 38,
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--bg-subtle)',
+            color: 'var(--text)',
+            fontWeight: 500,
+            fontSize: 13,
+            border: '1px solid var(--border)',
+          }}
+        >
+          Cancelar
+        </button>
+        <button
+          type="button"
+          onClick={run}
+          disabled={busy}
+          style={{
+            flex: 2,
+            height: 38,
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--accent)',
+            color: '#FDFBF8',
+            fontWeight: 600,
+            fontSize: 13,
+            border: 0,
+            opacity: busy ? 0.7 : 1,
+          }}
+        >
+          {busy ? 'Generando…' : 'Sí, regenerar'}
+        </button>
+      </div>
+    </div>
   );
 }
