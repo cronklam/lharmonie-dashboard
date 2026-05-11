@@ -32,8 +32,20 @@ function todayISO(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-interface DraftMov extends SesionMovInput {
+// Draft local-only del wizard. Cada mov es en UNA SOLA moneda
+// (PESO o DOLAR) con UN solo monto. Al hacer submit lo mapeamos a
+// la shape del SesionMovInput de lib/caja.ts (que tiene montoArs +
+// montoUsd separados) — solo uno tiene valor, el otro queda en 0.
+interface DraftMov {
   _id: string;
+  tipo: SesionMovInput['tipo'];
+  fecha: string;
+  local: string;
+  moneda: 'PESO' | 'DOLAR';
+  monto: number;                                       // siempre positivo, sin signo
+  concepto: string;
+  categoriaFina?: SesionMovInput['categoriaFina'];
+  estado: SesionMovInput['estado'];
 }
 
 function newDraftMov(local: string, fecha: string): DraftMov {
@@ -42,8 +54,8 @@ function newDraftMov(local: string, fecha: string): DraftMov {
     tipo: 'RETIRO',
     fecha,
     local,
-    montoArs: 0,
-    montoUsd: 0,
+    moneda: 'PESO',
+    monto: 0,
     concepto: '',
     categoriaFina: '',
     estado: 'COMPLETO',
@@ -71,23 +83,21 @@ export function SesionWizard({
   const [notas, setNotas] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // Totales de movs (sin signo, valores absolutos)
+  // Totales de movs (sin signo, valores absolutos). Cada mov está en
+  // UNA sola moneda — sumamos al bucket que corresponda.
   const totals = useMemo(() => {
     let retArs = 0, retUsd = 0;
     let gastoArs = 0, gastoUsd = 0;
     let ajusteArs = 0, ajusteUsd = 0;
     for (const m of movs) {
-      const ars = Math.abs(m.montoArs);
-      const usd = Math.abs(m.montoUsd);
+      const amount = Math.abs(m.monto);
+      const isUsd = m.moneda === 'DOLAR';
       if (m.tipo === 'RETIRO') {
-        retArs += ars;
-        retUsd += usd;
+        if (isUsd) retUsd += amount; else retArs += amount;
       } else if (m.tipo === 'GASTO') {
-        gastoArs += ars;
-        gastoUsd += usd;
+        if (isUsd) gastoUsd += amount; else gastoArs += amount;
       } else {
-        ajusteArs += ars;
-        ajusteUsd += usd;
+        if (isUsd) ajusteUsd += amount; else ajusteArs += amount;
       }
     }
     const netoArs = retArs - gastoArs + ajusteArs;
@@ -145,7 +155,7 @@ export function SesionWizard({
     if (paso === 1) {
       // Validar al menos 1 mov con monto > 0
       const valido = movs.some(
-        (m) => m.concepto.trim() && (m.montoArs > 0 || m.montoUsd > 0),
+        (m) => m.concepto.trim() && m.monto > 0,
       );
       if (!valido) {
         onError('Agregá al menos un movimiento con monto y concepto');
@@ -169,7 +179,7 @@ export function SesionWizard({
     setSaving(true);
     try {
       const validMovs = movs.filter(
-        (m) => m.concepto.trim() && (m.montoArs > 0 || m.montoUsd > 0),
+        (m) => m.concepto.trim() && m.monto > 0,
       );
       const res = await fetch('/api/caja/sesion', {
         method: 'POST',
@@ -181,8 +191,10 @@ export function SesionWizard({
             tipo: m.tipo,
             fecha: m.fecha,
             local: m.local,
-            montoArs: m.montoArs,
-            montoUsd: m.montoUsd,
+            // Cada mov es UNA moneda — el server-side recibe ambos
+            // campos por compat, el otro queda en 0.
+            montoArs: m.moneda === 'PESO' ? m.monto : 0,
+            montoUsd: m.moneda === 'DOLAR' ? m.monto : 0,
             concepto: m.concepto,
             categoriaFina: m.categoriaFina || '',
             estado: m.estado,
@@ -219,7 +231,7 @@ export function SesionWizard({
         display: 'flex',
         flexDirection: 'column',
         gap: 16,
-        paddingBottom: 'calc(var(--nav-height) + var(--safe-bottom) + 96px)',
+        paddingBottom: 'calc(var(--nav-height) + var(--safe-bottom) + 60px)',
       }}
     >
       {/* Wizard header */}
@@ -358,57 +370,34 @@ function Paso1({
 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div>
-        <div
+      {/* Local activo — dropdown compacto. Es el default que toman
+          los movimientos NUEVOS al agregarse; cada mov individual
+          después puede cambiar su local desde su propio select. */}
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <span
           style={{
             fontSize: 10.5,
             fontWeight: 700,
             letterSpacing: '0.10em',
             textTransform: 'uppercase',
             color: 'var(--text-muted)',
-            marginBottom: 8,
           }}
         >
-          Local activo
-        </div>
-        <div
-          className="hide-scrollbar"
-          style={{
-            display: 'flex',
-            gap: 6,
-            overflowX: 'auto',
-            paddingBottom: 2,
-          }}
+          Local activo · default
+        </span>
+        <select
+          value={localActivo}
+          onChange={(e) => onLocalChange(e.target.value as Ancla)}
+          className="input-pro"
+          style={{ minHeight: 'var(--touch-min)' }}
         >
-          {ANCLAS.filter((a) => a !== 'MyP' && a !== 'CRONKLAM').map((a) => {
-            const selected = a === localActivo;
-            return (
-              <button
-                key={a}
-                type="button"
-                onClick={() => onLocalChange(a)}
-                aria-pressed={selected}
-                className="press-feedback"
-                style={{
-                  minHeight: 36,
-                  padding: '0 14px',
-                  borderRadius: 999,
-                  background: selected ? 'var(--text)' : 'var(--bg-card)',
-                  color: selected ? 'var(--text-inverse)' : 'var(--text-muted)',
-                  border: `1px solid ${selected ? 'var(--text)' : 'var(--border)'}`,
-                  fontSize: 12.5,
-                  fontWeight: 600,
-                  whiteSpace: 'nowrap',
-                  cursor: 'pointer',
-                  flexShrink: 0,
-                }}
-              >
-                {ANCLA_SHORT[a]}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+          {ANCLAS.filter((a) => a !== 'MyP' && a !== 'CRONKLAM').map((a) => (
+            <option key={a} value={a}>
+              {ANCLA_SHORT[a]}
+            </option>
+          ))}
+        </select>
+      </label>
 
       {movs.length === 0 && (
         <div
@@ -553,7 +542,7 @@ function MovForm({
         })}
       </div>
 
-      {/* Fecha + Local (local read-only) */}
+      {/* Fecha + Local — ambos selects/inputs editables */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         <FieldLabel label="Fecha">
           <input
@@ -565,35 +554,42 @@ function MovForm({
           />
         </FieldLabel>
         <FieldLabel label="Local">
-          <input
-            type="text"
+          <select
             value={mov.local}
-            readOnly
+            onChange={(e) => onUpdate({ local: e.target.value })}
             className="input-pro"
-            style={{ minHeight: 'var(--touch-min)', opacity: 0.7 }}
-          />
+            style={{ minHeight: 'var(--touch-min)' }}
+          >
+            {ANCLAS.filter((a) => a !== 'MyP' && a !== 'CRONKLAM').map((a) => (
+              <option key={a} value={a}>
+                {ANCLA_SHORT[a]}
+              </option>
+            ))}
+          </select>
         </FieldLabel>
       </div>
 
-      {/* Montos */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        <FieldLabel label="Monto ARS">
-          <input
-            type="text"
-            inputMode="decimal"
-            value={mov.montoArs || ''}
-            onChange={(e) => onUpdate({ montoArs: parseMontoInput(e.target.value) })}
-            placeholder="0"
-            className="input-pro tabular-nums-strict"
+      {/* Moneda + Monto (en una sola moneda — no se permite mixto) */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: 10 }}>
+        <FieldLabel label="Moneda">
+          <select
+            value={mov.moneda}
+            onChange={(e) =>
+              onUpdate({ moneda: e.target.value as 'PESO' | 'DOLAR' })
+            }
+            className="input-pro"
             style={{ minHeight: 'var(--touch-min)' }}
-          />
+          >
+            <option value="PESO">Pesos · $</option>
+            <option value="DOLAR">Dólares · US$</option>
+          </select>
         </FieldLabel>
-        <FieldLabel label="Monto USD">
+        <FieldLabel label={`Monto ${mov.moneda === 'DOLAR' ? 'USD' : 'ARS'}`}>
           <input
             type="text"
             inputMode="decimal"
-            value={mov.montoUsd || ''}
-            onChange={(e) => onUpdate({ montoUsd: parseMontoInput(e.target.value) })}
+            value={mov.monto || ''}
+            onChange={(e) => onUpdate({ monto: parseMontoInput(e.target.value) })}
             placeholder="0"
             className="input-pro tabular-nums-strict"
             style={{ minHeight: 'var(--touch-min)' }}
@@ -1059,151 +1055,203 @@ function BottomBar({
   netoArs: number;
   saving: boolean;
 }) {
+  // Barra compacta pegada JUSTO arriba del BottomNav (que vive en
+  // layout, altura nav-height + safe-bottom). Stats + CTA integrados
+  // en una sola barra negra delgada — sin paddings grandes.
+  const slimBtn: React.CSSProperties = {
+    minHeight: 38,
+    borderRadius: 999,
+    fontWeight: 700,
+    fontSize: 13,
+    border: 0,
+    padding: '0 14px',
+    cursor: saving ? 'wait' : 'pointer',
+  };
   return (
     <div
       style={{
         position: 'fixed',
-        bottom: 0,
         left: 0,
         right: 0,
+        bottom: 'calc(var(--nav-height) + var(--safe-bottom))',
         zIndex: 90,
-        background: 'var(--bg)',
-        borderTop: '1px solid var(--border)',
-        paddingBottom: 'var(--safe-bottom)',
+        background: 'var(--header-bg)',
+        color: 'var(--text-inverse)',
+        borderTop: '1px solid rgba(196,160,103,0.18)',
+        boxShadow: '0 -8px 24px -8px rgba(0,0,0,0.35)',
       }}
     >
       {paso === 1 && (
         <div
           style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr 1fr',
-            gap: 0,
-            background: 'var(--header-bg)',
-            color: 'var(--text-inverse)',
-            padding: '8px 12px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 14,
+            padding: '6px 12px',
           }}
         >
-          <Stat label="Retirado" value={fmtMonto(retiradoArs, 'PESO')} color="#7ED957" />
-          <Stat label="Gastado" value={fmtMonto(gastadoArs, 'PESO')} color="#E8836E" />
-          <Stat label="Neto" value={fmtMonto(netoArs, 'PESO')} color="#FDFBF8" />
+          {/* Stats compactos inline */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              flex: 1,
+              minWidth: 0,
+              overflow: 'hidden',
+              fontSize: 11,
+            }}
+          >
+            <SlimStat label="Ret" value={fmtMonto(retiradoArs, 'PESO')} color="#7ED957" />
+            <SlimStat label="Gas" value={fmtMonto(gastadoArs, 'PESO')} color="#E8836E" />
+            <SlimStat label="Neto" value={fmtMonto(netoArs, 'PESO')} color="#FDFBF8" bold />
+          </div>
+          <button
+            type="button"
+            onClick={onSiguiente}
+            className="press-feedback"
+            style={{
+              ...slimBtn,
+              background: 'var(--accent)',
+              color: '#FDFBF8',
+              flexShrink: 0,
+            }}
+          >
+            Siguiente →
+          </button>
         </div>
       )}
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: paso === 1 ? '1fr' : '1fr 2fr',
-          gap: 8,
-          padding: 12,
-        }}
-      >
-        {paso !== 1 && (
+      {paso === 2 && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '6px 12px',
+          }}
+        >
           <button
             type="button"
             onClick={onAtras}
             className="press-feedback"
             style={{
-              minHeight: 48,
-              borderRadius: 'var(--radius-md)',
-              background: 'var(--bg-subtle)',
-              border: '1px solid var(--border)',
-              color: 'var(--text-muted)',
-              fontWeight: 600,
-              fontSize: 14,
+              ...slimBtn,
+              background: 'rgba(253,251,248,0.08)',
+              color: '#FDFBF8',
+              border: '1px solid rgba(253,251,248,0.18)',
+              flexShrink: 0,
             }}
           >
             Atrás
           </button>
-        )}
-        {paso === 1 && (
           <button
             type="button"
             onClick={onSiguiente}
             className="press-feedback"
             style={{
-              minHeight: 48,
-              borderRadius: 'var(--radius-md)',
+              ...slimBtn,
               background: 'var(--accent)',
               color: '#FDFBF8',
-              fontWeight: 700,
-              fontSize: 14,
-              border: 0,
-            }}
-          >
-            Siguiente · contar caja
-          </button>
-        )}
-        {paso === 2 && (
-          <button
-            type="button"
-            onClick={onSiguiente}
-            className="press-feedback"
-            style={{
-              minHeight: 48,
-              borderRadius: 'var(--radius-md)',
-              background: 'var(--accent)',
-              color: '#FDFBF8',
-              fontWeight: 700,
-              fontSize: 14,
-              border: 0,
+              flex: 1,
             }}
           >
             Siguiente · confirmar
           </button>
-        )}
-        {paso === 3 && (
+        </div>
+      )}
+
+      {paso === 3 && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '6px 12px',
+          }}
+        >
+          <button
+            type="button"
+            onClick={onAtras}
+            disabled={saving}
+            className="press-feedback"
+            style={{
+              ...slimBtn,
+              background: 'rgba(253,251,248,0.08)',
+              color: '#FDFBF8',
+              border: '1px solid rgba(253,251,248,0.18)',
+              flexShrink: 0,
+              opacity: saving ? 0.6 : 1,
+            }}
+          >
+            Atrás
+          </button>
           <button
             type="button"
             onClick={onConfirmar}
             disabled={saving}
             className="press-feedback"
             style={{
-              minHeight: 48,
-              borderRadius: 'var(--radius-md)',
-              background: 'var(--header-bg)',
+              ...slimBtn,
+              background: 'var(--green)',
               color: '#FDFBF8',
-              fontWeight: 700,
-              fontSize: 14,
-              border: 0,
+              flex: 1,
               opacity: saving ? 0.6 : 1,
-              cursor: saving ? 'wait' : 'pointer',
             }}
           >
             {saving ? 'Guardando…' : 'Confirmar sesión'}
           </button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function Stat({ label, value, color }: { label: string; value: string; color: string }) {
+function SlimStat({
+  label,
+  value,
+  color,
+  bold,
+}: {
+  label: string;
+  value: string;
+  color: string;
+  bold?: boolean;
+}) {
   return (
-    <div style={{ textAlign: 'center' }}>
-      <div
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'baseline',
+        gap: 4,
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+      }}
+    >
+      <span
         style={{
           fontSize: 9,
           fontWeight: 700,
-          letterSpacing: '0.16em',
+          letterSpacing: '0.12em',
           textTransform: 'uppercase',
-          color: 'rgba(253,251,248,0.55)',
+          color: 'rgba(253,251,248,0.5)',
         }}
       >
         {label}
-      </div>
-      <div
+      </span>
+      <span
         className="tabular-nums-strict"
         style={{
-          fontSize: 14,
+          fontSize: bold ? 13 : 12,
           fontWeight: 700,
           color,
           fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
-          marginTop: 2,
         }}
       >
         {value}
-      </div>
-    </div>
+      </span>
+    </span>
   );
 }
 
