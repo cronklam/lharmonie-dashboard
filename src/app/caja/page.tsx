@@ -333,11 +333,53 @@ export default function CajaPage() {
           paddingBottom: 'calc(var(--nav-height) + var(--safe-bottom) + 24px)',
         }}
       >
-        {/* Hero — saldo global */}
+        {/* Hero — saldo global + CTA "+ Movimiento" siempre visible.
+            El botón abre el bottom sheet de nuevo movimiento
+            independientemente de la tab activa, así Iara o Martín
+            pueden sumar a Caja Grande de un solo tap desde cualquier
+            vista (Sesión / Movimientos / Conciliación). */}
         <section
           className="lh-hero-total spring-in"
-          style={{ padding: '20px 22px' }}
+          style={{ padding: '20px 22px', position: 'relative' }}
         >
+          {/* Quick-add CTA — pill dorado top-right */}
+          <button
+            type="button"
+            onClick={() => setShowForm(true)}
+            aria-label="Nuevo movimiento rápido"
+            className="press-feedback"
+            style={{
+              position: 'absolute',
+              top: 14,
+              right: 14,
+              minHeight: 32,
+              padding: '0 12px',
+              borderRadius: 999,
+              background: 'rgba(196,160,103,0.16)',
+              color: '#C4A067',
+              border: '1px solid rgba(196,160,103,0.40)',
+              fontSize: 12,
+              fontWeight: 700,
+              letterSpacing: '-0.005em',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              cursor: 'pointer',
+              backdropFilter: 'blur(6px)',
+              boxShadow:
+                'inset 0 1px 0 rgba(255,255,255,0.08), 0 4px 12px -4px rgba(196,160,103,0.30)',
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+              <path
+                d="M12 5v14M5 12h14"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+              />
+            </svg>
+            Mov. rápido
+          </button>
           <div
             style={{
               fontSize: 11,
@@ -588,42 +630,19 @@ export default function CajaPage() {
         {/* TAB MOVIMIENTOS (vista clásica) */}
         {!wizardActive && tab === 'movs' && (
           <>
-        {/* Selector mes + filtros + CTA */}
+        {/* Selector mes — el CTA "Agregar" se sacó porque el hero
+            tiene un "Mov. rápido" siempre visible que abre el mismo
+            modal desde cualquier tab. */}
         <section
           style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
         >
-          <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
-            <MesSelector
-              value={mes}
-              available={meses}
-              onChange={(m) => {
-                setMes(m);
-              }}
-            />
-            <button
-              type="button"
-              onClick={() => setShowForm(true)}
-              className="press-feedback"
-              aria-label="Nuevo movimiento"
-              style={{
-                minHeight: 'var(--touch-min)',
-                padding: '0 16px',
-                borderRadius: 'var(--radius-md)',
-                background: 'var(--accent)',
-                color: '#FDFBF8',
-                fontWeight: 600,
-                fontSize: 13,
-                border: 0,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                boxShadow:
-                  'inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -1px 0 rgba(0,0,0,0.10), 0 6px 16px -4px rgba(184,149,111,0.45)',
-              }}
-            >
-              <PlusIcon /> Agregar
-            </button>
-          </div>
+          <MesSelector
+            value={mes}
+            available={meses}
+            onChange={(m) => {
+              setMes(m);
+            }}
+          />
 
           {/* Saldo del mes mostrado debajo del selector */}
           <div
