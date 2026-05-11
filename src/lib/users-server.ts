@@ -163,25 +163,75 @@ export interface UpsertInput {
   role: Role;
   activo?: string;
   addedBy: string;
+  /** Si se rename el email, el oldEmail apunta a la fila anterior
+   *  para borrarla antes del upsert. Si no se rename, omitir. */
+  oldEmail?: string;
 }
 
-/** Upsert (insert o update si ya existe email). Limpia cache al terminar. */
+/** Upsert (insert o update si ya existe email). Si `oldEmail` viene
+ *  y difiere del nuevo email, se borra primero la fila vieja para que
+ *  no queden dos rows con datos parciales. Limpia cache al terminar. */
 export async function upsertUsuario(
   input: UpsertInput
-): Promise<{ action: 'created' | 'updated' }> {
+): Promise<{ action: 'created' | 'updated' | 'renamed' }> {
   const sheets = getSheetsClient();
   if (!sheets || !SHEET_ID) {
     throw new Error('Sheets no configurado (falta GOOGLE_CREDENTIALS o FACTURAS_SHEET_ID)');
   }
   await ensureUsuariosTab(sheets);
+  const newEmail = input.email.toLowerCase().trim();
+  const oldEmail = (input.oldEmail || '').toLowerCase().trim();
+
+  // Rename: borrar la fila del oldEmail primero (si existe y difiere).
+  let didRename = false;
+  if (oldEmail && oldEmail !== newEmail) {
+    const before = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: `'${TAB}'!A2:F500`,
+    });
+    const beforeRows = before.data.values || [];
+    const oldIdx = beforeRows.findIndex(
+      (r) => (r[0] || '').toLowerCase().trim() === oldEmail,
+    );
+    if (oldIdx >= 0) {
+      const meta = await sheets.spreadsheets.get({
+        spreadsheetId: SHEET_ID,
+        fields: 'sheets.properties(title,sheetId)',
+      });
+      const tabMeta = meta.data.sheets?.find((s) => s.properties?.title === TAB);
+      const tabSheetId = tabMeta?.properties?.sheetId;
+      if (tabSheetId != null) {
+        const startIndex = oldIdx + 1; // header en fila 1; data desde 2; 0-based
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId: SHEET_ID,
+          requestBody: {
+            requests: [
+              {
+                deleteDimension: {
+                  range: {
+                    sheetId: tabSheetId,
+                    dimension: 'ROWS',
+                    startIndex,
+                    endIndex: startIndex + 1,
+                  },
+                },
+              },
+            ],
+          },
+        });
+        didRename = true;
+      }
+    }
+  }
+
+  // Upsert por el nuevo email
   const existing = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
     range: `'${TAB}'!A2:F500`,
   });
   const rows = existing.data.values || [];
-  const normalized = input.email.toLowerCase().trim();
   const existingIdx = rows.findIndex(
-    (r) => (r[0] || '').toLowerCase().trim() === normalized
+    (r) => (r[0] || '').toLowerCase().trim() === newEmail,
   );
   const fecha = new Date().toISOString();
   const values = [[
@@ -201,7 +251,7 @@ export async function upsertUsuario(
       requestBody: { values },
     });
     clearSheetUsersCache();
-    return { action: 'updated' };
+    return { action: didRename ? 'renamed' : 'updated' };
   }
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
@@ -210,7 +260,7 @@ export async function upsertUsuario(
     requestBody: { values },
   });
   clearSheetUsersCache();
-  return { action: 'created' };
+  return { action: didRename ? 'renamed' : 'created' };
 }
 
 /** Borra fila del Sheet matcheada por email. Hard delete (no soft). */

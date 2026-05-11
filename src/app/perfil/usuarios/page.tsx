@@ -92,12 +92,21 @@ export default function UsuariosPage() {
     window.setTimeout(() => setToast(''), 2400);
   }, []);
 
-  // Merge: seed primero (siempre autorizados), después sheet (excluir
-  // emails que ya están en seed para no duplicar — el seed gana).
+  // Merge: el Sheet GANA sobre seed (porque representa una edición
+  // explícita del owner). Si un seed tiene fila en el Sheet con su
+  // mismo email, la del Sheet es la que se muestra. Eso permite
+  // editar seeds: al guardar se crea un row en el Sheet que sirve
+  // como override.
   const merged: MergedUser[] = useMemo(() => {
-    const seedEmails = new Set(seed.map((s) => s.email.toLowerCase()));
+    const sheetEmails = new Set(
+      sheetRows
+        .map((r) => (r.email || '').toLowerCase().trim())
+        .filter(Boolean),
+    );
     const out: MergedUser[] = [];
+    // Seeds que NO tienen override en el Sheet
     for (const s of seed) {
+      if (sheetEmails.has(s.email.toLowerCase())) continue;
       out.push({
         email: s.email,
         name: s.name,
@@ -107,10 +116,10 @@ export default function UsuariosPage() {
         emailValid: EMAIL_REGEX.test(s.email),
       });
     }
+    // Filas del Sheet (incluye overrides de seeds y entries nuevos)
     for (const r of sheetRows) {
       const emailLc = (r.email || '').toLowerCase().trim();
       if (!emailLc) continue;
-      if (seedEmails.has(emailLc)) continue;
       const role = (ROLE_LABELS[r.role as Role] ? r.role : 'viewer') as Role;
       out.push({
         email: r.email,
@@ -121,7 +130,7 @@ export default function UsuariosPage() {
         emailValid: EMAIL_REGEX.test(emailLc),
       });
     }
-    // Orden: seed primero; dentro de cada bloque por rol; alfabético.
+    // Orden: seeds puros primero; dentro de cada bloque por rol; alfabético.
     return out.sort((a, b) => {
       if (a.source !== b.source) return a.source === 'seed' ? -1 : 1;
       const oa = ROLE_ORDER.indexOf(a.role);
@@ -270,7 +279,7 @@ export default function UsuariosPage() {
                   key={`${u.source}:${u.email}`}
                   user={u}
                   isMe={u.email.toLowerCase() === (user.email || '').toLowerCase()}
-                  canEdit={isOwner && u.source === 'sheet'}
+                  canEdit={isOwner}
                   isEditing={editingEmail === u.email}
                   onToggleEdit={() =>
                     setEditingEmail((p) => (p === u.email ? null : u.email))
@@ -558,16 +567,22 @@ function UserEditor({
   onDeleted: (msg: string) => Promise<void> | void;
   onError: (msg: string) => void;
 }) {
+  const [email, setEmail] = useState(user.email);
   const [name, setName] = useState(user.name);
   const [role, setRole] = useState<Role>(user.role);
   const [activo, setActivo] = useState(user.activo);
   const [saving, setSaving] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
+  const isSeed = user.source === 'seed';
+  const emailNuevoLc = email.trim().toLowerCase();
+  const emailValidNow = EMAIL_REGEX.test(emailNuevoLc);
+  const emailChanged = emailNuevoLc !== user.email.toLowerCase();
+
   const submit = useCallback(async () => {
     if (saving) return;
-    if (!user.emailValid) {
-      onError('Email roto. Mejor eliminá esta fila y agregá una nueva.');
+    if (!emailValidNow) {
+      onError('Email inválido — formato: usuario@dominio.com');
       return;
     }
     if (!name.trim()) {
@@ -576,25 +591,42 @@ function UserEditor({
     }
     setSaving(true);
     try {
+      // Si cambió el email Y la fila existía en el Sheet, mandamos
+      // oldEmail para que el server borre la fila vieja antes del
+      // upsert (rename atómico). Para seeds sin override, oldEmail
+      // no aplica — la fila vieja no existe en el Sheet.
+      const sendOldEmail = emailChanged && !isSeed ? user.email : undefined;
       const res = await fetch('/api/usuarios', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: user.email,
+          email: emailNuevoLc,
           name: name.trim(),
           role,
           activo: activo ? 'Sí' : 'No',
+          oldEmail: sendOldEmail,
         }),
       });
       const data = await res.json();
-      if (data.ok) onSaved('Usuario actualizado');
-      else onError(data.error || 'Error guardando');
+      if (data.ok) {
+        onSaved(
+          isSeed && !emailChanged
+            ? 'Override creado · ahora editable desde Sheet'
+            : data.action === 'renamed'
+            ? 'Email renombrado'
+            : 'Usuario actualizado',
+        );
+      } else {
+        onError(data.error || 'Error guardando');
+      }
     } catch {
       onError('Error de conexión');
     } finally {
       setSaving(false);
     }
-  }, [activo, name, onError, onSaved, role, saving, user.email, user.emailValid]);
+  }, [
+    activo, emailChanged, emailNuevoLc, emailValidNow, isSeed, name, onError, onSaved, role, saving, user.email,
+  ]);
 
   const remove = useCallback(async () => {
     if (saving) return;
@@ -617,42 +649,52 @@ function UserEditor({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {/* Email read-only — bien visible para que sepas qué fila estás
-          tocando. El email es la KEY del row, no se cambia. Si querés
-          cambiarlo: Eliminar + Agregar de nuevo. */}
-      <div
-        style={{
-          background: user.emailValid ? 'var(--bg-card-alt)' : 'var(--red-bg)',
-          border: `1px solid ${user.emailValid ? 'var(--border)' : 'var(--red)'}`,
-          borderRadius: 'var(--radius-md)',
-          padding: '10px 12px',
-        }}
-      >
+      {/* Banner explicativo si es seed (Por código) */}
+      {isSeed && (
         <div
           style={{
-            fontSize: 10.5,
-            fontWeight: 700,
-            letterSpacing: '0.08em',
-            textTransform: 'uppercase',
-            color: 'var(--text-muted)',
-            marginBottom: 4,
+            background: 'var(--accent-bg)',
+            border: '1px solid var(--border-accent)',
+            borderRadius: 'var(--radius-md)',
+            padding: '10px 12px',
+            fontSize: 12,
+            color: 'var(--accent-hover)',
+            lineHeight: 1.45,
           }}
         >
-          Email · no editable
+          <strong style={{ display: 'block', marginBottom: 2 }}>
+            Usuario hardcoded
+          </strong>
+          Al guardar se crea un row en el Sheet que <em>override</em> al del
+          código. Si borrás el row del Sheet más adelante, vuelve al estado
+          original.
         </div>
-        <div
+      )}
+
+      {/* Email — read-only para seeds (cambiarlo requiere tocar
+          lib/users.ts), editable para filas del Sheet. Si cambia para
+          un sheet row, el server hace rename atómico (delete + insert
+          en una sola transacción). */}
+      <FieldLabel label={isSeed ? 'Email · fijo en código' : 'Email'}>
+        <input
+          type="email"
+          inputMode="email"
+          autoComplete="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          readOnly={isSeed}
+          className="input-pro"
           style={{
-            fontSize: 13.5,
-            color: user.emailValid ? 'var(--text)' : 'var(--red)',
+            minHeight: 'var(--touch-min)',
             fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-            wordBreak: 'break-all',
-            fontWeight: user.emailValid ? 500 : 700,
+            borderColor: emailValidNow ? undefined : 'var(--red)',
+            background: isSeed ? 'var(--bg-card-alt)' : undefined,
+            opacity: isSeed ? 0.7 : 1,
+            cursor: isSeed ? 'not-allowed' : 'text',
           }}
-        >
-          {user.email}
-        </div>
-        {!user.emailValid && (
-          <div
+        />
+        {!emailValidNow && (
+          <span
             style={{
               fontSize: 11,
               color: 'var(--red)',
@@ -660,11 +702,35 @@ function UserEditor({
               lineHeight: 1.4,
             }}
           >
-            Esta fila NO autoriza a nadie porque no tiene un email válido.
-            Mejor eliminala y agregá un usuario nuevo con el email correcto.
-          </div>
+            Falta @ o dominio. Ejemplo: nombre@gmail.com
+          </span>
         )}
-      </div>
+        {emailValidNow && emailChanged && !isSeed && (
+          <span
+            style={{
+              fontSize: 11,
+              color: 'var(--warn-strong)',
+              marginTop: 4,
+              lineHeight: 1.4,
+            }}
+          >
+            Renombrar: al guardar, el row con &ldquo;{user.email}&rdquo; se borra y se
+            crea uno nuevo con este email.
+          </span>
+        )}
+        {isSeed && (
+          <span
+            style={{
+              fontSize: 11,
+              color: 'var(--text-muted)',
+              marginTop: 4,
+              lineHeight: 1.4,
+            }}
+          >
+            Para renombrar este email hay que editar <code>lib/users.ts</code> y deployar.
+          </span>
+        )}
+      </FieldLabel>
 
       <FieldLabel label="Nombre">
         <input
@@ -692,7 +758,7 @@ function UserEditor({
       <button
         type="button"
         onClick={submit}
-        disabled={saving || !user.emailValid}
+        disabled={saving || !emailValidNow}
         className="press-feedback"
         style={{
           minHeight: 'var(--touch-min)',
@@ -702,15 +768,16 @@ function UserEditor({
           fontWeight: 600,
           fontSize: 14,
           border: 0,
-          opacity: saving || !user.emailValid ? 0.5 : 1,
+          opacity: saving || !emailValidNow ? 0.5 : 1,
           cursor: saving ? 'wait' : 'pointer',
         }}
       >
         {saving ? 'Guardando…' : 'Guardar cambios'}
       </button>
 
-      {/* Delete (con confirm in-place, sin modal) */}
-      {!confirmingDelete ? (
+      {/* Delete — solo si la fila existe en el Sheet (seed puro no
+          tiene nada que borrar; para sacarlo hay que tocar código). */}
+      {isSeed ? null : !confirmingDelete ? (
         <button
           type="button"
           onClick={() => setConfirmingDelete(true)}

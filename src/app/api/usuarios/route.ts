@@ -41,6 +41,10 @@ interface PostBody {
   name?: unknown;
   role?: unknown;
   activo?: unknown;
+  /** Si vino: el row con este email se borra antes del upsert. Sirve
+   *  para rename de email — el UI lo manda cuando cambiás el email
+   *  de un usuario existente. */
+  oldEmail?: unknown;
 }
 
 export const POST = withAuth(async (req, user) => {
@@ -57,7 +61,7 @@ export const POST = withAuth(async (req, user) => {
     return NextResponse.json({ ok: false, error: 'JSON inválido' }, { status: 400 });
   }
 
-  const { email, name, role, activo } = body;
+  const { email, name, role, activo, oldEmail } = body;
   if (typeof email !== 'string' || typeof name !== 'string' || typeof role !== 'string') {
     return NextResponse.json({ ok: false, error: 'Faltan campos' }, { status: 400 });
   }
@@ -71,6 +75,8 @@ export const POST = withAuth(async (req, user) => {
     return NextResponse.json({ ok: false, error: 'Rol inválido' }, { status: 400 });
   }
   const activoStr = typeof activo === 'string' ? activo : 'Sí';
+  const oldEmailStr =
+    typeof oldEmail === 'string' && oldEmail.trim() ? oldEmail.trim().toLowerCase() : undefined;
 
   try {
     const result = await upsertUsuario({
@@ -79,9 +85,10 @@ export const POST = withAuth(async (req, user) => {
       role: role as Role,
       activo: activoStr,
       addedBy: user.email,
+      oldEmail: oldEmailStr,
     });
     console.log(
-      `[USUARIOS] ${user.email} ${result.action} ${email} role=${role} activo=${activoStr}`,
+      `[USUARIOS] ${user.email} ${result.action} ${email} role=${role} activo=${activoStr}${oldEmailStr ? ` (renamed from ${oldEmailStr})` : ''}`,
     );
     return NextResponse.json({ ok: true, action: result.action });
   } catch (err) {
@@ -91,8 +98,10 @@ export const POST = withAuth(async (req, user) => {
   }
 });
 
-// DELETE /api/usuarios?email=foo@bar.com  → borra la fila del Sheet.
-// Hardcoded users (AUTHORIZED_USERS) NO se pueden borrar — están en código.
+// DELETE /api/usuarios?email=foo@bar.com  → borra la fila del Sheet
+// con ese email. Si el email también está en el seed hardcoded, el
+// row del Sheet (un "override") se va pero el seed sigue activo en
+// código — el endpoint avisa al cliente.
 export const DELETE = withAuth(async (req, user) => {
   const userRole = getUserRole(user.email);
   if (userRole !== 'owner') {
@@ -110,24 +119,31 @@ export const DELETE = withAuth(async (req, user) => {
       { status: 400 },
     );
   }
-  // Protección: no borrar usuarios hardcoded del seed.
   const isSeed = AUTHORIZED_USERS.some(
     (u) => u.email.toLowerCase() === email,
   );
-  if (isSeed) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error:
-          'Este usuario está hardcoded en el código (siempre autorizado). Para quitarlo, editá lib/users.ts y deployá.',
-      },
-      { status: 400 },
-    );
-  }
   try {
     const result = await deleteUsuario(email);
-    console.log(`[USUARIOS] ${user.email} deleted ${email} (existed=${result.deleted})`);
-    return NextResponse.json({ ok: true, deleted: result.deleted });
+    if (!result.deleted && isSeed) {
+      // Email en seed pero sin row en Sheet — no hay nada para borrar
+      // sin tocar código.
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            'Este usuario solo existe en código (hardcoded). Para quitarlo, editá lib/users.ts y deployá.',
+        },
+        { status: 400 },
+      );
+    }
+    console.log(
+      `[USUARIOS] ${user.email} deleted ${email} (existed=${result.deleted}, isSeed=${isSeed})`,
+    );
+    return NextResponse.json({
+      ok: true,
+      deleted: result.deleted,
+      seedFallback: isSeed,
+    });
   } catch (err) {
     console.error('[USUARIOS] DELETE error:', err);
     const msg = err instanceof Error ? err.message : 'Error borrando';
