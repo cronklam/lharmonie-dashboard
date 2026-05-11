@@ -5,7 +5,12 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '../components/AuthProvider';
 import { PageHeader } from '../components/PageHeader';
 import EyebrowTag from '../components/EyebrowTag';
-import { fmtArs } from '@/lib/caja';
+import { fmtMonto } from '@/lib/caja';
+
+// Helper local: baigun siempre en pesos.
+function fmtMontoPesos(n: number): string {
+  return fmtMonto(n, 'PESO');
+}
 
 interface BaigunMovimientoUI {
   id: string;
@@ -100,7 +105,7 @@ export default function BaigunPage() {
               fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
             }}
           >
-            {fmtArs(saldo)}
+            {fmtMontoPesos(saldo)}
           </div>
           <div style={{ marginTop: 8, color: 'rgba(249,247,243,0.72)', fontSize: 13 }}>
             {items.length} movimiento{items.length !== 1 ? 's' : ''} · saldo a favor &gt; 0
@@ -233,7 +238,7 @@ export default function BaigunPage() {
                     }}
                   >
                     <div>
-                      {m.pago > 0 ? `-${fmtArs(m.pago)}` : fmtArs(m.cargo)}
+                      {m.pago > 0 ? `-${fmtMontoPesos(m.pago)}` : fmtMontoPesos(m.cargo)}
                     </div>
                     <div
                       style={{
@@ -243,7 +248,7 @@ export default function BaigunPage() {
                         marginTop: 2,
                       }}
                     >
-                      Saldo: {fmtArs(m.saldoDespues)}
+                      Saldo: {fmtMontoPesos(m.saldoDespues)}
                     </div>
                   </div>
                 </li>

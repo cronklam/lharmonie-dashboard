@@ -1,238 +1,178 @@
-// Caja chica + caja grande — types, headers, helpers.
+// Caja Efectivo — schema alineado al Sheet REAL del usuario.
 //
-// Modelo (espejo staff):
-// - CajaChica_Movimientos: cada retiro/gasto/ajuste individual.
-// - CajaChica_Sesiones: control completo (Iara cada 2 días) con totales
-//   y diferencia auditada al cerrar.
-// - CajaGrande_Movimientos: TODA modificación del saldo central
-//   (DEPOSITO/RETIRO/SESION_IARA/AJUSTE) con saldo después calculado.
+// Sheet (CAJA_SHEET_ID env): una pestaña por mes con formato exacto
+// "Mayo 2026" (mes en español + año). Pestaña "PORTADA" reservada para
+// el resumen — NO escribir ahí.
 //
-// El saldo de caja grande NO se guarda en variable global — se calcula
-// sumando todos los movimientos. La columna `Saldo Despues` es para
-// auditoría visual del Sheet.
+// Cada pestaña mensual:
+//   Fila 1: título mergeado "Caja efectivo — Mayo 2026"
+//   Fila 2: headers A=FECHA, B=MONEDA, C=DESCRIPCION, D=#, E=CATEGORIA, F=IMPORTE, G=SALDO
+//   Fila 3+: data. Pre-llenada con dropdowns y fórmulas en D y G.
 //
-// Owner-only por seguridad. Sheet destino: `CAJA_SHEET_ID`.
+// Columnas que ESCRIBE el dashboard: A, B, C, E, F.
+// Columnas que NO se tocan: D (fórmula `=SI(C{row}<>"";FILA()-2;"")`)
+// y G (`=SI(C{row}="";"";SUMAR.SI.CONJUNTO(...))`).
+// Si la fila destino está más allá del rango pre-llenado, el server
+// agrega esas fórmulas también para que el patrón siga.
 
-import type { Ancla } from './anclas';
+// ─── Moneda ──────────────────────────────────────────────────────
 
-// ─── Tab names (env-configurable) ────────────────────────────────────
-
-export const CAJA_CHICA_MOV_TAB =
-  process.env.CAJA_CHICA_MOV_TAB || 'CajaChica_Movimientos';
-export const CAJA_CHICA_SES_TAB =
-  process.env.CAJA_CHICA_SES_TAB || 'CajaChica_Sesiones';
-export const CAJA_GRANDE_TAB =
-  process.env.CAJA_GRANDE_TAB || 'CajaGrande_Movimientos';
-
-// ─── Caja chica ──────────────────────────────────────────────────
-
-export type CajaTipoMov = 'RETIRO' | 'GASTO' | 'AJUSTE';
-export const CAJA_TIPOS_MOV: CajaTipoMov[] = ['RETIRO', 'GASTO', 'AJUSTE'];
-
-export const CAJA_TIPO_MOV_LABEL: Record<CajaTipoMov, string> = {
-  RETIRO: 'Retiro',
-  GASTO: 'Gasto',
-  AJUSTE: 'Ajuste',
+export type Moneda = 'PESO' | 'DOLAR';
+export const MONEDAS: Moneda[] = ['PESO', 'DOLAR'];
+export const MONEDA_LABELS: Record<Moneda, string> = {
+  PESO: 'Pesos',
+  DOLAR: 'Dólares',
+};
+export const MONEDA_SYMBOLS: Record<Moneda, string> = {
+  PESO: '$',
+  DOLAR: 'US$',
 };
 
-export const CAJA_TIPO_MOV_COLORS: Record<
-  CajaTipoMov,
-  { fg: string; bg: string }
-> = {
-  RETIRO: { fg: 'var(--blue)', bg: 'var(--blue-bg)' },
-  GASTO: { fg: 'var(--red)', bg: 'var(--red-bg)' },
-  AJUSTE: { fg: 'var(--text-muted)', bg: 'var(--bg-subtle)' },
+// ─── Tipo (signo del importe) ───────────────────────────────────
+
+export type Tipo = 'INGRESO' | 'EGRESO';
+export const TIPOS: Tipo[] = ['INGRESO', 'EGRESO'];
+export const TIPO_LABELS: Record<Tipo, string> = {
+  INGRESO: 'Ingreso',
+  EGRESO: 'Egreso',
+};
+export const TIPO_COLORS: Record<Tipo, { fg: string; bg: string }> = {
+  INGRESO: { fg: 'var(--green)', bg: 'var(--green-bg)' },
+  EGRESO: { fg: 'var(--red)', bg: 'var(--red-bg)' },
 };
 
-export type CajaEstadoMov = 'COMPLETO' | 'PARCIAL' | 'PENDIENTE';
-export const CAJA_ESTADOS_MOV: CajaEstadoMov[] = ['COMPLETO', 'PARCIAL', 'PENDIENTE'];
+// ─── Categorías (whitelist exacto, MAYÚSCULAS) ──────────────────
 
-export type CajaCategoria =
-  | 'Limpieza'
-  | 'Insumos'
-  | 'Bebidas'
-  | 'Mantenimiento'
-  | 'Mensajería'
-  | 'Servicios'
-  | 'Papelería'
-  | 'Personal'
-  | 'Imprevistos'
-  | 'Otros';
+export const CATEGORIAS = [
+  'BISTRO',
+  'SUELDOS',
+  'CAMBIO USD',
+  'MYP',
+  'CONSULTORIA',
+  'ALQUILER',
+  'SERVICIOS',
+  'DIFERENCIA',
+  'MES ANTERIOR',
+  'VENTA IVA',
+  'CA',
+] as const;
 
-export const CAJA_CATEGORIAS: CajaCategoria[] = [
-  'Limpieza', 'Insumos', 'Bebidas', 'Mantenimiento', 'Mensajería',
-  'Servicios', 'Papelería', 'Personal', 'Imprevistos', 'Otros',
+export type Categoria = (typeof CATEGORIAS)[number];
+
+export const CATEGORIA_COLORS: Record<Categoria, { fg: string; bg: string }> = {
+  BISTRO: { fg: '#7C3AED', bg: 'rgba(124,58,237,0.10)' },
+  SUELDOS: { fg: '#1565C0', bg: 'rgba(21,101,192,0.10)' },
+  'CAMBIO USD': { fg: '#0891B2', bg: 'rgba(8,145,178,0.10)' },
+  MYP: { fg: 'var(--text-muted)', bg: 'var(--bg-subtle)' },
+  CONSULTORIA: { fg: '#6A1B9A', bg: 'rgba(106,27,154,0.10)' },
+  ALQUILER: { fg: '#4E342E', bg: 'rgba(78,52,46,0.10)' },
+  SERVICIOS: { fg: '#B7791F', bg: 'var(--warn-strong-bg)' },
+  DIFERENCIA: { fg: 'var(--red)', bg: 'var(--red-bg)' },
+  'MES ANTERIOR': { fg: 'var(--text-muted)', bg: 'var(--bg-subtle)' },
+  'VENTA IVA': { fg: 'var(--green)', bg: 'var(--green-bg)' },
+  CA: { fg: 'var(--accent-hover)', bg: 'var(--accent-bg)' },
+};
+
+export function isCategoria(s: string): s is Categoria {
+  return (CATEGORIAS as readonly string[]).includes(s);
+}
+
+// ─── Mes / tab naming ───────────────────────────────────────────
+
+const MESES_ES = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
 ];
 
-export interface CajaMovimiento {
-  id: string;
-  fechaMov: string;          // YYYY-MM-DD
-  local: string;             // texto del local (acepta Ancla | string libre)
-  tipo: CajaTipoMov;
-  montoArs: number;          // signed
-  montoUsd: number;          // signed
-  concepto: string;
-  estado: CajaEstadoMov;
-  cargadoPor: string;
-  cargadoEl: string;         // ISO datetime
-  sesionId: string;
-  notas: string;
-  fuente: string;
-  categoria: CajaCategoria | '';
+/** "Mayo 2026" desde un Date. */
+export function mesTabFromDate(d: Date): string {
+  return `${MESES_ES[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-export const CAJA_CHICA_MOV_HEADERS = [
-  'ID',
-  'Fecha Mov',
-  'Local',
-  'Tipo',
-  'Monto ARS',
-  'Monto USD',
-  'Concepto',
-  'Estado',
-  'Cargado por',
-  'Cargado el',
-  'Sesion ID',
-  'Notas',
-  'Fuente',
-  'Categoria',
-] as const;
-
-// ─── Caja chica · Sesiones de control ────────────────────────────
-
-export interface CajaSesion {
-  id: string;
-  fechaControl: string;
-  totalRetiradoArs: number;
-  totalRetiradoUsd: number;
-  totalGastadoArs: number;
-  totalGastadoUsd: number;
-  totalAjusteArs: number;
-  totalAjusteUsd: number;
-  cajaGrandeEncontradaArs: number;
-  cajaGrandeEncontradaUsd: number;
-  saldoSugeridoArs: number;
-  saldoSugeridoUsd: number;
-  saldoConfirmadoArs: number;
-  saldoConfirmadoUsd: number;
-  diferenciaArs: number;
-  diferenciaUsd: number;
-  notas: string;
-  cargadoPor: string;
-  cargadoEl: string;
+/** "Mayo 2026" desde un string ISO YYYY-MM o YYYY-MM-DD. */
+export function mesTabFromISO(iso: string): string | null {
+  const m = iso.match(/^(\d{4})-(\d{2})/);
+  if (!m) return null;
+  const year = parseInt(m[1], 10);
+  const monthIdx = parseInt(m[2], 10) - 1;
+  if (monthIdx < 0 || monthIdx > 11) return null;
+  return `${MESES_ES[monthIdx]} ${year}`;
 }
 
-export const CAJA_CHICA_SES_HEADERS = [
-  'ID Sesion',
-  'Fecha Control',
-  'Total Retirado ARS',
-  'Total Retirado USD',
-  'Total Gastado ARS',
-  'Total Gastado USD',
-  'Total Ajuste ARS',
-  'Total Ajuste USD',
-  'Caja Grande Encontrada ARS',
-  'Caja Grande Encontrada USD',
-  'Saldo Sugerido ARS',
-  'Saldo Sugerido USD',
-  'Saldo Confirmado ARS',
-  'Saldo Confirmado USD',
-  'Diferencia ARS',
-  'Diferencia USD',
-  'Notas',
-  'Cargado por',
-  'Cargado el',
-] as const;
-
-// ─── Caja grande ──────────────────────────────────────────────────
-
-export type CajaGrandeTipo = 'DEPOSITO' | 'RETIRO' | 'SESION_IARA' | 'AJUSTE';
-export const CAJA_GRANDE_TIPOS: CajaGrandeTipo[] = [
-  'DEPOSITO', 'RETIRO', 'SESION_IARA', 'AJUSTE',
-];
-
-export const CAJA_GRANDE_TIPO_LABEL: Record<CajaGrandeTipo, string> = {
-  DEPOSITO: 'Depósito',
-  RETIRO: 'Retiro',
-  SESION_IARA: 'Sesión Iara',
-  AJUSTE: 'Ajuste',
-};
-
-export const CAJA_GRANDE_TIPO_COLORS: Record<
-  CajaGrandeTipo,
-  { fg: string; bg: string }
-> = {
-  DEPOSITO: { fg: 'var(--green)', bg: 'var(--green-bg)' },
-  RETIRO: { fg: 'var(--red)', bg: 'var(--red-bg)' },
-  SESION_IARA: { fg: 'var(--accent-hover)', bg: 'var(--accent-bg)' },
-  AJUSTE: { fg: 'var(--text-muted)', bg: 'var(--bg-subtle)' },
-};
-
-export interface CajaGrandeMovimiento {
-  id: string;
-  fecha: string;            // ISO datetime
-  tipo: CajaGrandeTipo;
-  montoArs: number;         // signed
-  montoUsd: number;         // signed
-  concepto: string;
-  sesionIdRef: string;
-  saldoDespuesArs: number;
-  saldoDespuesUsd: number;
-  cargadoPor: string;
+/** YYYY-MM desde "Mayo 2026" (inverso). null si no matchea. */
+export function isoMesFromTab(tab: string): string | null {
+  const m = tab.match(/^(\S+) (\d{4})$/);
+  if (!m) return null;
+  const idx = MESES_ES.findIndex(
+    (n) => n.toLowerCase() === m[1].toLowerCase(),
+  );
+  if (idx < 0) return null;
+  return `${m[2]}-${String(idx + 1).padStart(2, '0')}`;
 }
 
-export const CAJA_GRANDE_HEADERS = [
-  'ID',
-  'Fecha',
-  'Tipo',
-  'Monto ARS',
-  'Monto USD',
-  'Concepto',
-  'Sesion ID Ref',
-  'Saldo Despues ARS',
-  'Saldo Despues USD',
-  'Cargado por',
-] as const;
-
-// ─── Helpers ──────────────────────────────────────────────────────
-
-export function nuevoIdMovChica(): string {
-  return `mc_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+/** True si el tab name es válido (mes en español + año). Filtra
+ *  PORTADA y cualquier otro tab que no matchee. */
+export function isMonthTab(tab: string): boolean {
+  return isoMesFromTab(tab) !== null;
 }
 
-export function nuevoIdSesion(): string {
-  return `ss_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+// ─── Formato ────────────────────────────────────────────────────
+
+/** DD/MM/YYYY (es-AR). */
+export function fechaToSheet(iso: string): string | null {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  return `${m[3]}/${m[2]}/${m[1]}`;
 }
 
-export function nuevoIdMovGrande(): string {
-  return `mg_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+/** DD/MM/YYYY del Sheet → YYYY-MM-DD. */
+export function fechaFromSheet(s: string): string | null {
+  const m = s.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return null;
+  return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
 }
 
-/** Calcula el saldo de caja grande sumando todos los movimientos.
- *  El saldo después de cada movimiento se anota como auditoría visual,
- *  pero la fuente de verdad es la suma de los montos. */
-export function calcularSaldo(movs: CajaGrandeMovimiento[]): {
-  ars: number;
-  usd: number;
-} {
-  let ars = 0;
-  let usd = 0;
-  for (const m of movs) {
-    ars += m.montoArs || 0;
-    usd += m.montoUsd || 0;
-  }
-  return { ars, usd };
-}
-
-export function fmtArs(n: number): string {
+/** Formato visual de un monto: "$ 1.200.000" o "US$ 5.000". El signo
+ *  viene en el number, lo respetamos para la UI (rojo si negativo). */
+export function fmtMonto(n: number, moneda: Moneda): string {
+  const sym = MONEDA_SYMBOLS[moneda];
+  const abs = Math.round(Math.abs(n));
   const sign = n < 0 ? '-' : '';
-  return `${sign}$ ${Math.round(Math.abs(n)).toLocaleString('es-AR')}`;
+  return `${sign}${sym} ${abs.toLocaleString('es-AR')}`;
 }
 
-export function fmtUsd(n: number): string {
-  const sign = n < 0 ? '-' : '';
-  return `${sign}USD ${Math.round(Math.abs(n)).toLocaleString('es-AR')}`;
+/** Parsea un input visual ("1.200.000", "1200000", "1,200,000") a
+ *  número plano. */
+export function parseMontoInput(raw: string): number {
+  if (!raw) return 0;
+  const cleaned = raw
+    .replace(/\$|US\$|us\$/g, '')
+    .replace(/\s/g, '')
+    .replace(/\./g, '')
+    .replace(/,/g, '.');
+  const n = parseFloat(cleaned);
+  return isNaN(n) ? 0 : n;
 }
 
-// Re-export Ancla para que los componentes que importan caja no necesiten doble import
-export type { Ancla };
+// ─── Tipos de fila ──────────────────────────────────────────────
+
+export interface MovimientoCaja {
+  fila: number;             // fila exacta en el Sheet (para debug)
+  fecha: string;            // ISO YYYY-MM-DD
+  moneda: Moneda;
+  descripcion: string;
+  categoria: Categoria | '';
+  importe: number;          // signed: + ingreso, − egreso
+  saldoCol: number | null;  // valor calculado de col G (puede ser null si la fórmula no resolvió)
+}
+
+export interface SaldoMes {
+  pesos: number;
+  dolares: number;
+}
+
+// ─── ID helpers (para optimistic UI client-side) ────────────────
+
+export function nuevoIdMov(): string {
+  return `mov_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+}

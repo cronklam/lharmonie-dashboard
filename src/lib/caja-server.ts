@@ -1,30 +1,40 @@
 import 'server-only';
 
-// Caja chica + grande — Sheet I/O (server-only). Lee y escribe al
+// Caja efectivo — Sheet I/O (server-only). Lee y escribe al
 // `CAJA_SHEET_ID` con service account (`GOOGLE_CREDENTIALS`).
 //
-// IMPORTANTE: NO hay autocreate de tabs. Si el tab no existe el
-// endpoint devuelve un error claro.
+// Schema documentado en `lib/caja.ts`. Reglas duras:
+//   - Pestañas mensuales formato exacto "Mayo 2026". PORTADA reservada.
+//   - Si el mes destino no tiene tab → error claro (NO se autocrea).
+//   - Solo escribir columnas A, B, C, E, F.
+//   - D (#) y G (SALDO) tienen fórmulas. Si el row destino no las
+//     tiene (más allá del rango pre-llenado), las agregamos.
 
 import { google } from 'googleapis';
+import type { sheets_v4 } from 'googleapis';
 import {
-  CAJA_CHICA_MOV_TAB,
-  CAJA_CHICA_SES_TAB,
-  CAJA_GRANDE_TAB,
-  CAJA_CHICA_MOV_HEADERS,
-  CAJA_CHICA_SES_HEADERS,
-  CAJA_GRANDE_HEADERS,
-  calcularSaldo,
-  type CajaMovimiento,
-  type CajaSesion,
-  type CajaGrandeMovimiento,
-  type CajaTipoMov,
-  type CajaEstadoMov,
-  type CajaCategoria,
-  type CajaGrandeTipo,
+  CATEGORIAS,
+  MONEDAS,
+  fechaFromSheet,
+  fechaToSheet,
+  isCategoria,
+  isMonthTab,
+  isoMesFromTab,
+  mesTabFromISO,
+  type Categoria,
+  type Moneda,
+  type MovimientoCaja,
+  type SaldoMes,
 } from './caja';
 
 const SHEET_ID = process.env.CAJA_SHEET_ID || '';
+const PORTADA_TAB = 'PORTADA';
+
+// Rango de filas a inspeccionar/escribir. El Sheet del usuario tiene
+// formato y fórmulas pre-llenadas hasta una fila X que no conozco
+// exactamente; 500 es un máximo razonable que cubre años de movimientos.
+const MAX_ROW = 500;
+const FIRST_DATA_ROW = 3; // fila 1 = título, fila 2 = headers, fila 3+ = data
 
 function getAuth() {
   const creds = process.env.GOOGLE_CREDENTIALS;
@@ -60,217 +70,284 @@ function ensureConfigured(): SheetsClient {
     );
   }
   if (!SHEET_ID) {
-    throw new CajaError(
-      500,
-      'CAJA_SHEET_ID no configurado. Setealo en Vercel.',
-    );
+    throw new CajaError(500, 'CAJA_SHEET_ID no configurado.');
   }
   return sheets;
 }
 
-async function readTab(sheets: SheetsClient, tab: string): Promise<string[][]> {
-  try {
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: SHEET_ID,
-      range: `'${tab}'!A1:Z3000`,
-    });
-    return res.data.values || [];
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Error leyendo Sheet';
-    throw new CajaError(
-      500,
-      `No se pudo leer "${tab}". Verificá que el tab exista y que el service account tenga acceso. (${msg})`,
-    );
+// ─── Listado de pestañas mensuales ──────────────────────────────
+
+interface TabInfo {
+  title: string;        // "Mayo 2026"
+  sheetId: number;
+  iso: string;          // "2026-05"
+}
+
+/** Devuelve las pestañas mensuales (excluye PORTADA y cualquier tab
+ *  con nombre no estándar), ordenadas de más reciente a más vieja. */
+export async function listMeses(): Promise<TabInfo[]> {
+  const sheets = ensureConfigured();
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: SHEET_ID,
+    fields: 'sheets.properties(title,sheetId)',
+  });
+  const all = meta.data.sheets ?? [];
+  const out: TabInfo[] = [];
+  for (const s of all) {
+    const title = s.properties?.title || '';
+    if (title === PORTADA_TAB) continue;
+    if (!isMonthTab(title)) continue;
+    const iso = isoMesFromTab(title);
+    if (!iso) continue;
+    out.push({ title, sheetId: s.properties?.sheetId ?? 0, iso });
   }
+  out.sort((a, b) => (a.iso < b.iso ? 1 : a.iso > b.iso ? -1 : 0));
+  return out;
+}
+
+/** Encuentra una pestaña por mes ISO (YYYY-MM). null si no existe. */
+async function findTabByISO(
+  sheets: SheetsClient,
+  iso: string,
+): Promise<TabInfo | null> {
+  const target = mesTabFromISO(`${iso}-01`);
+  if (!target) return null;
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: SHEET_ID,
+    fields: 'sheets.properties(title,sheetId)',
+  });
+  for (const s of meta.data.sheets ?? []) {
+    const title = s.properties?.title || '';
+    if (title === target) {
+      return {
+        title,
+        sheetId: s.properties?.sheetId ?? 0,
+        iso,
+      };
+    }
+  }
+  return null;
+}
+
+// ─── Lectura de movimientos de un mes ───────────────────────────
+
+function parseRow(rowIdx: number, row: string[]): MovimientoCaja | null {
+  const fechaRaw = (row[0] || '').trim();
+  const monedaRaw = (row[1] || '').trim().toUpperCase();
+  const desc = (row[2] || '').trim();
+  // const numCol = (row[3] || '').trim();  // D: fórmula, ignorada al leer
+  const catRaw = (row[4] || '').trim().toUpperCase();
+  const impRaw = (row[5] || '').trim();
+  const saldoRaw = (row[6] || '').trim();
+
+  if (!desc) return null;
+
+  const fecha = fechaFromSheet(fechaRaw) || '';
+  const moneda: Moneda =
+    monedaRaw === 'DOLAR' || monedaRaw === 'DÓLAR' || monedaRaw === 'USD'
+      ? 'DOLAR'
+      : 'PESO';
+  const categoria = isCategoria(catRaw) ? (catRaw as Categoria) : '';
+  const importe = parseNum(impRaw);
+  const saldoNum = saldoRaw ? parseNum(saldoRaw) : null;
+
+  return {
+    fila: rowIdx,
+    fecha,
+    moneda,
+    descripcion: desc,
+    categoria,
+    importe,
+    saldoCol: saldoNum != null && !isNaN(saldoNum) ? saldoNum : null,
+  };
 }
 
 function parseNum(v: string | undefined | null): number {
   if (!v) return 0;
-  const n = parseFloat(
-    String(v)
-      .replace(/\$/g, '')
-      .replace(/USD/gi, '')
-      .replace(/\./g, '')
-      .replace(',', '.')
-      .replace(/[^0-9.\-]/g, ''),
-  );
+  const cleaned = String(v)
+    .replace(/\$|US\$/g, '')
+    .replace(/\s/g, '')
+    .replace(/\./g, '')
+    .replace(',', '.');
+  const n = parseFloat(cleaned);
   return isNaN(n) ? 0 : n;
 }
 
-// ─── Caja chica · movimientos ───────────────────────────────────
-
-function rowToMovChica(row: string[]): CajaMovimiento | null {
-  const id = (row[0] || '').trim();
-  if (!id) return null;
-  return {
-    id,
-    fechaMov: (row[1] || '').trim(),
-    local: (row[2] || '').trim(),
-    tipo: ((row[3] || 'GASTO').trim().toUpperCase() as CajaTipoMov) || 'GASTO',
-    montoArs: parseNum(row[4]),
-    montoUsd: parseNum(row[5]),
-    concepto: (row[6] || '').trim(),
-    estado: ((row[7] || 'COMPLETO').trim().toUpperCase() as CajaEstadoMov) || 'COMPLETO',
-    cargadoPor: (row[8] || '').trim(),
-    cargadoEl: (row[9] || '').trim(),
-    sesionId: (row[10] || '').trim(),
-    notas: (row[11] || '').trim(),
-    fuente: (row[12] || '').trim(),
-    categoria: ((row[13] || '').trim() as CajaCategoria) || '',
-  };
-}
-
-function movChicaToRow(m: CajaMovimiento): string[] {
-  return [
-    m.id,
-    m.fechaMov,
-    m.local,
-    m.tipo,
-    String(m.montoArs || 0),
-    String(m.montoUsd || 0),
-    m.concepto,
-    m.estado,
-    m.cargadoPor,
-    m.cargadoEl,
-    m.sesionId,
-    m.notas,
-    m.fuente,
-    m.categoria,
-  ];
-}
-
-export async function listMovimientosChica(): Promise<CajaMovimiento[]> {
+/** Lee todas las filas con DESCRIPCION no vacía del tab del mes
+ *  dado (ISO `YYYY-MM`). Si el tab no existe → error 404. */
+export async function listMovimientosMes(iso: string): Promise<{
+  tab: string;
+  items: MovimientoCaja[];
+}> {
   const sheets = ensureConfigured();
-  const rows = await readTab(sheets, CAJA_CHICA_MOV_TAB);
-  if (rows.length < 2) return [];
-  return rows
-    .slice(1)
-    .map(rowToMovChica)
-    .filter((m): m is CajaMovimiento => m !== null);
-}
-
-export async function appendMovimientoChica(m: CajaMovimiento): Promise<void> {
-  const sheets = ensureConfigured();
-  await sheets.spreadsheets.values.append({
+  const tab = await findTabByISO(sheets, iso);
+  if (!tab) {
+    const target = mesTabFromISO(`${iso}-01`) || iso;
+    throw new CajaError(
+      404,
+      `La pestaña "${target}" no existe en el Sheet. Pedile a Martín que la cree antes de cargar movimientos de ese mes.`,
+    );
+  }
+  const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: `'${CAJA_CHICA_MOV_TAB}'!A2`,
-    valueInputOption: 'RAW',
-    requestBody: { values: [movChicaToRow(m)] },
+    range: `'${tab.title}'!A${FIRST_DATA_ROW}:G${MAX_ROW}`,
+    valueRenderOption: 'UNFORMATTED_VALUE',
   });
+  const rows = res.data.values || [];
+  const items: MovimientoCaja[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const parsed = parseRow(FIRST_DATA_ROW + i, row.map((c) => String(c ?? '')));
+    if (parsed) items.push(parsed);
+  }
+  return { tab: tab.title, items };
 }
 
-// ─── Caja chica · sesiones ──────────────────────────────────────
+// ─── Saldos globales (todos los meses) ─────────────────────────
 
-function rowToSesion(row: string[]): CajaSesion | null {
-  const id = (row[0] || '').trim();
-  if (!id) return null;
-  return {
-    id,
-    fechaControl: (row[1] || '').trim(),
-    totalRetiradoArs: parseNum(row[2]),
-    totalRetiradoUsd: parseNum(row[3]),
-    totalGastadoArs: parseNum(row[4]),
-    totalGastadoUsd: parseNum(row[5]),
-    totalAjusteArs: parseNum(row[6]),
-    totalAjusteUsd: parseNum(row[7]),
-    cajaGrandeEncontradaArs: parseNum(row[8]),
-    cajaGrandeEncontradaUsd: parseNum(row[9]),
-    saldoSugeridoArs: parseNum(row[10]),
-    saldoSugeridoUsd: parseNum(row[11]),
-    saldoConfirmadoArs: parseNum(row[12]),
-    saldoConfirmadoUsd: parseNum(row[13]),
-    diferenciaArs: parseNum(row[14]),
-    diferenciaUsd: parseNum(row[15]),
-    notas: (row[16] || '').trim(),
-    cargadoPor: (row[17] || '').trim(),
-    cargadoEl: (row[18] || '').trim(),
-  };
-}
-
-export async function listSesiones(): Promise<CajaSesion[]> {
+/** Suma importes de TODAS las pestañas mensuales, agrupando por
+ *  moneda. Útil para mostrar saldo total al día. */
+export async function getSaldosGlobales(): Promise<SaldoMes> {
   const sheets = ensureConfigured();
-  const rows = await readTab(sheets, CAJA_CHICA_SES_TAB);
-  if (rows.length < 2) return [];
-  return rows
-    .slice(1)
-    .map(rowToSesion)
-    .filter((s): s is CajaSesion => s !== null);
-}
+  const tabs = await listMeses();
+  let pesos = 0;
+  let dolares = 0;
+  if (tabs.length === 0) return { pesos, dolares };
 
-// ─── Caja grande · movimientos ──────────────────────────────────
-
-function rowToMovGrande(row: string[]): CajaGrandeMovimiento | null {
-  const id = (row[0] || '').trim();
-  if (!id) return null;
-  return {
-    id,
-    fecha: (row[1] || '').trim(),
-    tipo: ((row[2] || 'AJUSTE').trim().toUpperCase() as CajaGrandeTipo) || 'AJUSTE',
-    montoArs: parseNum(row[3]),
-    montoUsd: parseNum(row[4]),
-    concepto: (row[5] || '').trim(),
-    sesionIdRef: (row[6] || '').trim(),
-    saldoDespuesArs: parseNum(row[7]),
-    saldoDespuesUsd: parseNum(row[8]),
-    cargadoPor: (row[9] || '').trim(),
-  };
-}
-
-function movGrandeToRow(m: CajaGrandeMovimiento): string[] {
-  return [
-    m.id,
-    m.fecha,
-    m.tipo,
-    String(m.montoArs || 0),
-    String(m.montoUsd || 0),
-    m.concepto,
-    m.sesionIdRef,
-    String(m.saldoDespuesArs || 0),
-    String(m.saldoDespuesUsd || 0),
-    m.cargadoPor,
-  ];
-}
-
-export async function listMovimientosGrande(): Promise<CajaGrandeMovimiento[]> {
-  const sheets = ensureConfigured();
-  const rows = await readTab(sheets, CAJA_GRANDE_TAB);
-  if (rows.length < 2) return [];
-  return rows
-    .slice(1)
-    .map(rowToMovGrande)
-    .filter((m): m is CajaGrandeMovimiento => m !== null);
-}
-
-/** Append con saldo después calculado a partir del saldo actual. El
- *  monto debe venir signed (positivo si suma, negativo si resta). */
-export async function appendMovimientoGrande(
-  input: Omit<CajaGrandeMovimiento, 'saldoDespuesArs' | 'saldoDespuesUsd'>,
-): Promise<CajaGrandeMovimiento> {
-  const sheets = ensureConfigured();
-  const movs = await listMovimientosGrande();
-  const saldo = calcularSaldo(movs);
-  const out: CajaGrandeMovimiento = {
-    ...input,
-    saldoDespuesArs: saldo.ars + (input.montoArs || 0),
-    saldoDespuesUsd: saldo.usd + (input.montoUsd || 0),
-  };
-  await sheets.spreadsheets.values.append({
+  // batchGet en lotes para no pasar el límite de URL
+  const ranges = tabs.map((t) => `'${t.title}'!B${FIRST_DATA_ROW}:F${MAX_ROW}`);
+  const res = await sheets.spreadsheets.values.batchGet({
     spreadsheetId: SHEET_ID,
-    range: `'${CAJA_GRANDE_TAB}'!A2`,
-    valueInputOption: 'RAW',
-    requestBody: { values: [movGrandeToRow(out)] },
+    ranges,
+    valueRenderOption: 'UNFORMATTED_VALUE',
   });
-  return out;
+  for (const block of res.data.valueRanges || []) {
+    const rows = block.values || [];
+    for (const row of rows) {
+      const moneda = String(row[0] || '').trim().toUpperCase();
+      const desc = String(row[1] || '').trim();
+      // F is index 4 in our slice B..F: [B,C,D,E,F] → idx 4
+      const impRaw = row[4];
+      if (!desc) continue;
+      const n = typeof impRaw === 'number' ? impRaw : parseNum(String(impRaw ?? ''));
+      if (moneda === 'DOLAR' || moneda === 'DÓLAR' || moneda === 'USD') {
+        dolares += n;
+      } else {
+        pesos += n;
+      }
+    }
+  }
+  return { pesos, dolares };
 }
 
-export async function getSaldo(): Promise<{ ars: number; usd: number }> {
-  const movs = await listMovimientosGrande();
-  return calcularSaldo(movs);
+// ─── Append movimiento ──────────────────────────────────────────
+
+export interface AppendInput {
+  iso: string;              // YYYY-MM-DD
+  moneda: Moneda;
+  descripcion: string;
+  categoria: Categoria;
+  importeSigned: number;    // ya signed (+ ingreso, − egreso)
 }
 
-// Re-export
-export {
-  CAJA_CHICA_MOV_HEADERS,
-  CAJA_CHICA_SES_HEADERS,
-  CAJA_GRANDE_HEADERS,
-};
+export interface AppendResult {
+  tab: string;
+  fila: number;
+}
+
+/** Append a la primera fila libre del tab del mes correspondiente
+ *  a `iso`. Solo escribe A, B, C, E, F. Si la fila destino no tiene
+ *  fórmulas en D y G (porque está más allá del pre-llenado), las
+ *  agrega para que el patrón siga. */
+export async function appendMovimiento(input: AppendInput): Promise<AppendResult> {
+  const sheets = ensureConfigured();
+  if (!MONEDAS.includes(input.moneda)) {
+    throw new CajaError(400, 'Moneda inválida');
+  }
+  if (!CATEGORIAS.includes(input.categoria)) {
+    throw new CajaError(400, 'Categoría inválida');
+  }
+  if (!input.descripcion.trim()) {
+    throw new CajaError(400, 'Descripción vacía');
+  }
+  const fechaSheet = fechaToSheet(input.iso);
+  if (!fechaSheet) {
+    throw new CajaError(400, 'Fecha inválida (esperado YYYY-MM-DD)');
+  }
+  const isoMes = input.iso.slice(0, 7);
+  const tab = await findTabByISO(sheets, isoMes);
+  if (!tab) {
+    const target = mesTabFromISO(input.iso) || isoMes;
+    throw new CajaError(
+      404,
+      `La pestaña "${target}" no existe en el Sheet. Pedile a Martín que la cree antes de cargar este movimiento.`,
+    );
+  }
+
+  // Buscar primera fila libre: leemos col C (DESCRIPCION) y D (#) con
+  // FORMULA para distinguir vacío real vs fórmula que evalúa a "".
+  const inspect = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: `'${tab.title}'!C${FIRST_DATA_ROW}:D${MAX_ROW}`,
+    valueRenderOption: 'FORMULA',
+  });
+  const cdRows = inspect.data.values || [];
+
+  // Primera fila libre = primera donde C es realmente vacío (no fórmula,
+  // no texto). Como C nunca tiene fórmula, simplemente buscamos "" o null.
+  let targetIdx = -1;
+  for (let i = 0; i < cdRows.length; i++) {
+    const cVal = cdRows[i]?.[0];
+    if (cVal === undefined || cVal === null || String(cVal).trim() === '') {
+      targetIdx = i;
+      break;
+    }
+  }
+  if (targetIdx === -1) {
+    // No hay fila vacía en el rango pre-llenado — appendeamos al final.
+    targetIdx = cdRows.length;
+  }
+  const filaDestino = FIRST_DATA_ROW + targetIdx;
+
+  // Detectar si D ya tiene fórmula. Si la celda inspeccionada es
+  // string que arranca con "=" → tiene fórmula. Vacío o número → no.
+  const dValRaw = cdRows[targetIdx]?.[1];
+  const tieneFormulaD =
+    typeof dValRaw === 'string' && dValRaw.startsWith('=');
+
+  // Escribimos en un único batchUpdate: A B C (run continuo) + E F.
+  // Si falta fórmula en D y G, agregarlas al mismo batch.
+  const dataUpdates: sheets_v4.Schema$ValueRange[] = [
+    {
+      range: `'${tab.title}'!A${filaDestino}:C${filaDestino}`,
+      values: [[fechaSheet, input.moneda, input.descripcion.trim()]],
+    },
+    {
+      range: `'${tab.title}'!E${filaDestino}:F${filaDestino}`,
+      values: [[input.categoria, input.importeSigned]],
+    },
+  ];
+
+  if (!tieneFormulaD) {
+    const formulaD = `=SI(C${filaDestino}<>"";FILA()-2;"")`;
+    const formulaG = `=SI(C${filaDestino}="";"";SUMAR.SI.CONJUNTO($F$3:F${filaDestino};$B$3:B${filaDestino};B${filaDestino}))`;
+    dataUpdates.push({
+      range: `'${tab.title}'!D${filaDestino}`,
+      values: [[formulaD]],
+    });
+    dataUpdates.push({
+      range: `'${tab.title}'!G${filaDestino}`,
+      values: [[formulaG]],
+    });
+  }
+
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: {
+      valueInputOption: 'USER_ENTERED', // permite que las fórmulas y las fechas se interpreten correctamente
+      data: dataUpdates,
+    },
+  });
+
+  return { tab: tab.title, fila: filaDestino };
+}

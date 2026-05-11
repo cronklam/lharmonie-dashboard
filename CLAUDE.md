@@ -159,13 +159,61 @@ Owner ve los 5 tabs; admin/viewer ven 4 (sin P&L).
 (personal Martín y Melanie — NO entra en métricas operativas, solo
 owner ve/carga). Cada movimiento de Servicios y Caja se asigna a una.
 
-### Servicios y Caja — TODO de configuración
+### Caja Efectivo — schema del Sheet (REAL)
 
-Ver `TODO_TOMORROW.md` (raíz) para los pasos pendientes: compartir
-los dos Sheets con el service account, setear las env vars en Vercel,
-confirmar nombres de tabs y headers de columnas. Hasta que se
-completen, los endpoints `/api/servicios/*`, `/api/caja/*` y
-`/api/baigun` devuelven error con texto claro.
+Sheet de Caja (`CAJA_SHEET_ID`) tiene **una pestaña por mes** con
+formato exacto **`Mayo 2026`** (mes en español + año, separados por
+espacio). Una pestaña `PORTADA` reservada para el resumen — **NO
+escribir nunca ahí**. Las pestañas históricas existen desde Julio 2021
+en adelante. Si el usuario carga un movimiento de un mes sin pestaña,
+el endpoint devuelve 404 con mensaje claro ("La pestaña 'Junio 2026'
+no existe en el Sheet. Pedile a Martín que la cree."). **NO se
+autocrean pestañas.**
+
+Estructura de cada pestaña mensual:
+- Fila 1: título mergeado "Caja efectivo — Mayo 2026".
+- Fila 2: HEADERS (no escribir): `A=FECHA · B=MONEDA · C=DESCRIPCION ·
+  D=# · E=CATEGORIA · F=IMPORTE · G=SALDO`.
+- Fila 3+: data. Filas pre-llenadas con dropdowns y fórmulas hasta
+  una fila X variable.
+
+**Columnas que el dashboard escribe** (solo estas 5):
+- **A (FECHA):** formato DD/MM/YYYY locale es-AR (ej `10/05/2026`).
+- **B (MONEDA):** `PESO` o `DOLAR` (singular, mayúsculas).
+- **C (DESCRIPCION):** texto libre.
+- **E (CATEGORIA):** uno de los 11 valores whitelist (mayúsculas):
+  `BISTRO`, `SUELDOS`, `CAMBIO USD`, `MYP`, `CONSULTORIA`, `ALQUILER`,
+  `SERVICIOS`, `DIFERENCIA`, `MES ANTERIOR`, `VENTA IVA`, `CA`.
+- **F (IMPORTE):** número plano signed. Positivo = INGRESO, negativo
+  = EGRESO. Tipo (Ingreso/Egreso) en el form determina el signo
+  server-side, no en el body del request.
+
+**Columnas que el dashboard NUNCA toca si ya tienen fórmula:**
+- **D (#):** `=SI(C{row}<>"";FILA()-2;"")` — auto-incremental.
+- **G (SALDO):** `=SI(C{row}="";"";SUMAR.SI.CONJUNTO($F$3:F{row};$B$3:B{row};B{row}))` — saldo acumulado por moneda.
+
+**Si la fila destino está más allá del rango pre-llenado** (no tiene
+fórmula en D), el server agrega las fórmulas en D y G de esa fila
+para mantener el patrón. Detección: `values.get` con
+`valueRenderOption: 'FORMULA'` chequea si D arranca con `=`.
+
+**Endpoints:**
+- `POST /api/caja/movimiento` (owner only) — body
+  `{ fecha, moneda, descripcion, categoria, importe, tipo }`. Server
+  calcula `importe_final = tipo === 'EGRESO' ? -importe : importe`,
+  busca pestaña del mes correspondiente a `fecha`, encuentra primera
+  fila con C vacía ≥ fila 3, escribe A B C E F (y D, G si faltan).
+- `GET /api/caja/movimientos?mes=YYYY-MM` — lista de movs de esa
+  pestaña + `mesesDisponibles` (todas las pestañas válidas).
+- `GET /api/caja/saldos` — suma de TODAS las pestañas mensuales
+  agrupada por moneda (saldo total actual).
+
+### Servicios — TODO de configuración
+
+Para Servicios y Baigun, ver `TODO_TOMORROW.md` (raíz): compartir el
+Sheet de Servicios con el service account, setear `SERVICIOS_SHEET_ID`
+en Vercel, confirmar nombres de tabs. Hasta que se complete, los
+endpoints `/api/servicios/*` y `/api/baigun` devuelven error claro.
 
 ---
 
