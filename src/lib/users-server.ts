@@ -212,3 +212,57 @@ export async function upsertUsuario(
   clearSheetUsersCache();
   return { action: 'created' };
 }
+
+/** Borra fila del Sheet matcheada por email. Hard delete (no soft). */
+export async function deleteUsuario(email: string): Promise<{ deleted: boolean }> {
+  const sheets = getSheetsClient();
+  if (!sheets || !SHEET_ID) {
+    throw new Error('Sheets no configurado (falta GOOGLE_CREDENTIALS o FACTURAS_SHEET_ID)');
+  }
+  await ensureUsuariosTab(sheets);
+  const existing = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: `'${TAB}'!A2:F500`,
+  });
+  const rows = existing.data.values || [];
+  const normalized = email.toLowerCase().trim();
+  const existingIdx = rows.findIndex(
+    (r) => (r[0] || '').toLowerCase().trim() === normalized,
+  );
+  if (existingIdx < 0) {
+    clearSheetUsersCache();
+    return { deleted: false };
+  }
+  // Para borrar la fila completa hay que usar batchUpdate con
+  // DeleteDimensionRequest. El sheetId del tab "Usuarios" lo
+  // obtenemos vía spreadsheets.get.
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: SHEET_ID,
+    fields: 'sheets.properties(title,sheetId)',
+  });
+  const tabMeta = meta.data.sheets?.find((s) => s.properties?.title === TAB);
+  const tabSheetId = tabMeta?.properties?.sheetId;
+  if (tabSheetId == null) {
+    throw new Error(`No se pudo encontrar sheetId del tab "${TAB}"`);
+  }
+  const startIndex = existingIdx + 1; // fila 0-based; row 1 = header
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: {
+      requests: [
+        {
+          deleteDimension: {
+            range: {
+              sheetId: tabSheetId,
+              dimension: 'ROWS',
+              startIndex,
+              endIndex: startIndex + 1,
+            },
+          },
+        },
+      ],
+    },
+  });
+  clearSheetUsersCache();
+  return { deleted: true };
+}

@@ -12,7 +12,7 @@ import {
   type Role,
 } from '@/lib/users';
 
-interface UsuarioRow {
+interface SheetRow {
   email: string;
   name: string;
   role: string;
@@ -21,20 +21,46 @@ interface UsuarioRow {
   date: string;
 }
 
+interface SeedUser {
+  email: string;
+  name: string;
+  role: Role;
+}
+
+type Source = 'seed' | 'sheet';
+
+interface MergedUser {
+  email: string;
+  name: string;
+  role: Role;
+  activo: boolean;
+  source: Source;
+  emailValid: boolean;
+}
+
 const ROLE_ORDER: Role[] = ['owner', 'admin', 'viewer'];
 
-// /perfil/usuarios — pensado para un equipo chico (owner + 1-3 más).
-// Por eso lista PLANA (sin accordion por rol). Hero con total +
-// "Agregar usuario" prominente, cards de usuario con avatar + chip
-// rol + lápiz de edición. Tap en el lápiz despliega el editor inline.
+const EMAIL_REGEX = /^[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}$/;
+
+// /perfil/usuarios — quién tiene acceso al dashboard.
+//
+// Dos fuentes de verdad, unificadas en pantalla:
+//   1. Hardcoded (lib/users.ts) — siempre autorizados, no editables
+//      desde la UI. Chip "Por código".
+//   2. Sheet "Usuarios" del Sheet de Facturas — editable, deletable.
+//
+// Cada card muestra el email COMPLETO con monospace, y si el email no
+// matchea el formato estándar (sin @, etc) se ve un chip rojo
+// "Email inválido — no autoriza a nadie" + opción Eliminar para limpiar
+// la fila rota.
 
 export default function UsuariosPage() {
   const { user, loading, isOwner, isAdmin } = useAuth();
   const router = useRouter();
 
-  const [rows, setRows] = useState<UsuarioRow[]>([]);
+  const [sheetRows, setSheetRows] = useState<SheetRow[]>([]);
+  const [seed, setSeed] = useState<SeedUser[]>([]);
   const [fetching, setFetching] = useState(true);
-  const [source, setSource] = useState<'sheet' | 'hardcoded' | null>(null);
   const [editingEmail, setEditingEmail] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [toast, setToast] = useState('');
@@ -44,8 +70,8 @@ export default function UsuariosPage() {
       const res = await fetch('/api/usuarios', { cache: 'no-store' });
       const data = await res.json();
       if (data.ok) {
-        setRows(data.allRows || []);
-        setSource(data.source ?? null);
+        setSheetRows(data.allRows || []);
+        setSeed(data.seed || []);
       }
     } finally {
       setFetching(false);
@@ -66,25 +92,53 @@ export default function UsuariosPage() {
     window.setTimeout(() => setToast(''), 2400);
   }, []);
 
-  // Lista ordenada: primero owner, después admin, después viewer.
-  // Dentro de cada bloque, alfabético por nombre.
-  const sorted = useMemo(() => {
-    const order = new Map(ROLE_ORDER.map((r, i) => [r, i]));
-    return rows.slice().sort((a, b) => {
-      const oa = order.get(a.role as Role) ?? 99;
-      const ob = order.get(b.role as Role) ?? 99;
+  // Merge: seed primero (siempre autorizados), después sheet (excluir
+  // emails que ya están en seed para no duplicar — el seed gana).
+  const merged: MergedUser[] = useMemo(() => {
+    const seedEmails = new Set(seed.map((s) => s.email.toLowerCase()));
+    const out: MergedUser[] = [];
+    for (const s of seed) {
+      out.push({
+        email: s.email,
+        name: s.name,
+        role: s.role,
+        activo: true,
+        source: 'seed',
+        emailValid: EMAIL_REGEX.test(s.email),
+      });
+    }
+    for (const r of sheetRows) {
+      const emailLc = (r.email || '').toLowerCase().trim();
+      if (!emailLc) continue;
+      if (seedEmails.has(emailLc)) continue;
+      const role = (ROLE_LABELS[r.role as Role] ? r.role : 'viewer') as Role;
+      out.push({
+        email: r.email,
+        name: r.name || '',
+        role,
+        activo: (r.activo || 'Sí') !== 'No',
+        source: 'sheet',
+        emailValid: EMAIL_REGEX.test(emailLc),
+      });
+    }
+    // Orden: seed primero; dentro de cada bloque por rol; alfabético.
+    return out.sort((a, b) => {
+      if (a.source !== b.source) return a.source === 'seed' ? -1 : 1;
+      const oa = ROLE_ORDER.indexOf(a.role);
+      const ob = ROLE_ORDER.indexOf(b.role);
       if (oa !== ob) return oa - ob;
       return (a.name || a.email).localeCompare(b.name || b.email);
     });
-  }, [rows]);
+  }, [seed, sheetRows]);
 
-  const activos = sorted.filter((u) => u.activo !== 'No').length;
+  const totalAuth = merged.filter((u) => u.activo && u.emailValid).length;
+  const invalidCount = merged.filter((u) => !u.emailValid).length;
 
   if (loading || !user) return null;
 
   return (
     <div className="page-enter">
-      <PageHeader title="Usuarios" subtitle="Accesos al dashboard" showBack />
+      <PageHeader title="Usuarios" subtitle="Quién entra al dashboard" showBack />
       <div
         className="px-4 pt-4 lh-inicio-stagger"
         style={{
@@ -94,7 +148,7 @@ export default function UsuariosPage() {
           paddingBottom: 'calc(var(--nav-height) + var(--safe-bottom) + 24px)',
         }}
       >
-        {/* Hero: count + "Agregar" */}
+        {/* Hero */}
         <section
           style={{
             background: 'var(--bg-card)',
@@ -130,7 +184,7 @@ export default function UsuariosPage() {
               marginBottom: 6,
             }}
           >
-            Equipo autorizado
+            Acceso al dashboard
           </div>
           <div
             className="font-brand heading-tight tabular-nums-strict"
@@ -142,18 +196,24 @@ export default function UsuariosPage() {
               fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
             }}
           >
-            {sorted.length} {sorted.length === 1 ? 'persona' : 'personas'}
+            {totalAuth} {totalAuth === 1 ? 'mail autorizado' : 'mails autorizados'}
           </div>
           <div
             style={{
               fontSize: 12.5,
               color: 'var(--text-muted)',
               marginTop: 6,
+              lineHeight: 1.5,
             }}
           >
-            {activos === sorted.length
-              ? 'Todas activas'
-              : `${activos} activas · ${sorted.length - activos} inactivas`}
+            {seed.length} por código (siempre activos)
+            {sheetRows.length > 0 && ` · ${sheetRows.length} en el Sheet`}
+            {invalidCount > 0 && (
+              <span style={{ color: 'var(--red)', fontWeight: 600 }}>
+                {' · '}
+                {invalidCount} con email inválido
+              </span>
+            )}
           </div>
           {isOwner && (
             <button
@@ -185,43 +245,42 @@ export default function UsuariosPage() {
           )}
         </section>
 
-        {source === 'hardcoded' && <FallbackBanner />}
-
         {/* Skeleton inicial */}
-        {fetching && sorted.length === 0 && (
+        {fetching && merged.length === 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {Array.from({ length: 3 }).map((_, i) => (
               <div
                 key={i}
                 className="shimmer-modern"
-                style={{ height: 76, borderRadius: 14 }}
+                style={{ height: 84, borderRadius: 14 }}
               />
             ))}
           </div>
         )}
 
-        {/* Empty */}
-        {!fetching && sorted.length === 0 && (
-          <EmptyState owner={isOwner} onAdd={() => setShowAdd(true)} />
-        )}
-
-        {/* Lista plana */}
-        {sorted.length > 0 && (
+        {/* Lista plana — seed primero, después sheet */}
+        {merged.length > 0 && (
           <section>
             <div style={{ marginBottom: 8, paddingLeft: 4 }}>
               <EyebrowTag>Lista</EyebrowTag>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {sorted.map((u) => (
+              {merged.map((u) => (
                 <UserCard
-                  key={u.email}
+                  key={`${u.source}:${u.email}`}
                   user={u}
-                  canEdit={isOwner}
+                  isMe={u.email.toLowerCase() === (user.email || '').toLowerCase()}
+                  canEdit={isOwner && u.source === 'sheet'}
                   isEditing={editingEmail === u.email}
                   onToggleEdit={() =>
                     setEditingEmail((p) => (p === u.email ? null : u.email))
                   }
                   onSaved={async (msg) => {
+                    setEditingEmail(null);
+                    await refresh();
+                    flashToast(msg);
+                  }}
+                  onDeleted={async (msg) => {
                     setEditingEmail(null);
                     await refresh();
                     flashToast(msg);
@@ -255,39 +314,42 @@ export default function UsuariosPage() {
 
 function UserCard({
   user,
+  isMe,
   canEdit,
   isEditing,
   onToggleEdit,
   onSaved,
+  onDeleted,
   onError,
 }: {
-  user: UsuarioRow;
+  user: MergedUser;
+  isMe: boolean;
   canEdit: boolean;
   isEditing: boolean;
   onToggleEdit: () => void;
   onSaved: (msg: string) => Promise<void> | void;
+  onDeleted: (msg: string) => Promise<void> | void;
   onError: (msg: string) => void;
 }) {
-  const isActive = user.activo !== 'No';
-  const role = (ROLE_LABELS[user.role as Role] ? user.role : 'viewer') as Role;
-  const roleColor = ROLE_COLORS[role];
+  const roleColor = ROLE_COLORS[user.role];
+  const isSeed = user.source === 'seed';
 
   return (
     <div
       style={{
         background: 'var(--bg-card)',
-        border: `1px solid ${isEditing ? 'var(--border-accent)' : 'var(--border)'}`,
+        border: `1px solid ${isEditing ? 'var(--border-accent)' : !user.emailValid ? 'var(--red)' : 'var(--border)'}`,
         borderRadius: 'var(--radius-md)',
         boxShadow: 'var(--shadow-card)',
         overflow: 'hidden',
         transition: 'border-color 220ms var(--ease-ios)',
-        opacity: isActive ? 1 : 0.6,
+        opacity: user.activo ? 1 : 0.6,
       }}
     >
       <div
         style={{
           display: 'flex',
-          alignItems: 'center',
+          alignItems: 'flex-start',
           gap: 12,
           padding: 14,
         }}
@@ -323,21 +385,41 @@ function UserCard({
               textOverflow: 'ellipsis',
             }}
           >
-            {user.name || user.email.split('@')[0]}
+            {user.name || user.email.split('@')[0] || '—'}
+            {isMe && (
+              <span
+                style={{
+                  marginLeft: 8,
+                  fontSize: 9.5,
+                  fontWeight: 700,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  background: 'var(--bg-subtle)',
+                  color: 'var(--text-muted)',
+                  padding: '2px 7px',
+                  borderRadius: 999,
+                  verticalAlign: 'middle',
+                }}
+              >
+                Vos
+              </span>
+            )}
           </div>
+          {/* Email completo, sin truncar */}
           <div
             style={{
-              fontSize: 11.5,
-              color: 'var(--text-muted)',
+              fontSize: 12,
+              color: user.emailValid ? 'var(--text-muted)' : 'var(--red)',
               fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
+              marginTop: 3,
+              wordBreak: 'break-all',
+              lineHeight: 1.4,
+              fontWeight: user.emailValid ? 400 : 600,
             }}
           >
-            {user.email}
+            {user.email || '(sin email)'}
           </div>
-          <div style={{ marginTop: 5, display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+          <div style={{ marginTop: 7, display: 'flex', gap: 5, flexWrap: 'wrap' }}>
             <span
               style={{
                 display: 'inline-flex',
@@ -353,9 +435,26 @@ function UserCard({
                 borderRadius: 999,
               }}
             >
-              {ROLE_LABELS[role]}
+              {ROLE_LABELS[user.role]}
             </span>
-            {!isActive && (
+            {isSeed && (
+              <span
+                style={{
+                  fontSize: 9.5,
+                  fontWeight: 700,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  background: 'var(--bg-subtle)',
+                  color: 'var(--text-muted)',
+                  padding: '2px 8px',
+                  borderRadius: 999,
+                  border: '1px solid var(--border)',
+                }}
+              >
+                Por código
+              </span>
+            )}
+            {!user.activo && (
               <span
                 style={{
                   fontSize: 9.5,
@@ -369,6 +468,23 @@ function UserCard({
                 }}
               >
                 Inactivo
+              </span>
+            )}
+            {!user.emailValid && (
+              <span
+                title="Sin @ en el email — no autoriza a nadie"
+                style={{
+                  fontSize: 9.5,
+                  fontWeight: 700,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  background: 'var(--red-bg)',
+                  color: 'var(--red)',
+                  padding: '2px 8px',
+                  borderRadius: 999,
+                }}
+              >
+                Email inválido
               </span>
             )}
           </div>
@@ -408,14 +524,19 @@ function UserCard({
         }}
       >
         <div style={{ overflow: 'hidden', minHeight: 0 }}>
-          {isEditing && (
+          {isEditing && canEdit && (
             <div
               style={{
                 borderTop: '1px solid var(--border)',
                 padding: 14,
               }}
             >
-              <UserEditor user={user} onSaved={onSaved} onError={onError} />
+              <UserEditor
+                user={user}
+                onSaved={onSaved}
+                onDeleted={onDeleted}
+                onError={onError}
+              />
             </div>
           )}
         </div>
@@ -429,19 +550,26 @@ function UserCard({
 function UserEditor({
   user,
   onSaved,
+  onDeleted,
   onError,
 }: {
-  user: UsuarioRow;
+  user: MergedUser;
   onSaved: (msg: string) => Promise<void> | void;
+  onDeleted: (msg: string) => Promise<void> | void;
   onError: (msg: string) => void;
 }) {
   const [name, setName] = useState(user.name);
-  const [role, setRole] = useState<Role>((user.role as Role) || 'viewer');
-  const [activo, setActivo] = useState(user.activo !== 'No');
+  const [role, setRole] = useState<Role>(user.role);
+  const [activo, setActivo] = useState(user.activo);
   const [saving, setSaving] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const submit = useCallback(async () => {
     if (saving) return;
+    if (!user.emailValid) {
+      onError('Email roto. Mejor eliminá esta fila y agregá una nueva.');
+      return;
+    }
     if (!name.trim()) {
       onError('Nombre vacío');
       return;
@@ -466,10 +594,78 @@ function UserEditor({
     } finally {
       setSaving(false);
     }
-  }, [activo, name, onError, onSaved, role, saving, user.email]);
+  }, [activo, name, onError, onSaved, role, saving, user.email, user.emailValid]);
+
+  const remove = useCallback(async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const res = await fetch(
+        `/api/usuarios?email=${encodeURIComponent(user.email)}`,
+        { method: 'DELETE' },
+      );
+      const data = await res.json();
+      if (data.ok) onDeleted('Usuario eliminado');
+      else onError(data.error || 'Error eliminando');
+    } catch {
+      onError('Error de conexión');
+    } finally {
+      setSaving(false);
+      setConfirmingDelete(false);
+    }
+  }, [saving, user.email, onDeleted, onError]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* Email read-only — bien visible para que sepas qué fila estás
+          tocando. El email es la KEY del row, no se cambia. Si querés
+          cambiarlo: Eliminar + Agregar de nuevo. */}
+      <div
+        style={{
+          background: user.emailValid ? 'var(--bg-card-alt)' : 'var(--red-bg)',
+          border: `1px solid ${user.emailValid ? 'var(--border)' : 'var(--red)'}`,
+          borderRadius: 'var(--radius-md)',
+          padding: '10px 12px',
+        }}
+      >
+        <div
+          style={{
+            fontSize: 10.5,
+            fontWeight: 700,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            color: 'var(--text-muted)',
+            marginBottom: 4,
+          }}
+        >
+          Email · no editable
+        </div>
+        <div
+          style={{
+            fontSize: 13.5,
+            color: user.emailValid ? 'var(--text)' : 'var(--red)',
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            wordBreak: 'break-all',
+            fontWeight: user.emailValid ? 500 : 700,
+          }}
+        >
+          {user.email}
+        </div>
+        {!user.emailValid && (
+          <div
+            style={{
+              fontSize: 11,
+              color: 'var(--red)',
+              marginTop: 4,
+              lineHeight: 1.4,
+            }}
+          >
+            Esta fila NO autoriza a nadie porque no tiene un email válido.
+            Mejor eliminala y agregá un usuario nuevo con el email correcto.
+          </div>
+        )}
+      </div>
+
       <FieldLabel label="Nombre">
         <input
           type="text"
@@ -491,10 +687,12 @@ function UserEditor({
           labelOff="Inactivo"
         />
       </FieldLabel>
+
+      {/* Save */}
       <button
         type="button"
         onClick={submit}
-        disabled={saving}
+        disabled={saving || !user.emailValid}
         className="press-feedback"
         style={{
           minHeight: 'var(--touch-min)',
@@ -504,12 +702,85 @@ function UserEditor({
           fontWeight: 600,
           fontSize: 14,
           border: 0,
-          opacity: saving ? 0.6 : 1,
+          opacity: saving || !user.emailValid ? 0.5 : 1,
           cursor: saving ? 'wait' : 'pointer',
         }}
       >
         {saving ? 'Guardando…' : 'Guardar cambios'}
       </button>
+
+      {/* Delete (con confirm in-place, sin modal) */}
+      {!confirmingDelete ? (
+        <button
+          type="button"
+          onClick={() => setConfirmingDelete(true)}
+          disabled={saving}
+          className="press-feedback"
+          style={{
+            minHeight: 'var(--touch-min)',
+            borderRadius: 'var(--radius-md)',
+            background: 'transparent',
+            color: 'var(--red)',
+            fontWeight: 600,
+            fontSize: 13.5,
+            border: '1px solid var(--red)',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+          }}
+        >
+          <TrashIcon /> Eliminar usuario
+        </button>
+      ) : (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: 6,
+            padding: 8,
+            background: 'var(--red-bg)',
+            border: '1px solid var(--red)',
+            borderRadius: 'var(--radius-md)',
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setConfirmingDelete(false)}
+            disabled={saving}
+            className="press-feedback"
+            style={{
+              minHeight: 'var(--touch-min)',
+              borderRadius: 'var(--radius-md)',
+              background: 'var(--bg-card)',
+              color: 'var(--text)',
+              fontWeight: 600,
+              fontSize: 13,
+              border: '1px solid var(--border)',
+            }}
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={remove}
+            disabled={saving}
+            className="press-feedback"
+            style={{
+              minHeight: 'var(--touch-min)',
+              borderRadius: 'var(--radius-md)',
+              background: 'var(--red)',
+              color: '#FDFBF8',
+              fontWeight: 700,
+              fontSize: 13,
+              border: 0,
+            }}
+          >
+            {saving ? 'Borrando…' : 'Sí, eliminar'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -546,8 +817,8 @@ function AddUserSheet({
     if (saving) return;
     const e = email.trim().toLowerCase();
     const n = name.trim();
-    if (!/^[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}$/.test(e)) {
-      onError('Email inválido');
+    if (!EMAIL_REGEX.test(e)) {
+      onError('Email inválido — formato: usuario@dominio.com');
       return;
     }
     if (!n) {
@@ -573,6 +844,8 @@ function AddUserSheet({
       setSaving(false);
     }
   }, [email, name, onError, onSaved, role, saving]);
+
+  const emailLooksOk = email.trim().length === 0 || EMAIL_REGEX.test(email.trim().toLowerCase());
 
   return (
     <>
@@ -678,7 +951,7 @@ function AddUserSheet({
             gap: 14,
           }}
         >
-          <FieldLabel label="Email">
+          <FieldLabel label="Email de Google">
             <input
               type="email"
               inputMode="email"
@@ -687,8 +960,23 @@ function AddUserSheet({
               onChange={(e) => setEmail(e.target.value)}
               placeholder="nombre@gmail.com"
               className="input-pro"
-              style={{ minHeight: 'var(--touch-min)' }}
+              style={{
+                minHeight: 'var(--touch-min)',
+                borderColor: emailLooksOk ? undefined : 'var(--red)',
+              }}
             />
+            <span
+              style={{
+                fontSize: 11,
+                color: emailLooksOk ? 'var(--text-muted)' : 'var(--red)',
+                marginTop: 4,
+                lineHeight: 1.4,
+              }}
+            >
+              {emailLooksOk
+                ? 'Tiene que ser el email exacto con el que entra a Google (Gmail u otro de Google Workspace).'
+                : 'Falta @ o dominio. Ejemplo válido: nombre@gmail.com'}
+            </span>
           </FieldLabel>
           <FieldLabel label="Nombre">
             <input
@@ -893,99 +1181,6 @@ function ToggleRow({
   );
 }
 
-function FallbackBanner() {
-  return (
-    <div
-      role="status"
-      style={{
-        background: 'var(--warn-strong-bg)',
-        border: '1px solid var(--warn-strong)',
-        borderRadius: 'var(--radius-md)',
-        padding: 12,
-        fontSize: 12.5,
-        color: 'var(--warn-strong)',
-        lineHeight: 1.45,
-      }}
-    >
-      <strong style={{ display: 'block', marginBottom: 2 }}>Modo fallback</strong>
-      Mostrando lista hardcoded. Configurá <code>GOOGLE_CREDENTIALS</code> en
-      Vercel para habilitar lectura/escritura del tab &ldquo;Usuarios&rdquo;.
-    </div>
-  );
-}
-
-function EmptyState({ owner, onAdd }: { owner: boolean; onAdd: () => void }) {
-  return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        textAlign: 'center',
-        padding: '48px 16px',
-      }}
-    >
-      <svg
-        width="44"
-        height="44"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="var(--text-dim)"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden
-      >
-        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-        <circle cx="9" cy="7" r="4" />
-        <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-      </svg>
-      <h3
-        style={{
-          fontSize: 16,
-          fontWeight: 600,
-          color: 'var(--text)',
-          marginTop: 12,
-        }}
-      >
-        Sin usuarios todavía
-      </h3>
-      <p
-        style={{
-          fontSize: 13,
-          color: 'var(--text-muted)',
-          marginTop: 4,
-          maxWidth: 280,
-          lineHeight: 1.45,
-        }}
-      >
-        Agregá el primero para habilitarle el acceso al dashboard.
-      </p>
-      {owner && (
-        <button
-          type="button"
-          onClick={onAdd}
-          className="press-feedback"
-          style={{
-            marginTop: 16,
-            minHeight: 'var(--touch-min)',
-            borderRadius: 'var(--radius-md)',
-            padding: '0 20px',
-            background: 'var(--accent)',
-            color: '#FDFBF8',
-            fontWeight: 600,
-            fontSize: 14,
-            border: 0,
-          }}
-        >
-          Agregar usuario
-        </button>
-      )}
-    </div>
-  );
-}
-
 function Toast({ message }: { message: string }) {
   return (
     <div
@@ -1034,6 +1229,20 @@ function PencilIcon() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
       <path
         d="M12 20h9M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14zM10 11v6M14 11v6"
         stroke="currentColor"
         strokeWidth="1.7"
         strokeLinecap="round"

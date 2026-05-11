@@ -1,7 +1,16 @@
 import { NextResponse } from 'next/server';
 import { withAuth, AuthError } from '@/lib/auth-guard';
-import { getUserRole, ROLE_LABELS, type Role } from '@/lib/users';
-import { readUsuariosRaw, upsertUsuario } from '@/lib/users-server';
+import {
+  getUserRole,
+  ROLE_LABELS,
+  AUTHORIZED_USERS,
+  type Role,
+} from '@/lib/users';
+import {
+  readUsuariosRaw,
+  upsertUsuario,
+  deleteUsuario,
+} from '@/lib/users-server';
 
 export const GET = withAuth(async (_req, user) => {
   const role = getUserRole(user.email);
@@ -10,7 +19,14 @@ export const GET = withAuth(async (_req, user) => {
   }
   try {
     const { users, rows, source } = await readUsuariosRaw();
-    return NextResponse.json({ ok: true, users, allRows: rows, source });
+    // `seed` = lista hardcoded del código (lib/users.ts). Siempre
+    // autorizados, no editables, no deletables desde la UI.
+    const seed = AUTHORIZED_USERS.map((u) => ({
+      email: u.email,
+      name: u.name,
+      role: u.role,
+    }));
+    return NextResponse.json({ ok: true, users, allRows: rows, seed, source });
   } catch (err) {
     console.error('[USUARIOS] GET error:', err);
     return NextResponse.json(
@@ -46,7 +62,7 @@ export const POST = withAuth(async (req, user) => {
     return NextResponse.json({ ok: false, error: 'Faltan campos' }, { status: 400 });
   }
   if (!/^[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}$/.test(email)) {
-    return NextResponse.json({ ok: false, error: 'Email inválido' }, { status: 400 });
+    return NextResponse.json({ ok: false, error: 'Email inválido (formato esperado: usuario@dominio.com)' }, { status: 400 });
   }
   if (name.trim().length === 0 || name.length > 100) {
     return NextResponse.json({ ok: false, error: 'Nombre inválido' }, { status: 400 });
@@ -71,6 +87,50 @@ export const POST = withAuth(async (req, user) => {
   } catch (err) {
     console.error('[USUARIOS] POST error:', err);
     const msg = err instanceof Error ? err.message : 'Error guardando';
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+  }
+});
+
+// DELETE /api/usuarios?email=foo@bar.com  → borra la fila del Sheet.
+// Hardcoded users (AUTHORIZED_USERS) NO se pueden borrar — están en código.
+export const DELETE = withAuth(async (req, user) => {
+  const userRole = getUserRole(user.email);
+  if (userRole !== 'owner') {
+    throw new AuthError(403, 'Solo el owner puede eliminar usuarios');
+  }
+  const url = new URL(req.url);
+  const email = (url.searchParams.get('email') || '').trim().toLowerCase();
+  if (!email) {
+    return NextResponse.json({ ok: false, error: 'Falta email' }, { status: 400 });
+  }
+  // Protección: no permitir borrarse a uno mismo.
+  if (email === user.email.toLowerCase()) {
+    return NextResponse.json(
+      { ok: false, error: 'No podés eliminarte a vos mismo' },
+      { status: 400 },
+    );
+  }
+  // Protección: no borrar usuarios hardcoded del seed.
+  const isSeed = AUTHORIZED_USERS.some(
+    (u) => u.email.toLowerCase() === email,
+  );
+  if (isSeed) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          'Este usuario está hardcoded en el código (siempre autorizado). Para quitarlo, editá lib/users.ts y deployá.',
+      },
+      { status: 400 },
+    );
+  }
+  try {
+    const result = await deleteUsuario(email);
+    console.log(`[USUARIOS] ${user.email} deleted ${email} (existed=${result.deleted})`);
+    return NextResponse.json({ ok: true, deleted: result.deleted });
+  } catch (err) {
+    console.error('[USUARIOS] DELETE error:', err);
+    const msg = err instanceof Error ? err.message : 'Error borrando';
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 });
