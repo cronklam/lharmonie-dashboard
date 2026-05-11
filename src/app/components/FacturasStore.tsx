@@ -123,6 +123,11 @@ export function mesLabel(idx: number): string {
   return MESES_ES[idx] ? MESES_ES[idx][0].toUpperCase() + MESES_ES[idx].slice(1) : '';
 }
 
+export interface WriteOpResult {
+  ok: boolean;
+  error?: string;
+}
+
 interface StoreValue {
   facturas: Factura[];
   loading: boolean;
@@ -132,8 +137,10 @@ interface StoreValue {
   refresh: () => Promise<void>;
   pendingCount: number;
   totalPending: number;
-  // Marcar pagada — devuelve true si fue OK, hace refresh.
-  marcarPagada: (f: Factura) => Promise<boolean>;
+  // Marcar pagada — devuelve { ok, error? }. Hace refresh si OK.
+  marcarPagada: (f: Factura) => Promise<WriteOpResult>;
+  // Eliminar factura — limpia la fila del Sheet (no shift). Hace refresh si OK.
+  eliminarFactura: (f: Factura) => Promise<WriteOpResult>;
 }
 
 const FacturasContext = createContext<StoreValue | null>(null);
@@ -152,7 +159,8 @@ export function useFacturasStore(): StoreValue {
       refresh: async () => {},
       pendingCount: 0,
       totalPending: 0,
-      marcarPagada: async () => false,
+      marcarPagada: async () => ({ ok: false, error: 'Sin sesión' }),
+      eliminarFactura: async () => ({ ok: false, error: 'Sin sesión' }),
     };
   }
   return ctx;
@@ -236,23 +244,66 @@ export function FacturasProvider({ children }: { children: React.ReactNode }) {
   }, [refresh]);
 
   const marcarPagada = useCallback(
-    async (f: Factura): Promise<boolean> => {
+    async (f: Factura): Promise<WriteOpResult> => {
+      const filaExacta = f._sheetRow ? parseInt(f._sheetRow, 10) || null : null;
+      if (!filaExacta) {
+        return { ok: false, error: 'Esta factura no tiene fila exacta en el Sheet (recargá).' };
+      }
       try {
         const res = await fetch('/api/factura/marcar-pagada', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            nroFactura: f[COL.nroFac] || '',
-            proveedor: f[COL.proveedor] || '',
-            fecha: f[COL.fecha] || '',
-            filaExacta: f._sheetRow ? parseInt(f._sheetRow, 10) || null : null,
-          }),
+          body: JSON.stringify({ filaExacta }),
         });
-        if (!res.ok) return false;
+        const data = (await res.json().catch(() => null)) as
+          | { ok?: boolean; error?: string }
+          | null;
+        if (!res.ok || !data?.ok) {
+          return {
+            ok: false,
+            error: data?.error || `Error ${res.status} marcando pagada`,
+          };
+        }
         await refresh();
-        return true;
-      } catch {
-        return false;
+        return { ok: true };
+      } catch (e) {
+        return {
+          ok: false,
+          error: e instanceof Error ? e.message : 'Error de red',
+        };
+      }
+    },
+    [refresh],
+  );
+
+  const eliminarFactura = useCallback(
+    async (f: Factura): Promise<WriteOpResult> => {
+      const filaExacta = f._sheetRow ? parseInt(f._sheetRow, 10) || null : null;
+      if (!filaExacta) {
+        return { ok: false, error: 'Esta factura no tiene fila exacta en el Sheet (recargá).' };
+      }
+      try {
+        const res = await fetch('/api/factura/eliminar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filaExacta }),
+        });
+        const data = (await res.json().catch(() => null)) as
+          | { ok?: boolean; error?: string }
+          | null;
+        if (!res.ok || !data?.ok) {
+          return {
+            ok: false,
+            error: data?.error || `Error ${res.status} eliminando`,
+          };
+        }
+        await refresh();
+        return { ok: true };
+      } catch (e) {
+        return {
+          ok: false,
+          error: e instanceof Error ? e.message : 'Error de red',
+        };
       }
     },
     [refresh],
@@ -275,6 +326,7 @@ export function FacturasProvider({ children }: { children: React.ReactNode }) {
     pendingCount,
     totalPending,
     marcarPagada,
+    eliminarFactura,
   };
 
   return <FacturasContext.Provider value={value}>{children}</FacturasContext.Provider>;

@@ -22,9 +22,11 @@ export default function FacturaDetailPage({
   const { id } = use(params);
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const { facturas, marcarPagada, loading } = useFacturasStore();
-  const [confirming, setConfirming] = useState(false);
+  const { facturas, marcarPagada, eliminarFactura, loading } = useFacturasStore();
+  const [confirmingPay, setConfirmingPay] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [marking, setMarking] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [errMsg, setErrMsg] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
 
@@ -89,14 +91,32 @@ export default function FacturaDetailPage({
     if (!f) return;
     setMarking(true);
     setErrMsg(null);
-    const ok = await marcarPagada(f);
+    setOkMsg(null);
+    const res = await marcarPagada(f);
     setMarking(false);
-    if (ok) {
+    if (res.ok) {
       setOkMsg('Factura marcada como pagada');
-      setConfirming(false);
+      setConfirmingPay(false);
       setTimeout(() => router.replace('/pagadas'), 800);
     } else {
-      setErrMsg('No se pudo marcar como pagada. Intentá de nuevo.');
+      // Bubble up el error real del Sheet API / server.
+      setErrMsg(res.error || 'No se pudo marcar como pagada. Intentá de nuevo.');
+    }
+  }
+
+  async function handleDelete() {
+    if (!f) return;
+    setDeleting(true);
+    setErrMsg(null);
+    setOkMsg(null);
+    const res = await eliminarFactura(f);
+    setDeleting(false);
+    if (res.ok) {
+      setOkMsg('Factura eliminada del Sheet');
+      setConfirmingDelete(false);
+      setTimeout(() => router.replace('/a-pagar'), 800);
+    } else {
+      setErrMsg(res.error || 'No se pudo eliminar. Intentá de nuevo.');
     }
   }
 
@@ -159,103 +179,205 @@ export default function FacturaDetailPage({
           </div>
         </div>
 
-        {/* Marcar pagada (solo si no está pagada) */}
-        {!pagado && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {!confirming ? (
+        {/* Acciones: Eliminar (rojo, izq) + Marcar pagada (verde, der).
+            Si la factura ya está pagada, solo se muestra Eliminar. */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {!confirmingPay && !confirmingDelete && (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: pagado ? '1fr' : '1fr 2fr',
+                gap: 8,
+              }}
+            >
               <button
-                onClick={() => setConfirming(true)}
-                className="btn-glow-success spring-tap"
+                onClick={() => {
+                  setErrMsg(null);
+                  setConfirmingDelete(true);
+                }}
+                className="spring-tap"
+                aria-label="Eliminar factura"
                 style={{
                   height: 48,
                   borderRadius: 'var(--radius-md)',
-                  fontWeight: 600,
-                  width: '100%',
-                  fontSize: 14.5,
-                }}
-              >
-                ✓ Marcar como pagada
-              </button>
-            ) : (
-              <div
-                style={{
-                  background: 'var(--bg-card)',
-                  border: '1px solid var(--border-strong)',
-                  borderRadius: 'var(--radius-lg)',
-                  padding: 14,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 10,
-                }}
-              >
-                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
-                  ¿Confirmar pago?
-                </div>
-                <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
-                  Se marca {fmtMoney(parseNum(f[COL.total]))} como pagado en el Sheet.
-                  Esta acción se sincroniza con el bot de Telegram.
-                </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button
-                    onClick={() => setConfirming(false)}
-                    className="spring-tap"
-                    style={{
-                      flex: 1,
-                      height: 44,
-                      borderRadius: 'var(--radius-md)',
-                      background: 'var(--bg-subtle)',
-                      color: 'var(--text)',
-                      fontWeight: 600,
-                      border: '1px solid var(--border)',
-                    }}
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    onClick={handleMark}
-                    disabled={marking}
-                    className="btn-glow-success spring-tap"
-                    style={{
-                      flex: 2,
-                      height: 44,
-                      borderRadius: 'var(--radius-md)',
-                      fontWeight: 600,
-                      opacity: marking ? 0.7 : 1,
-                    }}
-                  >
-                    {marking ? 'Guardando…' : 'Sí, marcar pagada'}
-                  </button>
-                </div>
-              </div>
-            )}
-            {errMsg && (
-              <div
-                style={{
-                  background: 'rgba(217,95,78,0.10)',
+                  background: 'transparent',
                   color: '#C84F3F',
-                  padding: 10,
-                  borderRadius: 'var(--radius-md)',
-                  fontSize: 13,
+                  fontWeight: 600,
+                  fontSize: 13.5,
+                  border: '1px solid #C84F3F',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  cursor: 'pointer',
                 }}
               >
-                {errMsg}
+                <TrashIcon /> Eliminar
+              </button>
+              {!pagado && (
+                <button
+                  onClick={() => {
+                    setErrMsg(null);
+                    setConfirmingPay(true);
+                  }}
+                  className="btn-glow-success spring-tap"
+                  style={{
+                    height: 48,
+                    borderRadius: 'var(--radius-md)',
+                    fontWeight: 600,
+                    fontSize: 14.5,
+                  }}
+                >
+                  ✓ Marcar como pagada
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Confirm: marcar pagada */}
+          {confirmingPay && (
+            <div
+              style={{
+                background: 'var(--bg-card)',
+                border: '1px solid var(--green)',
+                borderRadius: 'var(--radius-lg)',
+                padding: 14,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10,
+              }}
+            >
+              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
+                ¿Confirmar pago?
               </div>
-            )}
-            {okMsg && (
-              <div
-                style={{
-                  background: 'var(--green-bg)',
-                  color: 'var(--green)',
-                  padding: 10,
-                  borderRadius: 'var(--radius-md)',
-                  fontSize: 13,
-                }}
-              >
-                ✓ {okMsg}
+              <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
+                Se va a escribir <strong>Estado = Pagada</strong> y{' '}
+                <strong>Fecha de Pago = hoy</strong> en la fila{' '}
+                {f._sheetRow || '?'} del Sheet de Facturas.
               </div>
-            )}
-          </div>
-        )}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => setConfirmingPay(false)}
+                  className="spring-tap"
+                  style={{
+                    flex: 1,
+                    height: 44,
+                    borderRadius: 'var(--radius-md)',
+                    background: 'var(--bg-subtle)',
+                    color: 'var(--text)',
+                    fontWeight: 600,
+                    border: '1px solid var(--border)',
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleMark}
+                  disabled={marking}
+                  className="btn-glow-success spring-tap"
+                  style={{
+                    flex: 2,
+                    height: 44,
+                    borderRadius: 'var(--radius-md)',
+                    fontWeight: 600,
+                    opacity: marking ? 0.7 : 1,
+                  }}
+                >
+                  {marking ? 'Guardando…' : 'Sí, marcar pagada'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Confirm: eliminar */}
+          {confirmingDelete && (
+            <div
+              style={{
+                background: 'var(--red-bg)',
+                border: '1px solid #C84F3F',
+                borderRadius: 'var(--radius-lg)',
+                padding: 14,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10,
+              }}
+            >
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#C84F3F' }}>
+                ¿Estás segura?
+              </div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                Se va a borrar el contenido de la fila{' '}
+                <strong>{f._sheetRow || '?'}</strong> del Sheet de Facturas
+                ({f[COL.proveedor]} · {fmtMoney(parseNum(f[COL.total]))}). Esta
+                acción no se puede deshacer desde la app — habría que cargar la
+                factura de vuelta a mano.
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => setConfirmingDelete(false)}
+                  className="spring-tap"
+                  style={{
+                    flex: 1,
+                    height: 44,
+                    borderRadius: 'var(--radius-md)',
+                    background: 'var(--bg-card)',
+                    color: 'var(--text)',
+                    fontWeight: 600,
+                    border: '1px solid var(--border)',
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="spring-tap"
+                  style={{
+                    flex: 2,
+                    height: 44,
+                    borderRadius: 'var(--radius-md)',
+                    background: '#C84F3F',
+                    color: '#FDFBF8',
+                    fontWeight: 700,
+                    border: 0,
+                    opacity: deleting ? 0.7 : 1,
+                  }}
+                >
+                  {deleting ? 'Eliminando…' : 'Sí, eliminar'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {errMsg && (
+            <div
+              style={{
+                background: 'rgba(217,95,78,0.10)',
+                color: '#C84F3F',
+                padding: 10,
+                borderRadius: 'var(--radius-md)',
+                fontSize: 13,
+                lineHeight: 1.4,
+                wordBreak: 'break-word',
+              }}
+            >
+              {errMsg}
+            </div>
+          )}
+          {okMsg && (
+            <div
+              style={{
+                background: 'var(--green-bg)',
+                color: 'var(--green)',
+                padding: 10,
+                borderRadius: 'var(--radius-md)',
+                fontSize: 13,
+              }}
+            >
+              ✓ {okMsg}
+            </div>
+          )}
+        </div>
 
         {/* Detalles */}
         <div
@@ -307,6 +429,20 @@ export default function FacturaDetailPage({
         )}
       </div>
     </div>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14zM10 11v6M14 11v6"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 
