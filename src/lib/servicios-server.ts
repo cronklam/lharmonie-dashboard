@@ -82,6 +82,17 @@ async function readTab(
     return res.data.values || [];
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Error leyendo Sheet';
+    // El error típico cuando el tab no existe es:
+    //   "Unable to parse range: 'NombreDelTab'!A1:Z3000"
+    // En ese caso devolvemos lista vacía en lugar de tirar, así
+    // la UI puede mostrar empty state limpio en vez de error rojo.
+    // (Esto cubre el caso del Sheet real de SERVICIOS que es pivot
+    // mensual y NO tiene los tabs catálogo/pagos que el código viejo
+    // del staff asume.)
+    if (msg.toLowerCase().includes('unable to parse range')) {
+      console.warn(`[servicios] tab "${tab}" no existe — devolviendo vacío.`);
+      return [];
+    }
     throw new ServiciosError(
       500,
       `No se pudo leer "${tab}". Verificá que el tab exista y que el service account tenga acceso. (${msg})`,
