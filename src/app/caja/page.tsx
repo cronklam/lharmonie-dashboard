@@ -395,7 +395,7 @@ export default function CajaPage() {
           <div
             className="font-brand heading-tight-lg tabular-nums-strict"
             style={{
-              fontSize: 36,
+              fontSize: 40,
               fontWeight: 700,
               lineHeight: 1,
               color: '#F9F7F3',
@@ -406,13 +406,14 @@ export default function CajaPage() {
           </div>
           {saldos && saldos.dolares !== 0 && (
             <div
-              className="tabular-nums-strict"
+              className="font-brand tabular-nums-strict"
               style={{
-                marginTop: 4,
-                fontSize: 14,
+                marginTop: 6,
+                fontSize: 22,
                 color: 'rgba(249,247,243,0.85)',
                 fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
                 fontWeight: 600,
+                lineHeight: 1,
               }}
             >
               {fmtMonto(saldos.dolares, 'DOLAR')}

@@ -179,13 +179,12 @@ export function CajaCard({
         {saldos && (
           <>
             <div
-              className="font-brand tabular-nums-strict"
+              className="font-brand heading-tight-lg tabular-nums-strict"
               style={{
-                fontSize: 26,
+                fontSize: 40,
                 fontWeight: 700,
                 color: 'var(--text)',
-                lineHeight: 1.05,
-                letterSpacing: '-0.02em',
+                lineHeight: 1,
                 fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
               }}
             >
@@ -195,8 +194,8 @@ export function CajaCard({
                   style={{
                     color: 'var(--text-muted)',
                     fontWeight: 600,
-                    fontSize: 18,
-                    marginLeft: 8,
+                    fontSize: 22,
+                    marginLeft: 10,
                   }}
                 >
                   · {fmtMonto(saldos.dolares, 'DOLAR')}
