@@ -380,10 +380,27 @@ export interface WriteSesionResult {
 export async function writeSesion(input: SesionInput): Promise<WriteSesionResult> {
   const sheets = ensureConfigured();
   if (!input.local) throw new CajaError(400, 'Falta local');
-  if (!input.fechaSesion.match(/^\d{4}-\d{2}-\d{2}$/)) {
-    throw new CajaError(400, 'fechaSesion inválida (YYYY-MM-DD)');
+  if (!input.fechaControl.match(/^\d{4}-\d{2}-\d{2}$/)) {
+    throw new CajaError(400, 'fechaControl inválida (YYYY-MM-DD)');
   }
-  const prefijo = prefijoSesion(input.fechaSesion, input.local);
+  if (!input.fechaAuditada.match(/^\d{4}-\d{2}-\d{2}$/)) {
+    throw new CajaError(400, 'fechaAuditada inválida (YYYY-MM-DD)');
+  }
+  if (!input.turnoCompleto && !(input.turnoLabel || '').trim()) {
+    throw new CajaError(
+      400,
+      'Si el turno no es completo, hay que indicar el turno (ej "T AM" o "T PM").',
+    );
+  }
+  const turnoTxt = input.turnoCompleto
+    ? 'T COMPLETO'
+    : input.turnoLabel.trim();
+  const prefijo = prefijoSesion(
+    input.fechaControl,
+    input.local,
+    input.fechaAuditada,
+    turnoTxt,
+  );
 
   // Suma ARS/USD de los movs declarados (con signo según tipo)
   const sumaArs = input.movs.reduce(
@@ -411,11 +428,23 @@ export async function writeSesion(input: SesionInput): Promise<WriteSesionResult
   const rowsToWrite: MovRow[] = [];
 
   for (const mov of input.movs) {
-    const desc = descripcionSesionMov(input.fechaSesion, input.local, mov);
+    // Para que TODAS las filas de la sesión entren al mismo tab mensual
+    // (el del control, no el de cada mov), forzamos fecha de mov =
+    // fechaControl. La FECHA AUDITADA queda solo en la descripción.
+    const desc = descripcionSesionMov(
+      {
+        fechaControl: input.fechaControl,
+        fechaAuditada: input.fechaAuditada,
+        local: input.local,
+        turnoCompleto: input.turnoCompleto,
+        turnoLabel: input.turnoLabel,
+      },
+      mov,
+    );
     const cat = categoriaSheetParaSesion(mov.tipo);
     if (Math.abs(mov.montoArs) > 0) {
       rowsToWrite.push({
-        fecha: mov.fecha,
+        fecha: input.fechaControl,
         moneda: 'PESO',
         descripcion: desc,
         categoria: cat,
@@ -424,7 +453,7 @@ export async function writeSesion(input: SesionInput): Promise<WriteSesionResult
     }
     if (Math.abs(mov.montoUsd) > 0) {
       rowsToWrite.push({
-        fecha: mov.fecha,
+        fecha: input.fechaControl,
         moneda: 'DOLAR',
         descripcion: desc,
         categoria: cat,
@@ -437,7 +466,7 @@ export async function writeSesion(input: SesionInput): Promise<WriteSesionResult
   const cierreNota = input.notas ? ` · ${input.notas.slice(0, 80)}` : '';
   if (Math.round(diferenciaArs) !== 0) {
     rowsToWrite.push({
-      fecha: input.fechaSesion,
+      fecha: input.fechaControl,
       moneda: 'PESO',
       descripcion: `${prefijo} · cierre · ajuste físico${cierreNota}`,
       categoria: 'DIFERENCIA',
@@ -446,7 +475,7 @@ export async function writeSesion(input: SesionInput): Promise<WriteSesionResult
   }
   if (Math.round(diferenciaUsd) !== 0) {
     rowsToWrite.push({
-      fecha: input.fechaSesion,
+      fecha: input.fechaControl,
       moneda: 'DOLAR',
       descripcion: `${prefijo} · cierre · ajuste físico${cierreNota}`,
       categoria: 'DIFERENCIA',
@@ -587,14 +616,14 @@ export async function listSesiones(maxMonthsBack = 6): Promise<SesionResumen[]> 
 
       let resumen = map.get(parsed.prefijo);
       if (!resumen) {
-        const dm = parsed.fechaSesion.split('/');
+        const dm = parsed.fechaControl.split('/');
         const iso =
           dm.length === 3
             ? `${dm[2]}-${dm[1].padStart(2, '0')}-${dm[0].padStart(2, '0')}`
             : '';
         resumen = {
           prefijo: parsed.prefijo,
-          fechaSesion: parsed.fechaSesion,
+          fechaSesion: parsed.fechaControl,
           iso,
           local: parsed.local,
           retiradoArs: 0,

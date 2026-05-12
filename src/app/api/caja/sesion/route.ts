@@ -36,6 +36,12 @@ interface PostMov {
 }
 
 interface PostBody {
+  // Aliases nuevos (mayo 2026+)
+  fechaControl?: unknown;
+  fechaAuditada?: unknown;
+  turnoCompleto?: unknown;
+  turnoLabel?: unknown;
+  // Legacy (acepta fechaSesion como fechaControl si llega del cliente viejo)
   fechaSesion?: unknown;
   local?: unknown;
   movs?: unknown;
@@ -69,10 +75,33 @@ export const POST = withAuth(async (req, user) => {
     return NextResponse.json({ ok: false, error: 'JSON inválido' }, { status: 400 });
   }
 
-  const fechaSesion = typeof body.fechaSesion === 'string' ? body.fechaSesion.trim() : '';
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaSesion)) {
+  const fechaControl =
+    (typeof body.fechaControl === 'string' && body.fechaControl.trim()) ||
+    (typeof body.fechaSesion === 'string' && body.fechaSesion.trim()) ||
+    '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaControl)) {
     return NextResponse.json(
-      { ok: false, error: 'fechaSesion inválida (esperado YYYY-MM-DD)' },
+      { ok: false, error: 'fechaControl inválida (esperado YYYY-MM-DD)' },
+      { status: 400 },
+    );
+  }
+  const fechaAuditada =
+    typeof body.fechaAuditada === 'string' ? body.fechaAuditada.trim() : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaAuditada)) {
+    return NextResponse.json(
+      { ok: false, error: 'fechaAuditada inválida (esperado YYYY-MM-DD)' },
+      { status: 400 },
+    );
+  }
+  const turnoCompleto = body.turnoCompleto === true || body.turnoCompleto === 'true';
+  const turnoLabel =
+    typeof body.turnoLabel === 'string' ? body.turnoLabel.trim().slice(0, 40) : '';
+  if (!turnoCompleto && !turnoLabel) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: 'Si el turno no es completo hay que indicar el turno (ej "T AM", "T PM").',
+      },
       { status: 400 },
     );
   }
@@ -130,7 +159,10 @@ export const POST = withAuth(async (req, user) => {
   }
 
   const sesion: SesionInput = {
-    fechaSesion,
+    fechaControl,
+    fechaAuditada,
+    turnoCompleto,
+    turnoLabel,
     local,
     movs,
     encontradoArs: num(body.encontradoArs),
@@ -170,9 +202,9 @@ export const DELETE = withAuth(async (req, user) => {
   }
   const url = new URL(req.url);
   const id = (url.searchParams.get('id') || '').trim();
-  if (!id || !id.startsWith('SESION ')) {
+  if (!id || (!id.startsWith('SESION ') && !id.startsWith('S. '))) {
     return NextResponse.json(
-      { ok: false, error: 'id inválido (debe arrancar con "SESION ")' },
+      { ok: false, error: 'id inválido (debe arrancar con "S. " o "SESION ")' },
       { status: 400 },
     );
   }

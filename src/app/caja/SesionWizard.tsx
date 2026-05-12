@@ -32,6 +32,19 @@ function todayISO(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+function yesterdayISO(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function isoToARLabel(iso: string): string {
+  // YYYY-MM-DD → DD/MM/YYYY
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
 // Draft local-only del wizard. Cada mov es en UNA SOLA moneda
 // (PESO o DOLAR) con UN solo monto. Al hacer submit lo mapeamos a
 // la shape del SesionMovInput de lib/caja.ts (que tiene montoArs +
@@ -71,7 +84,13 @@ export function SesionWizard({
 }: Props) {
   const [paso, setPaso] = useState<1 | 2 | 3>(1);
   const [localActivo, setLocalActivo] = useState<Ancla>('LH5');
-  const [fechaSesion] = useState(todayISO());
+  // fechaControl = hoy (cuando Iara controla) → va en col A del Sheet.
+  // fechaAuditada = la fecha de la caja que está controlando → va en
+  // la descripción "S. {control} - {local} ({auditada}) - {turno}".
+  const [fechaControl] = useState(todayISO());
+  const [fechaAuditada, setFechaAuditada] = useState(yesterdayISO());
+  const [turnoCompleto, setTurnoCompleto] = useState(true);
+  const [turnoLabel, setTurnoLabel] = useState('');
   const [movs, setMovs] = useState<DraftMov[]>([]);
 
   // Paso 2
@@ -135,8 +154,8 @@ export function SesionWizard({
   const saldoConfirmadoNum = parseMontoInput(saldoConfirmadoStr);
 
   const addMov = useCallback(() => {
-    setMovs((prev) => [...prev, newDraftMov(localActivo, fechaSesion)]);
-  }, [localActivo, fechaSesion]);
+    setMovs((prev) => [...prev, newDraftMov(localActivo, fechaControl)]);
+  }, [localActivo, fechaControl]);
 
   const updateMov = useCallback(
     (id: string, patch: Partial<DraftMov>) => {
@@ -153,6 +172,16 @@ export function SesionWizard({
 
   const goSiguiente = useCallback(() => {
     if (paso === 1) {
+      // Validar fecha auditada
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaAuditada)) {
+        onError('Cargá la fecha de la caja que estás controlando.');
+        return;
+      }
+      // Validar turno
+      if (!turnoCompleto && !turnoLabel.trim()) {
+        onError('Si no es turno completo, indicá el turno (ej "T AM", "T PM").');
+        return;
+      }
       // Validar al menos 1 mov con monto > 0
       const valido = movs.some(
         (m) => m.concepto.trim() && m.monto > 0,
@@ -167,7 +196,7 @@ export function SesionWizard({
     if (paso === 2) {
       setPaso(3);
     }
-  }, [paso, movs, onError]);
+  }, [paso, movs, fechaAuditada, turnoCompleto, turnoLabel, onError]);
 
   const goAtras = useCallback(() => {
     if (paso === 2) setPaso(1);
@@ -185,7 +214,10 @@ export function SesionWizard({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          fechaSesion,
+          fechaControl,
+          fechaAuditada,
+          turnoCompleto,
+          turnoLabel: turnoCompleto ? '' : turnoLabel.trim(),
           local: localActivo,
           movs: validMovs.map((m) => ({
             tipo: m.tipo,
@@ -204,7 +236,7 @@ export function SesionWizard({
           encontradoArs: encontradoArsNum,
           encontradoUsd: encontradoUsdNum,
           saldoConfirmadoArs: saldoConfirmadoNum,
-          saldoConfirmadoUsd: encontradoUsdNum, // por ahora no se edita USD aparte
+          saldoConfirmadoUsd: encontradoUsdNum,
           notas,
         }),
       });
@@ -220,7 +252,8 @@ export function SesionWizard({
       setSaving(false);
     }
   }, [
-    saving, movs, fechaSesion, localActivo, saldoRegistradoArs, saldoRegistradoUsd,
+    saving, movs, fechaControl, fechaAuditada, turnoCompleto, turnoLabel,
+    localActivo, saldoRegistradoArs, saldoRegistradoUsd,
     encontradoArsNum, encontradoUsdNum, saldoConfirmadoNum, notas, onCompleted, onError,
   ]);
 
@@ -299,6 +332,13 @@ export function SesionWizard({
         <Paso1
           localActivo={localActivo}
           onLocalChange={setLocalActivo}
+          fechaControl={fechaControl}
+          fechaAuditada={fechaAuditada}
+          setFechaAuditada={setFechaAuditada}
+          turnoCompleto={turnoCompleto}
+          setTurnoCompleto={setTurnoCompleto}
+          turnoLabel={turnoLabel}
+          setTurnoLabel={setTurnoLabel}
           movs={movs}
           onUpdate={updateMov}
           onRemove={removeMov}
@@ -356,6 +396,13 @@ export function SesionWizard({
 function Paso1({
   localActivo,
   onLocalChange,
+  fechaControl,
+  fechaAuditada,
+  setFechaAuditada,
+  turnoCompleto,
+  setTurnoCompleto,
+  turnoLabel,
+  setTurnoLabel,
   movs,
   onUpdate,
   onRemove,
@@ -363,13 +410,133 @@ function Paso1({
 }: {
   localActivo: Ancla;
   onLocalChange: (a: Ancla) => void;
+  fechaControl: string;
+  fechaAuditada: string;
+  setFechaAuditada: (s: string) => void;
+  turnoCompleto: boolean;
+  setTurnoCompleto: (b: boolean) => void;
+  turnoLabel: string;
+  setTurnoLabel: (s: string) => void;
   movs: DraftMov[];
   onUpdate: (id: string, patch: Partial<DraftMov>) => void;
   onRemove: (id: string) => void;
   onAdd: () => void;
 }) {
+  // Previa de la descripción que va a quedar en el Sheet
+  const previa =
+    `S. ${isoToARLabel(fechaControl)} - ${localActivo} ` +
+    `(${isoToARLabel(fechaAuditada) || '—'}) - ` +
+    (turnoCompleto ? 'T COMPLETO' : (turnoLabel.trim() || 'T ___'));
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* Card de "auditoría" — datos que van al prefijo de la descripción
+          de cada mov: cuándo se controló, qué fecha de caja, qué turno. */}
+      <div
+        style={{
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-md)',
+          padding: 12,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
+        }}
+      >
+        <div
+          style={{
+            fontSize: 10.5,
+            fontWeight: 700,
+            letterSpacing: '0.10em',
+            textTransform: 'uppercase',
+            color: 'var(--text-muted)',
+          }}
+        >
+          Auditoría
+        </div>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+            Fecha de la caja a controlar (la que se está auditando)
+          </span>
+          <input
+            type="date"
+            value={fechaAuditada}
+            onChange={(e) => setFechaAuditada(e.target.value)}
+            max={fechaControl}
+            className="input-pro"
+            style={{ minHeight: 'var(--touch-min)' }}
+          />
+        </label>
+
+        <label
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            padding: '8px 0',
+            cursor: 'pointer',
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={turnoCompleto}
+            onChange={(e) => setTurnoCompleto(e.target.checked)}
+            style={{
+              width: 18,
+              height: 18,
+              accentColor: 'var(--accent)',
+              flexShrink: 0,
+            }}
+          />
+          <span style={{ fontSize: 13, color: 'var(--text)', fontWeight: 500 }}>
+            Turno completo
+          </span>
+          <span
+            style={{
+              marginLeft: 'auto',
+              fontSize: 11,
+              color: 'var(--text-muted)',
+            }}
+          >
+            {turnoCompleto ? 'va "T COMPLETO"' : 'cargá el turno abajo'}
+          </span>
+        </label>
+
+        {!turnoCompleto && (
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              Turno (ej "T AM", "T PM", "T noche")
+            </span>
+            <input
+              type="text"
+              value={turnoLabel}
+              onChange={(e) => setTurnoLabel(e.target.value)}
+              placeholder="T AM"
+              maxLength={40}
+              className="input-pro"
+              style={{
+                minHeight: 'var(--touch-min)',
+                textTransform: 'uppercase',
+              }}
+            />
+          </label>
+        )}
+
+        <div
+          style={{
+            padding: '8px 10px',
+            background: 'var(--bg-subtle)',
+            borderRadius: 'var(--radius-sm)',
+            fontSize: 11.5,
+            color: 'var(--text-muted)',
+            fontFamily: "'JetBrains Mono', monospace",
+            wordBreak: 'break-all',
+          }}
+        >
+          <span style={{ color: 'var(--text-muted)' }}>Va al Sheet: </span>
+          <span style={{ color: 'var(--text)' }}>{previa}</span>
+        </div>
+      </div>
+
       {/* Local activo — dropdown compacto. Es el default que toman
           los movimientos NUEVOS al agregarse; cada mov individual
           después puede cambiar su local desde su propio select. */}
