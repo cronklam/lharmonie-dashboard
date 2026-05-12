@@ -169,7 +169,21 @@ export default function ServiciosPage() {
           <TabCalendario indice={indice} mesData={mesData} />
         )}
         {tab === 'listado' && (
-          <TabListado indice={indice} mesData={mesData} onAction={flashToast} />
+          <TabListado
+            indice={indice}
+            mesData={mesData}
+            onAction={flashToast}
+            onClickServicio={(s) => {
+              if (!mesData) return;
+              const all = [
+                ...mesData.filasLocales,
+                ...mesData.filasCronklam,
+                ...mesData.filasMyP,
+              ];
+              const row = all.find((r) => r.servicioRaw === s.servicioRaw);
+              if (row) setEditing({ row, ancla: s.ancla });
+            }}
+          />
         )}
         {tab === 'baigun' && (
           <TabBaigun mesData={mesData} loading={mesLoading} />
@@ -1067,19 +1081,50 @@ function catColors(cat: string): { bg: string; fg: string } {
   return { bg: 'var(--bg-subtle)', fg: 'var(--text-muted)' };
 }
 
-// ─── Tab: LISTADO con cards expandables ───────────────────────────
+// ─── Tab: LISTADO — estilo staff con stats + expand por local ────
+
+// Tipo agregado: un servicio en un local (con su metadata de ÍNDICE).
+// Lo construimos en runtime cruzando el pivot del mes con el ÍNDICE.
+interface ServicioEnLocal {
+  servicio: string;       // canónico (display)
+  servicioRaw: string;    // raw del Sheet (para escribir celda)
+  ancla: Ancla;
+  cellEstado: 'pagado' | 'pendiente' | 'vacio' | 'no_aplica';
+  cellMonto: number;
+  cellEsUsd: boolean;
+  cellRaw: string;
+  // Enrich del ÍNDICE
+  categoria: string;
+  periodicidad: string;
+  diaVenc: number | null;
+  notas: string;
+}
+
+function diasHastaVenc(diaVenc: number | null): number | null {
+  if (!diaVenc) return null;
+  const hoy = new Date();
+  const targetMes = new Date(hoy.getFullYear(), hoy.getMonth(), diaVenc);
+  const lastDay = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).getDate();
+  const diaReal = Math.min(diaVenc, lastDay);
+  targetMes.setDate(diaReal);
+  const diffMs = targetMes.getTime() - hoy.setHours(0, 0, 0, 0);
+  return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+}
 
 function TabListado({
   indice,
   mesData,
+  onClickServicio,
   onAction,
 }: {
   indice: { locales: IndiceLocal[]; servicios: IndiceServicio[]; tabExiste: boolean };
   mesData: ServicioMes | null;
+  onClickServicio: (s: ServicioEnLocal) => void;
   onAction: (m: string) => void;
 }) {
   const [view, setView] = useState<'local' | 'categoria'>('local');
-  const [expandedAncla, setExpandedAncla] = useState<string | null>(null);
+  const [openAncla, setOpenAncla] = useState<string | null>(null);
+  const [openTipo, setOpenTipo] = useState<string | null>(null);
 
   if (!indice.tabExiste) {
     return (
@@ -1090,27 +1135,178 @@ function TabListado({
     );
   }
 
-  const pagadoArs = mesData?.totalGeneral || 0;
-  const pendientesCount = mesData?.conteoPendientes || 0;
-  const pagadosCount = mesData?.conteoPagados || 0;
+  // Index ÍNDICE por nombre (case-insensitive) para enrich rápido
+  const indiceByNombre = useMemo(() => {
+    const m = new Map<string, IndiceServicio>();
+    for (const s of indice.servicios) {
+      m.set(s.servicio.trim().toLowerCase(), s);
+    }
+    return m;
+  }, [indice.servicios]);
+
+  // Build serviciosEnLocal: para cada (servicio × ancla) donde la
+  // celda no es no_aplica → un entry.
+  const serviciosEnLocal: ServicioEnLocal[] = useMemo(() => {
+    if (!mesData) return [];
+    const all = [
+      ...mesData.filasLocales,
+      ...mesData.filasCronklam,
+      ...mesData.filasMyP,
+    ];
+    const out: ServicioEnLocal[] = [];
+    for (const row of all) {
+      const meta = indiceByNombre.get(row.servicio.trim().toLowerCase());
+      for (const [ancla, cell] of Object.entries(row.porAncla)) {
+        if (!cell || cell.estado === 'no_aplica') continue;
+        out.push({
+          servicio: row.servicio,
+          servicioRaw: row.servicioRaw,
+          ancla: ancla as Ancla,
+          cellEstado: cell.estado,
+          cellMonto: cell.monto,
+          cellEsUsd: cell.esUsd,
+          cellRaw: cell.raw,
+          categoria: meta?.categoria || '',
+          periodicidad: meta?.periodicidad || '',
+          diaVenc: meta?.diaVenc ? parseInt(meta.diaVenc, 10) || null : null,
+          notas: meta?.notas || row.notas || '',
+        });
+      }
+    }
+    return out;
+  }, [mesData, indiceByNombre]);
+
+  // Stats card
+  const stats = useMemo(() => {
+    let pagadosCount = 0;
+    let pendientesCount = 0;
+    let pagadoArs = 0;
+    let pagadoUsd = 0;
+    let faltaArs = 0;
+    let vencidos = 0;
+    const hoy = new Date();
+    const hoyDia = hoy.getDate();
+
+    for (const e of serviciosEnLocal) {
+      if (e.cellEstado === 'pagado') {
+        pagadosCount++;
+        if (e.cellEsUsd) pagadoUsd += e.cellMonto;
+        else pagadoArs += e.cellMonto;
+      } else {
+        // pendiente o vacio → falta pagar
+        pendientesCount++;
+        // Sumar al "falta pagar" si tenemos un sugerido (TODO: leer de
+        // mes anterior). Por ahora si está pendiente lo dejamos sin monto.
+        if (e.cellEstado === 'pendiente') faltaArs += 0;
+
+        if (e.diaVenc && e.diaVenc < hoyDia) vencidos++;
+      }
+    }
+
+    return { pagadosCount, pendientesCount, pagadoArs, pagadoUsd, faltaArs, vencidos };
+  }, [serviciosEnLocal]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-        <KPICard
-          eyebrow="Pagado este mes"
-          value={`$${Math.round(pagadoArs).toLocaleString('es-AR')}`}
-          sub={`${pagadosCount} pagos cargados`}
-          color="var(--green)"
-        />
-        <KPICard
-          eyebrow="Falta pagar"
-          value={String(pendientesCount)}
-          sub={pendientesCount === 1 ? '1 servicio' : `${pendientesCount} servicios`}
-          color={pendientesCount > 0 ? '#C84F3F' : 'var(--text)'}
-        />
+      {/* Stats principal */}
+      <div
+        style={{
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-md)',
+          padding: 14,
+          boxShadow: 'var(--shadow-card)',
+        }}
+      >
+        <div
+          style={{
+            fontSize: 9.5,
+            fontWeight: 700,
+            letterSpacing: '0.16em',
+            textTransform: 'uppercase',
+            color: 'var(--text-muted)',
+            marginBottom: 10,
+          }}
+        >
+          Este mes
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          <div>
+            <div
+              style={{
+                fontSize: 10,
+                fontWeight: 600,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                color: 'var(--green)',
+                marginBottom: 2,
+              }}
+            >
+              Pagado
+            </div>
+            <div
+              className="tabular-nums-strict"
+              style={{
+                fontSize: 19,
+                fontWeight: 700,
+                color: 'var(--text)',
+                lineHeight: 1.1,
+              }}
+            >
+              ${Math.round(stats.pagadoArs).toLocaleString('es-AR')}
+            </div>
+            {stats.pagadoUsd > 0 && (
+              <div
+                className="tabular-nums-strict"
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: 'var(--text-muted)',
+                  marginTop: 2,
+                }}
+              >
+                US$ {Math.round(stats.pagadoUsd).toLocaleString('es-AR')}
+              </div>
+            )}
+            <div style={{ fontSize: 10.5, color: 'var(--text-faint)', marginTop: 4 }}>
+              {stats.pagadosCount} {stats.pagadosCount === 1 ? 'servicio' : 'servicios'}
+            </div>
+          </div>
+          <div>
+            <div
+              style={{
+                fontSize: 10,
+                fontWeight: 600,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                color: '#92400E',
+                marginBottom: 2,
+              }}
+            >
+              Falta pagar
+            </div>
+            <div
+              className="tabular-nums-strict"
+              style={{
+                fontSize: 19,
+                fontWeight: 700,
+                color: 'var(--text)',
+                lineHeight: 1.1,
+              }}
+            >
+              {stats.pendientesCount}
+            </div>
+            <div style={{ fontSize: 10.5, color: 'var(--text-faint)', marginTop: 4 }}>
+              {stats.pendientesCount === 1 ? '1 servicio' : `${stats.pendientesCount} servicios`}
+              {stats.vencidos > 0
+                ? ` · ${stats.vencidos} vencido${stats.vencidos === 1 ? '' : 's'}`
+                : ''}
+            </div>
+          </div>
+        </div>
       </div>
 
+      {/* Toggle Por Local / Por Categoría */}
       <div
         style={{
           display: 'grid',
@@ -1150,29 +1346,37 @@ function TabListado({
       {view === 'local' ? (
         <ListadoPorLocal
           locales={indice.locales}
-          mesData={mesData}
-          expandedAncla={expandedAncla}
-          onToggle={(a) => setExpandedAncla((p) => (p === a ? null : a))}
+          serviciosEnLocal={serviciosEnLocal}
+          openAncla={openAncla}
+          onToggle={(a) => setOpenAncla((p) => (p === a ? null : a))}
+          onClickServicio={onClickServicio}
         />
       ) : (
-        <ListadoPorCategoria servicios={indice.servicios} mesData={mesData} />
+        <ListadoPorCategoria
+          serviciosEnLocal={serviciosEnLocal}
+          openTipo={openTipo}
+          onToggle={(t) => setOpenTipo((p) => (p === t ? null : t))}
+          onClickServicio={onClickServicio}
+        />
       )}
 
       <button
         type="button"
         onClick={() =>
-          onAction('Editá el tab ÍNDICE del Sheet para sumar nuevos servicios o locales.')
+          onAction(
+            'Para sumar un servicio nuevo: edita el tab ÍNDICE del Sheet y agregá la fila. La app lo va a leer automático.',
+          )
         }
         className="press-feedback"
         style={{
           minHeight: 42,
           borderRadius: 'var(--radius-md)',
           padding: '10px 14px',
-          background: 'var(--accent)',
-          color: '#FDFBF8',
+          background: 'transparent',
+          color: 'var(--accent-hover)',
           fontWeight: 600,
           fontSize: 13,
-          border: 0,
+          border: '1px dashed var(--accent)',
         }}
       >
         + Sumar servicio o local
@@ -1181,54 +1385,67 @@ function TabListado({
   );
 }
 
-function ListadoPorLocal({
-  locales,
-  mesData,
-  expandedAncla,
+const ANCLA_ORDER: Ancla[] = ['LH1', 'LH2', 'LH3', 'LH4', 'LH5', 'LH6', 'CRONKLAM', 'MyP'];
+const ANCLA_LARGO: Record<Ancla, string> = {
+  LH1: 'Lharmonie 1 (LH1)',
+  LH2: 'Lharmonie Nicaragua (LH2)',
+  LH3: 'Casa Lharmonie (LH3)',
+  LH4: 'Lharmonie Zabala (LH4)',
+  LH5: 'Lharmonie Libertador (LH5)',
+  LH6: 'Lharmonie 6 (LH6)',
+  CRONKLAM: 'Cronklam (empresa)',
+  MyP: 'Martín y Melanie',
+};
+
+function ListadoPorLocal_NEW({
+  locales: _locales,
+  serviciosEnLocal,
+  openAncla,
   onToggle,
+  onClickServicio,
 }: {
   locales: IndiceLocal[];
-  mesData: ServicioMes | null;
-  expandedAncla: string | null;
+  serviciosEnLocal: ServicioEnLocal[];
+  openAncla: string | null;
   onToggle: (a: string) => void;
+  onClickServicio: (s: ServicioEnLocal) => void;
 }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      {locales.map((l) => {
-        const ancla = l.ancla || '—';
-        // Servicios que tienen data en este local este mes
-        const allRows = mesData
-          ? [...mesData.filasLocales, ...mesData.filasCronklam, ...mesData.filasMyP]
-          : [];
-        const servicios = allRows.filter((r) => {
-          const cell = r.porAncla[ancla];
-          return cell && (cell.estado === 'pagado' || cell.estado === 'pendiente');
-        });
-        const totalLocal = servicios.reduce((s, r) => {
-          const c = r.porAncla[ancla];
-          if (!c || c.estado !== 'pagado' || c.esUsd) return s;
-          return s + c.monto;
-        }, 0);
-        const expanded = expandedAncla === ancla;
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {ANCLA_ORDER.map((anclaKey) => {
+        const items = serviciosEnLocal.filter((s) => s.ancla === anclaKey);
+        if (items.length === 0) return null;
+        const isOpen = openAncla === anclaKey;
+        const pendientes = items.filter((s) => s.cellEstado !== 'pagado').length;
+        const totalArs = items
+          .filter((s) => s.cellEstado === 'pagado' && !s.cellEsUsd)
+          .reduce((sum, s) => sum + s.cellMonto, 0);
+
+        // Ordenar items por tipo (categoría)
+        const sorted = [...items].sort((a, b) =>
+          (a.categoria || 'zzz').localeCompare(b.categoria || 'zzz') ||
+          a.servicio.localeCompare(b.servicio),
+        );
+
         return (
           <div
-            key={l.col}
+            key={anclaKey}
             style={{
               background: 'var(--bg-card)',
-              border: '1px solid var(--border)',
+              border: `1px solid ${isOpen ? 'var(--accent)' : 'var(--border)'}`,
               borderRadius: 'var(--radius-md)',
-              boxShadow: 'var(--shadow-card)',
               overflow: 'hidden',
+              transition: 'border-color 180ms',
             }}
           >
             <button
               type="button"
-              onClick={() => onToggle(ancla)}
+              onClick={() => onToggle(anclaKey)}
               className="press-feedback"
-              aria-expanded={expanded}
+              aria-expanded={isOpen}
               style={{
                 width: '100%',
-                padding: '12px 14px',
+                padding: 12,
                 display: 'flex',
                 alignItems: 'center',
                 gap: 12,
@@ -1240,118 +1457,96 @@ function ListadoPorLocal({
             >
               <div
                 style={{
-                  width: 44,
-                  height: 44,
+                  width: 42,
+                  height: 42,
                   borderRadius: 999,
-                  background: 'var(--bg-subtle)',
-                  color: 'var(--accent-hover)',
-                  fontWeight: 700,
-                  fontSize: 11,
+                  background: 'rgba(184,149,111,0.12)',
+                  color: 'var(--accent)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  letterSpacing: '0.02em',
+                  flexShrink: 0,
+                  fontSize: 11,
+                  fontWeight: 800,
+                  letterSpacing: '0.04em',
+                }}
+              >
+                {anclaKey}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 700,
+                    color: 'var(--text)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {ANCLA_LARGO[anclaKey]}
+                </div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: 'var(--text-muted)',
+                    marginTop: 1,
+                  }}
+                >
+                  {items.length} {items.length === 1 ? 'servicio' : 'servicios'}
+                  {pendientes > 0 && ` · ${pendientes} pendientes`}
+                  {totalArs > 0 &&
+                    ` · $${Math.round(totalArs).toLocaleString('es-AR')}/mes`}
+                </div>
+              </div>
+              {pendientes > 0 && (
+                <span
+                  style={{
+                    fontSize: 9,
+                    fontWeight: 700,
+                    letterSpacing: '0.06em',
+                    background: 'rgba(217,95,78,0.12)',
+                    color: '#C84F3F',
+                    padding: '2px 7px',
+                    borderRadius: 999,
+                    flexShrink: 0,
+                  }}
+                >
+                  {pendientes}
+                </span>
+              )}
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 14 14"
+                fill="none"
+                style={{
+                  transition: 'transform 220ms var(--ease-ios)',
+                  transform: isOpen ? 'rotate(90deg)' : 'none',
                   flexShrink: 0,
                 }}
               >
-                {l.ancla || '?'}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
-                  {l.nombre || l.col}
-                </div>
-                <div
-                  className="tabular-nums-strict"
-                  style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}
-                >
-                  {servicios.length} servicios
-                  {totalLocal > 0
-                    ? ` · $${Math.round(totalLocal).toLocaleString('es-AR')}/mes`
-                    : ''}
-                </div>
-              </div>
-              <Chevron expanded={expanded} />
+                <path
+                  d="M5 2l5 5-5 5"
+                  stroke="var(--text-muted)"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
             </button>
-
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateRows: expanded ? '1fr' : '0fr',
-                transition: 'grid-template-rows 240ms var(--ease-ios)',
-              }}
-            >
-              <div style={{ overflow: 'hidden', minHeight: 0 }}>
-                {servicios.length === 0 ? (
-                  <div
-                    style={{
-                      padding: '12px 14px',
-                      borderTop: '1px solid var(--border)',
-                      fontSize: 12.5,
-                      color: 'var(--text-muted)',
-                      textAlign: 'center',
-                    }}
-                  >
-                    Sin movimientos este mes.
-                  </div>
-                ) : (
-                  <div>
-                    {servicios.map((r, i) => {
-                      const cell = r.porAncla[ancla];
-                      return (
-                        <div
-                          key={`${r.servicio}-${i}`}
-                          style={{
-                            padding: '10px 14px',
-                            borderTop: '1px solid var(--border)',
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            gap: 8,
-                          }}
-                        >
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 13, fontWeight: 600 }}>
-                              {r.servicio}
-                            </div>
-                            {r.notas && (
-                              <div
-                                style={{
-                                  fontSize: 11,
-                                  color: 'var(--text-muted)',
-                                  marginTop: 1,
-                                }}
-                              >
-                                {r.notas}
-                              </div>
-                            )}
-                          </div>
-                          <span
-                            className="tabular-nums-strict"
-                            style={{
-                              fontSize: 12.5,
-                              fontWeight: cell?.estado === 'pagado' ? 700 : 600,
-                              color:
-                                cell?.estado === 'pagado'
-                                  ? 'var(--green)'
-                                  : '#C84F3F',
-                              whiteSpace: 'nowrap',
-                              textTransform: cell?.estado === 'pendiente' ? 'uppercase' : 'none',
-                              letterSpacing: cell?.estado === 'pendiente' ? '0.04em' : 'normal',
-                            }}
-                          >
-                            {cell?.estado === 'pagado'
-                              ? cell.esUsd
-                                ? `US$ ${Math.round(cell.monto).toLocaleString('es-AR')}`
-                                : `$${Math.round(cell.monto).toLocaleString('es-AR')}`
-                              : 'Pagar'}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+            {isOpen && (
+              <div style={{ borderTop: '1px solid var(--border)' }}>
+                {sorted.map((s, idx) => (
+                  <ServicioRowCard
+                    key={`${s.servicio}-${idx}`}
+                    s={s}
+                    onClick={() => onClickServicio(s)}
+                    bordered={idx > 0}
+                  />
+                ))}
               </div>
-            </div>
+            )}
           </div>
         );
       })}
@@ -1359,182 +1554,320 @@ function ListadoPorLocal({
   );
 }
 
-function Chevron({ expanded }: { expanded: boolean }) {
-  return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      style={{
-        transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
-        transition: 'transform 240ms var(--ease-ios)',
-        color: 'var(--text-muted)',
-        flexShrink: 0,
-      }}
-    >
-      <path d="m6 9 6 6 6-6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
+// Stub vieja signatura para no romper imports — la nueva está arriba.
+function ListadoPorLocal(props: {
+  locales: IndiceLocal[];
+  serviciosEnLocal: ServicioEnLocal[];
+  openAncla: string | null;
+  onToggle: (a: string) => void;
+  onClickServicio: (s: ServicioEnLocal) => void;
+}) {
+  return <ListadoPorLocal_NEW {...props} />;
 }
 
-function ListadoPorCategoria({
-  servicios,
-  mesData,
+function ServicioRowCard({
+  s,
+  onClick,
+  bordered,
 }: {
-  servicios: IndiceServicio[];
-  mesData: ServicioMes | null;
+  s: ServicioEnLocal;
+  onClick: () => void;
+  bordered: boolean;
 }) {
-  const porCategoria = new Map<string, IndiceServicio[]>();
-  for (const s of servicios) {
-    const cat = s.categoria || 'Sin categoría';
-    const arr = porCategoria.get(cat) || [];
-    arr.push(s);
-    porCategoria.set(cat, arr);
-  }
+  const tono = catColors(s.categoria);
+  const dias = diasHastaVenc(s.diaVenc);
+  const venceRojo = dias !== null && dias < 0;
+  const venceAmber = dias !== null && dias >= 0 && dias <= 3;
+  const borderLeftColor = venceRojo
+    ? '#C84F3F'
+    : venceAmber
+    ? '#F59E0B'
+    : 'transparent';
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      {Array.from(porCategoria.entries()).map(([cat, arr]) => {
-        const colors = catColors(cat);
-        return (
-          <section key={cat}>
-            <div
+    <button
+      type="button"
+      onClick={onClick}
+      className="press-feedback"
+      style={{
+        width: '100%',
+        padding: '10px 12px',
+        borderTop: bordered ? `1px solid var(--border)` : 'none',
+        borderLeft: borderLeftColor !== 'transparent' ? `3px solid ${borderLeftColor}` : '3px solid transparent',
+        background: 'transparent',
+        cursor: 'pointer',
+        textAlign: 'left',
+        display: 'block',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          gap: 8,
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              flexWrap: 'wrap',
+            }}
+          >
+            {s.categoria && (
+              <span
+                style={{
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                  padding: '2px 6px',
+                  borderRadius: 4,
+                  background: tono.bg,
+                  color: tono.fg,
+                  flexShrink: 0,
+                }}
+              >
+                {s.categoria}
+              </span>
+            )}
+            <span
               style={{
-                display: 'inline-block',
-                padding: '4px 8px',
-                borderRadius: 6,
-                fontSize: 9.5,
+                fontSize: 13,
                 fontWeight: 700,
-                letterSpacing: '0.08em',
-                textTransform: 'uppercase',
-                background: colors.bg,
-                color: colors.fg,
-                marginBottom: 6,
+                color: 'var(--text)',
               }}
             >
-              {cat} · {arr.length}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {arr.map((s) => {
-                // Buscar último monto pagado
-                const allRows = mesData
-                  ? [
-                      ...mesData.filasLocales,
-                      ...mesData.filasCronklam,
-                      ...mesData.filasMyP,
-                    ]
-                  : [];
-                const fila = allRows.find(
-                  (r) => r.servicio.toLowerCase() === s.servicio.toLowerCase(),
-                );
-                const pagados = fila
-                  ? Object.values(fila.porAncla).filter((c) => c.estado === 'pagado')
-                  : [];
-                const totalPagado = pagados.reduce(
-                  (sum, c) => sum + (c.esUsd ? 0 : c.monto),
-                  0,
-                );
-                return (
-                  <div
-                    key={s.servicio}
-                    style={{
-                      padding: '10px 12px',
-                      background: 'var(--bg-card)',
-                      border: '1px solid var(--border)',
-                      borderRadius: 'var(--radius-sm)',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      gap: 8,
-                    }}
-                  >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13.5, fontWeight: 600 }}>{s.servicio}</div>
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: 'var(--text-muted)',
-                          marginTop: 1,
-                        }}
-                      >
-                        {s.periodicidad}
-                        {s.diaVenc && s.diaVenc !== '—'
-                          ? ` · vence ${s.diaVenc}`
-                          : ''}
-                      </div>
-                    </div>
-                    {totalPagado > 0 && (
-                      <span
-                        className="tabular-nums-strict"
-                        style={{
-                          fontSize: 12.5,
-                          fontWeight: 700,
-                          color: 'var(--green)',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        ${Math.round(totalPagado).toLocaleString('es-AR')}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        );
-      })}
-    </div>
+              {s.servicio}
+            </span>
+          </div>
+          <div
+            style={{
+              marginTop: 4,
+              display: 'flex',
+              gap: 6,
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              fontSize: 10.5,
+            }}
+          >
+            {s.diaVenc && (
+              <span
+                style={{
+                  color: venceRojo ? '#C84F3F' : 'var(--text-muted)',
+                  background: 'var(--bg-subtle)',
+                  padding: '2px 7px',
+                  borderRadius: 999,
+                  fontWeight: 600,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                }}
+              >
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <rect x="3.5" y="5" width="17" height="15" rx="2.2" stroke="currentColor" strokeWidth="2" />
+                  <path d="M3.5 9.5h17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+                Vence el {s.diaVenc} de cada mes
+              </span>
+            )}
+            {s.cellEstado === 'pagado' && (
+              <span style={{ color: 'var(--green)', fontWeight: 700 }}>
+                ✓{' '}
+                {s.cellEsUsd
+                  ? `US$ ${Math.round(s.cellMonto).toLocaleString('es-AR')}`
+                  : `$${Math.round(s.cellMonto).toLocaleString('es-AR')}`}
+              </span>
+            )}
+            {s.cellEstado === 'pendiente' && (
+              <span
+                style={{
+                  color: '#C84F3F',
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em',
+                }}
+              >
+                Pendiente
+              </span>
+            )}
+            {s.cellEstado === 'vacio' && (
+              <span style={{ color: 'var(--text-muted)' }}>Sin cargar</span>
+            )}
+          </div>
+        </div>
+        <svg
+          width="13"
+          height="13"
+          viewBox="0 0 14 14"
+          fill="none"
+          style={{ flexShrink: 0, marginTop: 4 }}
+        >
+          <path
+            d="M5 2l5 5-5 5"
+            stroke="var(--text-muted)"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </div>
+    </button>
   );
 }
 
-function KPICard({
-  eyebrow,
-  value,
-  sub,
-  color,
+
+function ListadoPorCategoria({
+  serviciosEnLocal,
+  openTipo,
+  onToggle,
+  onClickServicio,
 }: {
-  eyebrow: string;
-  value: string;
-  sub: string;
-  color: string;
+  serviciosEnLocal: ServicioEnLocal[];
+  openTipo: string | null;
+  onToggle: (t: string) => void;
+  onClickServicio: (s: ServicioEnLocal) => void;
 }) {
+  const porTipo = useMemo(() => {
+    const m = new Map<string, ServicioEnLocal[]>();
+    for (const s of serviciosEnLocal) {
+      const k = s.categoria || 'Sin categoría';
+      const arr = m.get(k) || [];
+      arr.push(s);
+      m.set(k, arr);
+    }
+    return m;
+  }, [serviciosEnLocal]);
+
+  const orderedTipos = Array.from(porTipo.keys()).sort((a, b) =>
+    a.localeCompare(b, 'es'),
+  );
+
   return (
-    <div
-      style={{
-        padding: 14,
-        background: 'var(--bg-card)',
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--radius-md)',
-        boxShadow: 'var(--shadow-card)',
-      }}
-    >
-      <div
-        style={{
-          fontSize: 10,
-          fontWeight: 700,
-          letterSpacing: '0.10em',
-          textTransform: 'uppercase',
-          color: 'var(--text-muted)',
-          marginBottom: 6,
-        }}
-      >
-        {eyebrow}
-      </div>
-      <div
-        className="tabular-nums-strict"
-        style={{
-          fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
-          fontSize: 22,
-          fontWeight: 700,
-          color,
-          lineHeight: 1.1,
-        }}
-      >
-        {value}
-      </div>
-      <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 4 }}>
-        {sub}
-      </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {orderedTipos.map((tipo) => {
+        const items = porTipo.get(tipo) || [];
+        const isOpen = openTipo === tipo;
+        const pendientes = items.filter((s) => s.cellEstado !== 'pagado').length;
+        const tono = catColors(tipo);
+        const sorted = [...items].sort((a, b) =>
+          (a.ancla || 'zzz').localeCompare(b.ancla || 'zzz') ||
+          a.servicio.localeCompare(b.servicio),
+        );
+        return (
+          <div
+            key={tipo}
+            style={{
+              background: isOpen ? tono.bg : 'var(--bg-card)',
+              border: `1px solid ${isOpen ? tono.fg : 'var(--border)'}`,
+              borderRadius: 'var(--radius-md)',
+              overflow: 'hidden',
+              transition: 'all 180ms',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => onToggle(tipo)}
+              className="press-feedback"
+              aria-expanded={isOpen}
+              style={{
+                width: '100%',
+                padding: 12,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                background: 'transparent',
+                border: 0,
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              <div
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 999,
+                  background: tono.bg,
+                  color: tono.fg,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                  fontSize: 14,
+                  fontWeight: 700,
+                }}
+              >
+                {tipo.charAt(0).toUpperCase()}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>
+                  {tipo}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
+                  {items.length} {items.length === 1 ? 'servicio' : 'servicios'}
+                  {pendientes > 0 && ` · ${pendientes} pendientes`}
+                </div>
+              </div>
+              {pendientes > 0 && (
+                <span
+                  style={{
+                    fontSize: 9,
+                    fontWeight: 700,
+                    letterSpacing: '0.06em',
+                    background: 'rgba(217,95,78,0.12)',
+                    color: '#C84F3F',
+                    padding: '2px 7px',
+                    borderRadius: 999,
+                    flexShrink: 0,
+                  }}
+                >
+                  {pendientes}
+                </span>
+              )}
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 14 14"
+                fill="none"
+                style={{
+                  transition: 'transform 220ms var(--ease-ios)',
+                  transform: isOpen ? 'rotate(90deg)' : 'none',
+                  flexShrink: 0,
+                }}
+              >
+                <path
+                  d="M5 2l5 5-5 5"
+                  stroke="var(--text-muted)"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+            {isOpen && (
+              <div style={{ borderTop: '1px solid var(--border)' }}>
+                {sorted.map((s, idx) => (
+                  <ServicioRowCard
+                    key={`${s.servicio}-${s.ancla}-${idx}`}
+                    s={s}
+                    onClick={() => onClickServicio(s)}
+                    bordered={idx > 0}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {orderedTipos.length === 0 && (
+        <EmptyState
+          title="Sin servicios este mes"
+          body="No hay datos cargados en el mes seleccionado."
+        />
+      )}
     </div>
   );
 }
