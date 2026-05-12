@@ -1,105 +1,127 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../components/AuthProvider';
 import { PageHeader } from '../components/PageHeader';
 import EyebrowTag from '../components/EyebrowTag';
-import {
-  TIPO_LABELS,
-  TIPO_COLORS,
-  TIPOS_SERVICIO,
-  PERIODICIDADES,
-  MEDIOS_PAGO,
-  MEDIO_LABELS,
-  sugerirAnclaPorTipo,
-  type ServicioCatalogo,
-  type ServicioPago,
-  type TipoServicio,
-  type Periodicidad,
-  type MedioPago,
-} from '@/lib/servicios';
-import { ANCLAS, ANCLA_SHORT, ANCLA_LABELS, type Ancla } from '@/lib/anclas';
+import type {
+  ServicioMes,
+  ServicioMesRow,
+  ParsedPeriodo,
+  CellEstado,
+} from '@/lib/servicios-mes';
+import type {
+  IndiceLocal,
+  IndiceServicio,
+} from '../api/servicios/indice/route';
 
-// Panel /servicios — owner-only. Lista del catálogo agrupada por
-// ancla, con suma de monto estimado mensual. Tap en un servicio →
-// drawer con datos de pago + historial. Botón "Nuevo servicio" abre
-// bottom sheet.
+// /servicios — pantalla principal con 4 tabs:
+//   Tabla     → vista pivot del mes seleccionado (servicios × locales)
+//   Calendario→ servicios por día de vencimiento (lee ÍNDICE)
+//   Listado   → lista plana del catálogo (lee ÍNDICE)
+//   Baigun    → saldo cta cte del subarriendo Libertador (col J)
+
+type TabId = 'tabla' | 'calendario' | 'listado' | 'baigun';
+
+const TABS: Array<{ id: TabId; label: string }> = [
+  { id: 'tabla', label: 'Tabla' },
+  { id: 'calendario', label: 'Calendario' },
+  { id: 'listado', label: 'Listado' },
+  { id: 'baigun', label: 'Baigun' },
+];
 
 export default function ServiciosPage() {
   const { user, loading, isOwner } = useAuth();
   const router = useRouter();
-  const [items, setItems] = useState<ServicioCatalogo[]>([]);
-  const [fetching, setFetching] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [showNuevo, setShowNuevo] = useState(false);
-  const [toast, setToast] = useState('');
 
-  const refresh = useCallback(async () => {
-    try {
-      const r = await fetch('/api/servicios', { cache: 'no-store' });
-      const d = await r.json();
-      if (d.ok) {
-        setItems(d.items || []);
-        setError(null);
-      } else {
-        setError(d.error || 'Error');
-      }
-    } catch {
-      setError('Error de red');
-    } finally {
-      setFetching(false);
-    }
+  const [tab, setTab] = useState<TabId>('tabla');
+
+  // Lista de meses disponibles en el Sheet
+  const [meses, setMeses] = useState<ParsedPeriodo[]>([]);
+  const [periodo, setPeriodo] = useState<string>('');
+
+  // Data del mes seleccionado
+  const [mesData, setMesData] = useState<ServicioMes | null>(null);
+  const [mesError, setMesError] = useState<string | null>(null);
+  const [mesLoading, setMesLoading] = useState(false);
+
+  // ÍNDICE catalog
+  const [indice, setIndice] = useState<{
+    locales: IndiceLocal[];
+    servicios: IndiceServicio[];
+    tabExiste: boolean;
+  }>({ locales: [], servicios: [], tabExiste: false });
+
+  const [toast, setToast] = useState('');
+  const flashToast = useCallback((m: string) => {
+    setToast(m);
+    window.setTimeout(() => setToast(''), 3000);
   }, []);
 
+  // 1) Cargar meses disponibles al iniciar
   useEffect(() => {
     if (loading || !user) return;
     if (!isOwner) {
       router.replace('/');
       return;
     }
-    refresh();
-  }, [loading, user, isOwner, refresh, router]);
+    fetch('/api/servicios/meses')
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.ok && d.meses?.length) {
+          setMeses(d.meses);
+          // Default: mes más reciente
+          setPeriodo(d.meses[0].periodo);
+        } else {
+          setMesError(d.error || 'No se encontraron meses en el Sheet');
+        }
+      })
+      .catch(() => setMesError('Error de red leyendo meses'));
+  }, [loading, user, isOwner, router]);
 
-  const flashToast = useCallback((m: string) => {
-    setToast(m);
-    window.setTimeout(() => setToast(''), 2400);
-  }, []);
+  // 2) Cargar data del mes cuando cambia
+  useEffect(() => {
+    if (!periodo) return;
+    setMesLoading(true);
+    setMesError(null);
+    fetch(`/api/servicios/mes?periodo=${periodo}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.ok) setMesData(d.data);
+        else setMesError(d.error || 'Error cargando mes');
+      })
+      .catch(() => setMesError('Error de red'))
+      .finally(() => setMesLoading(false));
+  }, [periodo]);
 
-  const grouped = useMemo(() => {
-    const map = new Map<Ancla, ServicioCatalogo[]>();
-    for (const s of items) {
-      const arr = map.get(s.ancla) || [];
-      arr.push(s);
-      map.set(s.ancla, arr);
-    }
-    const out: { ancla: Ancla; items: ServicioCatalogo[]; totalArs: number }[] = [];
-    for (const a of ANCLAS) {
-      const arr = map.get(a);
-      if (!arr || arr.length === 0) continue;
-      const total = arr.reduce((s, x) => s + (x.activo ? x.montoEstimadoArs : 0), 0);
-      out.push({ ancla: a, items: arr, totalArs: total });
-    }
-    return out;
-  }, [items]);
-
-  const totalActivosArs = useMemo(
-    () =>
-      items
-        .filter((s) => s.activo)
-        .reduce((s, x) => s + x.montoEstimadoArs, 0),
-    [items],
-  );
+  // 3) Cargar ÍNDICE
+  useEffect(() => {
+    if (loading || !user || !isOwner) return;
+    fetch('/api/servicios/indice')
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.ok) {
+          setIndice({
+            locales: d.locales || [],
+            servicios: d.servicios || [],
+            tabExiste: d.tabExiste,
+          });
+        }
+      })
+      .catch(() => {});
+  }, [loading, user, isOwner]);
 
   if (loading || !user) return null;
   if (!isOwner) return null;
+
+  const periodoActual = meses.find((m) => m.periodo === periodo);
 
   return (
     <div className="page-enter">
       <PageHeader
         title="Servicios"
-        subtitle={`${items.length} en catálogo · gasto estimado mensual`}
+        subtitle={periodoActual ? periodoActual.label : 'Cargando…'}
         showBack
       />
       <div
@@ -108,1086 +130,97 @@ export default function ServiciosPage() {
           display: 'flex',
           flexDirection: 'column',
           gap: 14,
-          paddingBottom: 'calc(var(--nav-height) + var(--safe-bottom) + 24px)',
+          paddingBottom: 'calc(var(--nav-height) + var(--safe-bottom) + 32px)',
         }}
       >
-        {/* Hero estimado */}
-        <section
-          className="lh-hero-total spring-in"
-          style={{ padding: '20px 22px' }}
-        >
-          <div
-            style={{
-              fontSize: 11,
-              letterSpacing: '0.16em',
-              textTransform: 'uppercase',
-              color: '#C4A067',
-              fontWeight: 600,
-              marginBottom: 6,
-            }}
-          >
-            Gasto estimado mensual
-          </div>
-          <div
-            className="font-brand heading-tight-lg tabular-nums-strict"
-            style={{
-              fontSize: 36,
-              fontWeight: 700,
-              lineHeight: 1,
-              color: '#F9F7F3',
-              fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
-            }}
-          >
-            $ {Math.round(totalActivosArs).toLocaleString('es-AR')}
-          </div>
-          <div style={{ marginTop: 8, color: 'rgba(249,247,243,0.72)', fontSize: 13 }}>
-            {items.filter((s) => s.activo).length} servicios activos
-          </div>
-        </section>
+        {/* Tab nav */}
+        <TabNav active={tab} onChange={setTab} />
 
-        {error && (
-          <ErrorBanner
-            text={error}
-            hint="Verificá GOOGLE_CREDENTIALS, SERVICIOS_SHEET_ID, y que el service account tenga acceso de Editor al Sheet."
+        {/* Period selector — siempre visible */}
+        {meses.length > 0 && (
+          <PeriodoSelector
+            meses={meses}
+            value={periodo}
+            onChange={setPeriodo}
           />
         )}
 
-        {/* CTA nuevo */}
-        <button
-          type="button"
-          onClick={() => setShowNuevo(true)}
-          className="press-feedback"
-          style={{
-            minHeight: 'var(--touch-min)',
-            borderRadius: 'var(--radius-md)',
-            padding: '12px 16px',
-            background: 'var(--accent)',
-            color: '#FDFBF8',
-            fontWeight: 600,
-            fontSize: 14,
-            border: 0,
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-            boxShadow:
-              'inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -1px 0 rgba(0,0,0,0.10), 0 1px 2px rgba(31,20,16,0.08), 0 6px 16px -4px rgba(184,149,111,0.45)',
-          }}
-        >
-          <PlusIcon /> Nuevo servicio
-        </button>
-
-        {/* Listado */}
-        {fetching && items.length === 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div
-                key={i}
-                className="shimmer-modern"
-                style={{ height: 84, borderRadius: 14 }}
-              />
-            ))}
-          </div>
+        {mesError && tab !== 'listado' && (
+          <ErrorBanner text={mesError} />
         )}
 
-        {!fetching && items.length === 0 && !error && (
-          <EmptyState onAdd={() => setShowNuevo(true)} />
+        {/* Tab content */}
+        {tab === 'tabla' && (
+          <TabTabla data={mesData} loading={mesLoading} indice={indice} />
+        )}
+        {tab === 'calendario' && (
+          <TabCalendario
+            indice={indice}
+            mesData={mesData}
+            periodo={periodoActual}
+          />
+        )}
+        {tab === 'listado' && (
+          <TabListado indice={indice} onAction={flashToast} />
+        )}
+        {tab === 'baigun' && (
+          <TabBaigun mesData={mesData} loading={mesLoading} />
         )}
 
-        {/* Mantenimiento: regenerar tab ÍNDICE del Sheet (owner only).
-            Botón pegado al final como link discreto. */}
+        {/* Mantenimiento — siempre al fondo, owner only */}
         <SeedIndiceButton onDone={flashToast} />
-
-        {grouped.map((g) => (
-          <section key={g.ancla}>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                paddingLeft: 4,
-                marginBottom: 8,
-              }}
-            >
-              <EyebrowTag>{ANCLA_LABELS[g.ancla]}</EyebrowTag>
-              <span
-                className="tabular-nums-strict"
-                style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  color: 'var(--text-muted)',
-                  fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
-                }}
-              >
-                $ {Math.round(g.totalArs).toLocaleString('es-AR')}
-              </span>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {g.items.map((s) => (
-                <ServicioRow
-                  key={s.id}
-                  servicio={s}
-                  isOpen={openId === s.id}
-                  onToggle={() => setOpenId((p) => (p === s.id ? null : s.id))}
-                  onPagado={async (msg) => {
-                    await refresh();
-                    flashToast(msg);
-                  }}
-                  onError={flashToast}
-                />
-              ))}
-            </div>
-          </section>
-        ))}
       </div>
-
-      {showNuevo && (
-        <NuevoServicioSheet
-          onClose={() => setShowNuevo(false)}
-          onSaved={async (msg) => {
-            setShowNuevo(false);
-            await refresh();
-            flashToast(msg);
-          }}
-          onError={flashToast}
-        />
-      )}
 
       {toast && <Toast message={toast} />}
     </div>
   );
 }
 
-// ─── Servicio row con expand ────────────────────────────────────
+// ─── Tab nav ──────────────────────────────────────────────────────
 
-function ServicioRow({
-  servicio,
-  isOpen,
-  onToggle,
-  onPagado,
-  onError,
-}: {
-  servicio: ServicioCatalogo;
-  isOpen: boolean;
-  onToggle: () => void;
-  onPagado: (msg: string) => Promise<void> | void;
-  onError: (msg: string) => void;
-}) {
-  const colors = TIPO_COLORS[servicio.tipo];
-  const [pagos, setPagos] = useState<ServicioPago[]>([]);
-  const [loadingPagos, setLoadingPagos] = useState(false);
-  const [showRegistrar, setShowRegistrar] = useState(false);
-
-  useEffect(() => {
-    if (!isOpen || pagos.length > 0) return;
-    setLoadingPagos(true);
-    fetch(`/api/servicios/pagos?servicioId=${encodeURIComponent(servicio.id)}`, {
-      cache: 'no-store',
-    })
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.ok) setPagos(d.items || []);
-      })
-      .finally(() => setLoadingPagos(false));
-  }, [isOpen, servicio.id, pagos.length]);
-
-  const ultimoPago = pagos[pagos.length - 1];
-
-  return (
-    <div
-      style={{
-        background: 'var(--bg-card)',
-        border: `1px solid ${isOpen ? 'var(--border-accent)' : 'var(--border)'}`,
-        borderRadius: 'var(--radius-md)',
-        boxShadow: 'var(--shadow-card)',
-        overflow: 'hidden',
-        transition: 'border-color 220ms var(--ease-ios)',
-      }}
-    >
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={isOpen}
-        className="press-feedback"
-        style={{
-          width: '100%',
-          minHeight: 'var(--touch-min)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          padding: 14,
-          background: 'transparent',
-          border: 0,
-          textAlign: 'left',
-          cursor: 'pointer',
-          color: 'var(--text)',
-          opacity: servicio.activo ? 1 : 0.55,
-        }}
-      >
-        <div
-          aria-hidden
-          style={{
-            width: 40,
-            height: 40,
-            borderRadius: 12,
-            background: colors.bg,
-            color: colors.fg,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-            fontSize: 11,
-            fontWeight: 700,
-            letterSpacing: '0.04em',
-            textTransform: 'uppercase',
-            fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
-          }}
-        >
-          {servicio.tipo.slice(0, 3)}
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div
-            style={{
-              fontSize: 14.5,
-              fontWeight: 600,
-              color: 'var(--text)',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
-            {servicio.nombreVisible || `${TIPO_LABELS[servicio.tipo]} — ${servicio.local}`}
-          </div>
-          <div
-            style={{
-              fontSize: 11.5,
-              color: 'var(--text-muted)',
-              marginTop: 2,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
-            {TIPO_LABELS[servicio.tipo]} · {servicio.periodicidad}
-            {servicio.vencimientoDia ? ` · vence día ${servicio.vencimientoDia}` : ''}
-          </div>
-        </div>
-        <div
-          className="tabular-nums-strict"
-          style={{
-            fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
-            fontWeight: 700,
-            fontSize: 14,
-            color: 'var(--text)',
-            whiteSpace: 'nowrap',
-            flexShrink: 0,
-          }}
-        >
-          $ {Math.round(servicio.montoEstimadoArs).toLocaleString('es-AR')}
-        </div>
-        <Chevron isOpen={isOpen} />
-      </button>
-
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateRows: isOpen ? '1fr' : '0fr',
-          transition: 'grid-template-rows 240ms var(--ease-ios)',
-        }}
-      >
-        <div style={{ overflow: 'hidden', minHeight: 0 }}>
-          <div
-            style={{
-              borderTop: '1px solid var(--border)',
-              padding: 14,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 12,
-            }}
-          >
-            <Field label="Titular" value={servicio.titularNombre || '—'} />
-            {servicio.cuentaNumero && (
-              <Field label="Cuenta" value={servicio.cuentaNumero} mono />
-            )}
-            {servicio.metodoPago && (
-              <Field
-                label="Método de pago"
-                value={MEDIO_LABELS[servicio.metodoPago as MedioPago] || servicio.metodoPago}
-              />
-            )}
-            {servicio.cbuPago && <Field label="CBU" value={servicio.cbuPago} mono />}
-            {servicio.cuentaPagoAlias && (
-              <Field label="Alias" value={servicio.cuentaPagoAlias} mono />
-            )}
-            {servicio.subarrendadoBaigun && (
-              <Field
-                label="Subarriendo Baigun"
-                value={`${servicio.baigunPorcentaje}% se redirige a la cta cte`}
-              />
-            )}
-            {ultimoPago && (
-              <Field
-                label="Último pago"
-                value={`${ultimoPago.fechaPago} · $ ${Math.round(ultimoPago.montoTotalArs).toLocaleString('es-AR')}`}
-              />
-            )}
-            {loadingPagos && pagos.length === 0 && (
-              <div
-                className="shimmer-modern"
-                style={{ height: 32, borderRadius: 8 }}
-              />
-            )}
-            <button
-              type="button"
-              onClick={() => setShowRegistrar(true)}
-              className="press-feedback"
-              style={{
-                minHeight: 'var(--touch-min)',
-                borderRadius: 'var(--radius-md)',
-                background: 'var(--accent)',
-                color: '#FDFBF8',
-                fontWeight: 600,
-                fontSize: 13.5,
-                border: 0,
-              }}
-            >
-              Registrar pago
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {showRegistrar && (
-        <RegistrarPagoSheet
-          servicio={servicio}
-          onClose={() => setShowRegistrar(false)}
-          onSaved={async (msg) => {
-            setShowRegistrar(false);
-            // Limpiar cache de pagos para forzar refresh
-            setPagos([]);
-            await onPagado(msg);
-          }}
-          onError={onError}
-        />
-      )}
-    </div>
-  );
-}
-
-// ─── Bottom sheet: nuevo servicio ───────────────────────────────
-
-function NuevoServicioSheet({
-  onClose,
-  onSaved,
-  onError,
-}: {
-  onClose: () => void;
-  onSaved: (msg: string) => Promise<void> | void;
-  onError: (msg: string) => void;
-}) {
-  const [tipo, setTipo] = useState<TipoServicio>('luz');
-  const [ancla, setAncla] = useState<Ancla>('LH1');
-  const [local, setLocal] = useState('');
-  const [nombreVisible, setNombreVisible] = useState('');
-  const [titularNombre, setTitularNombre] = useState('');
-  const [titularCuit, setTitularCuit] = useState('');
-  const [cuentaNumero, setCuentaNumero] = useState('');
-  const [periodicidad, setPeriodicidad] = useState<Periodicidad>('mensual');
-  const [montoArs, setMontoArs] = useState('');
-  const [vencDia, setVencDia] = useState('');
-  const [metodoPago, setMetodoPago] = useState<MedioPago | ''>('');
-  const [cbuPago, setCbuPago] = useState('');
-  const [aliasPago, setAliasPago] = useState('');
-  const [subBaigun, setSubBaigun] = useState(false);
-  const [baigunPct, setBaigunPct] = useState('');
-  const [notas, setNotas] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  // Auto-set ancla cuando el tipo lo sugiere (IVA/impositivo → CRONKLAM)
-  useEffect(() => {
-    const sug = sugerirAnclaPorTipo(tipo);
-    if (sug) setAncla(sug);
-  }, [tipo]);
-
-  useEffect(() => {
-    const onEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onEsc);
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', onEsc);
-      document.body.style.overflow = '';
-    };
-  }, [onClose]);
-
-  const submit = useCallback(async () => {
-    if (saving) return;
-    setSaving(true);
-    try {
-      const res = await fetch('/api/servicios', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tipo,
-          ancla,
-          local: local.trim(),
-          nombreVisible: nombreVisible.trim(),
-          titularNombre: titularNombre.trim(),
-          titularCuit: titularCuit.trim(),
-          cuentaNumero: cuentaNumero.trim(),
-          periodicidad,
-          montoEstimadoArs: parseFloat(montoArs) || 0,
-          vencimientoDia: vencDia ? parseInt(vencDia, 10) : null,
-          activo: true,
-          subarrendadoBaigun: subBaigun,
-          baigunPorcentaje: parseFloat(baigunPct) || 0,
-          metodoPago,
-          cbuPago: cbuPago.trim(),
-          cuentaPagoAlias: aliasPago.trim(),
-          notas: notas.trim(),
-        }),
-      });
-      const data = await res.json();
-      if (data.ok) onSaved('Servicio creado');
-      else onError(data.error || 'Error guardando');
-    } catch {
-      onError('Error de red');
-    } finally {
-      setSaving(false);
-    }
-  }, [
-    saving, tipo, ancla, local, nombreVisible, titularNombre, titularCuit,
-    cuentaNumero, periodicidad, montoArs, vencDia, subBaigun, baigunPct,
-    metodoPago, cbuPago, aliasPago, notas, onSaved, onError,
-  ]);
-
-  return (
-    <SheetShell title="Nuevo servicio" eyebrow="· Catálogo" onClose={onClose}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <Field label="Tipo">
-          <SelectChipsInline
-            options={TIPOS_SERVICIO.map((t) => ({ value: t, label: TIPO_LABELS[t] }))}
-            value={tipo}
-            onChange={(v) => setTipo(v as TipoServicio)}
-          />
-        </Field>
-        <Field label="Ancla (local / empresa / personal)">
-          <SelectChipsInline
-            options={ANCLAS.map((a) => ({ value: a, label: ANCLA_SHORT[a] }))}
-            value={ancla}
-            onChange={(v) => setAncla(v as Ancla)}
-          />
-        </Field>
-        <Field label="Nombre visible">
-          <input
-            className="input-pro"
-            style={{ minHeight: 'var(--touch-min)' }}
-            value={nombreVisible}
-            onChange={(e) => setNombreVisible(e.target.value)}
-            placeholder="EDESUR — LH2"
-          />
-        </Field>
-        <Field label="Local (texto libre)">
-          <input
-            className="input-pro"
-            style={{ minHeight: 'var(--touch-min)' }}
-            value={local}
-            onChange={(e) => setLocal(e.target.value)}
-            placeholder="Lharmonie Nicaragua"
-          />
-        </Field>
-        <Field label="Periodicidad">
-          <SelectChipsInline
-            options={PERIODICIDADES.map((p) => ({ value: p, label: p }))}
-            value={periodicidad}
-            onChange={(v) => setPeriodicidad(v as Periodicidad)}
-          />
-        </Field>
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10 }}>
-          <Field label="Monto estimado ARS">
-            <input
-              className="input-pro tabular-nums-strict"
-              type="text"
-              inputMode="numeric"
-              style={{ minHeight: 'var(--touch-min)' }}
-              value={montoArs}
-              onChange={(e) => setMontoArs(e.target.value)}
-              placeholder="0"
-            />
-          </Field>
-          <Field label="Vence día">
-            <input
-              className="input-pro tabular-nums-strict"
-              type="text"
-              inputMode="numeric"
-              style={{ minHeight: 'var(--touch-min)' }}
-              value={vencDia}
-              onChange={(e) => setVencDia(e.target.value)}
-              placeholder="10"
-            />
-          </Field>
-        </div>
-        <Field label="Titular (opcional)">
-          <input
-            className="input-pro"
-            style={{ minHeight: 'var(--touch-min)' }}
-            value={titularNombre}
-            onChange={(e) => setTitularNombre(e.target.value)}
-            placeholder="Cronklam SRL"
-          />
-        </Field>
-        <Field label="CUIT (opcional)">
-          <input
-            className="input-pro"
-            style={{ minHeight: 'var(--touch-min)' }}
-            value={titularCuit}
-            onChange={(e) => setTitularCuit(e.target.value)}
-            placeholder="30-71234567-8"
-            inputMode="numeric"
-          />
-        </Field>
-        <Field label="Número de cuenta del servicio (opcional)">
-          <input
-            className="input-pro"
-            style={{ minHeight: 'var(--touch-min)' }}
-            value={cuentaNumero}
-            onChange={(e) => setCuentaNumero(e.target.value)}
-            placeholder="123456789"
-          />
-        </Field>
-        <Field label="Método de pago (opcional)">
-          <SelectChipsInline
-            options={[{ value: '', label: 'Sin definir' }, ...MEDIOS_PAGO.map((m) => ({ value: m, label: MEDIO_LABELS[m] }))]}
-            value={metodoPago}
-            onChange={(v) => setMetodoPago(v as MedioPago | '')}
-          />
-        </Field>
-        {metodoPago === 'transferencia' && (
-          <>
-            <Field label="CBU">
-              <input
-                className="input-pro tabular-nums-strict"
-                style={{ minHeight: 'var(--touch-min)' }}
-                value={cbuPago}
-                onChange={(e) => setCbuPago(e.target.value)}
-                inputMode="numeric"
-                placeholder="0000003100012345678901"
-              />
-            </Field>
-            <Field label="Alias">
-              <input
-                className="input-pro"
-                style={{ minHeight: 'var(--touch-min)' }}
-                value={aliasPago}
-                onChange={(e) => setAliasPago(e.target.value)}
-                placeholder="lharmonie.cuenta"
-              />
-            </Field>
-          </>
-        )}
-        <Field label="Subarrendado a Baigun">
-          <ToggleRow
-            checked={subBaigun}
-            onChange={setSubBaigun}
-            labelOn="Sí"
-            labelOff="No"
-          />
-        </Field>
-        {subBaigun && (
-          <Field label="Porcentaje a Baigun (%)">
-            <input
-              className="input-pro tabular-nums-strict"
-              type="text"
-              inputMode="numeric"
-              style={{ minHeight: 'var(--touch-min)' }}
-              value={baigunPct}
-              onChange={(e) => setBaigunPct(e.target.value)}
-              placeholder="50"
-            />
-          </Field>
-        )}
-        <Field label="Notas (opcional)">
-          <textarea
-            className="input-pro"
-            style={{ minHeight: 60, paddingTop: 10, paddingBottom: 10 }}
-            value={notas}
-            onChange={(e) => setNotas(e.target.value)}
-            rows={2}
-          />
-        </Field>
-      </div>
-      <SheetFooter onCancel={onClose} onSubmit={submit} saving={saving} />
-    </SheetShell>
-  );
-}
-
-// ─── Bottom sheet: registrar pago ───────────────────────────────
-
-function RegistrarPagoSheet({
-  servicio,
-  onClose,
-  onSaved,
-  onError,
-}: {
-  servicio: ServicioCatalogo;
-  onClose: () => void;
-  onSaved: (msg: string) => Promise<void> | void;
-  onError: (msg: string) => void;
-}) {
-  const periodoDefault = useMemo(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-  }, []);
-  const [periodo, setPeriodo] = useState(periodoDefault);
-  const [fechaPago, setFechaPago] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  });
-  const [medioPago, setMedioPago] = useState<MedioPago>(
-    (servicio.metodoPago as MedioPago) || 'transferencia',
-  );
-  const [montoTotal, setMontoTotal] = useState(
-    String(servicio.montoEstimadoArs || ''),
-  );
-  const [montoArsEf, setMontoArsEf] = useState('');
-  const [montoUsd, setMontoUsd] = useState('');
-  const [tcUsd, setTcUsd] = useState('');
-  const [montoTransfer, setMontoTransfer] = useState('');
-  const [comprobante, setComprobante] = useState('');
-  const [notas, setNotas] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    const onEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onEsc);
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', onEsc);
-      document.body.style.overflow = '';
-    };
-  }, [onClose]);
-
-  const submit = useCallback(async () => {
-    if (saving) return;
-    if (!periodo || !fechaPago) {
-      onError('Periodo y fecha son obligatorios');
-      return;
-    }
-    setSaving(true);
-    try {
-      const baigunShare = servicio.subarrendadoBaigun
-        ? (parseFloat(montoTotal) || 0) * (servicio.baigunPorcentaje / 100)
-        : 0;
-      const res = await fetch('/api/servicios/pagos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          servicioId: servicio.id,
-          periodo,
-          fechaPago,
-          ancla: servicio.ancla,
-          montoTotalArs: parseFloat(montoTotal) || 0,
-          montoArsEfectivo: parseFloat(montoArsEf) || 0,
-          montoUsd: parseFloat(montoUsd) || 0,
-          tipoCambioUsd: parseFloat(tcUsd) || 0,
-          montoTransferenciaArs: parseFloat(montoTransfer) || 0,
-          medioPago,
-          comprobanteUrl: comprobante.trim(),
-          notas: notas.trim(),
-          baigunShareArs: baigunShare,
-        }),
-      });
-      const data = await res.json();
-      if (data.ok) onSaved('Pago registrado');
-      else onError(data.error || 'Error guardando');
-    } catch {
-      onError('Error de red');
-    } finally {
-      setSaving(false);
-    }
-  }, [
-    saving, periodo, fechaPago, servicio, montoTotal, montoArsEf, montoUsd,
-    tcUsd, montoTransfer, medioPago, comprobante, notas, onSaved, onError,
-  ]);
-
-  return (
-    <SheetShell title={`Pagar — ${servicio.nombreVisible || servicio.tipo}`} eyebrow="· Pago" onClose={onClose}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          <Field label="Periodo (YYYY-MM)">
-            <input
-              className="input-pro tabular-nums-strict"
-              style={{ minHeight: 'var(--touch-min)' }}
-              value={periodo}
-              onChange={(e) => setPeriodo(e.target.value)}
-            />
-          </Field>
-          <Field label="Fecha de pago">
-            <input
-              className="input-pro tabular-nums-strict"
-              type="date"
-              style={{ minHeight: 'var(--touch-min)' }}
-              value={fechaPago}
-              onChange={(e) => setFechaPago(e.target.value)}
-            />
-          </Field>
-        </div>
-        <Field label="Medio de pago">
-          <SelectChipsInline
-            options={MEDIOS_PAGO.map((m) => ({ value: m, label: MEDIO_LABELS[m] }))}
-            value={medioPago}
-            onChange={(v) => setMedioPago(v as MedioPago)}
-          />
-        </Field>
-        <Field label="Monto total ARS">
-          <input
-            className="input-pro tabular-nums-strict"
-            type="text"
-            inputMode="decimal"
-            style={{ minHeight: 'var(--touch-min)' }}
-            value={montoTotal}
-            onChange={(e) => setMontoTotal(e.target.value)}
-          />
-        </Field>
-        {medioPago === 'mix' && (
-          <>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <Field label="ARS efectivo">
-                <input
-                  className="input-pro tabular-nums-strict"
-                  inputMode="decimal"
-                  style={{ minHeight: 'var(--touch-min)' }}
-                  value={montoArsEf}
-                  onChange={(e) => setMontoArsEf(e.target.value)}
-                />
-              </Field>
-              <Field label="ARS transfer">
-                <input
-                  className="input-pro tabular-nums-strict"
-                  inputMode="decimal"
-                  style={{ minHeight: 'var(--touch-min)' }}
-                  value={montoTransfer}
-                  onChange={(e) => setMontoTransfer(e.target.value)}
-                />
-              </Field>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <Field label="USD">
-                <input
-                  className="input-pro tabular-nums-strict"
-                  inputMode="decimal"
-                  style={{ minHeight: 'var(--touch-min)' }}
-                  value={montoUsd}
-                  onChange={(e) => setMontoUsd(e.target.value)}
-                />
-              </Field>
-              <Field label="TC USD">
-                <input
-                  className="input-pro tabular-nums-strict"
-                  inputMode="decimal"
-                  style={{ minHeight: 'var(--touch-min)' }}
-                  value={tcUsd}
-                  onChange={(e) => setTcUsd(e.target.value)}
-                />
-              </Field>
-            </div>
-          </>
-        )}
-        <Field label="URL comprobante (opcional)">
-          <input
-            className="input-pro"
-            type="url"
-            style={{ minHeight: 'var(--touch-min)' }}
-            value={comprobante}
-            onChange={(e) => setComprobante(e.target.value)}
-            placeholder="https://drive.google.com/…"
-          />
-        </Field>
-        <Field label="Notas (opcional)">
-          <textarea
-            className="input-pro"
-            style={{ minHeight: 60, paddingTop: 10, paddingBottom: 10 }}
-            rows={2}
-            value={notas}
-            onChange={(e) => setNotas(e.target.value)}
-          />
-        </Field>
-      </div>
-      <SheetFooter onCancel={onClose} onSubmit={submit} saving={saving} />
-    </SheetShell>
-  );
-}
-
-// ─── Componentes utilitarios ────────────────────────────────────
-
-function SheetShell({
-  title,
-  eyebrow,
-  onClose,
-  children,
-}: {
-  title: string;
-  eyebrow: string;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  return (
-    <>
-      <div
-        onClick={onClose}
-        aria-hidden
-        style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(0,0,0,0.45)',
-          backdropFilter: 'blur(4px)',
-          zIndex: 90,
-          animation: 'fadeIn 0.22s var(--ease-ios) both',
-        }}
-      />
-      <div
-        ref={ref}
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        style={{
-          position: 'fixed',
-          left: 0,
-          right: 0,
-          bottom: 0,
-          maxHeight: '92vh',
-          background: 'var(--bg)',
-          borderTopLeftRadius: 22,
-          borderTopRightRadius: 22,
-          boxShadow: '0 -16px 40px rgba(0,0,0,0.18)',
-          zIndex: 100,
-          display: 'flex',
-          flexDirection: 'column',
-          paddingBottom: 'var(--safe-bottom)',
-          animation: 'sheetSlideUp 0.32s var(--ease-out-expo) both',
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0 4px' }}>
-          <div
-            style={{
-              width: 38,
-              height: 4,
-              borderRadius: 999,
-              background: 'var(--border-strong)',
-              opacity: 0.5,
-            }}
-          />
-        </div>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            justifyContent: 'space-between',
-            gap: 12,
-            padding: '4px 20px 12px',
-          }}
-        >
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div
-              style={{
-                fontSize: 9.5,
-                fontWeight: 700,
-                letterSpacing: '0.18em',
-                textTransform: 'uppercase',
-                color: 'var(--text-muted)',
-              }}
-            >
-              {eyebrow}
-            </div>
-            <h2
-              className="font-brand"
-              style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-0.022em', marginTop: 2 }}
-            >
-              {title}
-            </h2>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="press-feedback"
-            aria-label="Cerrar"
-            style={{
-              width: 'var(--touch-min)',
-              height: 'var(--touch-min)',
-              borderRadius: '50%',
-              background: 'var(--bg-subtle)',
-              border: 0,
-              flexShrink: 0,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <CloseIcon />
-          </button>
-        </div>
-        <div
-          style={{
-            flex: 1,
-            overflowY: 'auto',
-            padding: '4px 20px 16px',
-          }}
-        >
-          {children}
-        </div>
-      </div>
-    </>
-  );
-}
-
-function SheetFooter({
-  onCancel,
-  onSubmit,
-  saving,
-}: {
-  onCancel: () => void;
-  onSubmit: () => void;
-  saving: boolean;
-}) {
-  return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        gap: 8,
-        padding: '12px 0 4px',
-        marginTop: 12,
-        borderTop: '1px solid var(--border)',
-      }}
-    >
-      <button
-        type="button"
-        onClick={onCancel}
-        className="press-feedback"
-        style={{
-          minHeight: 'var(--touch-min)',
-          borderRadius: 'var(--radius-md)',
-          background: 'var(--bg-subtle)',
-          border: '1px solid var(--border)',
-          color: 'var(--text-muted)',
-          fontWeight: 600,
-          fontSize: 14,
-        }}
-      >
-        Cancelar
-      </button>
-      <button
-        type="button"
-        onClick={onSubmit}
-        disabled={saving}
-        className="press-feedback"
-        style={{
-          minHeight: 'var(--touch-min)',
-          borderRadius: 'var(--radius-md)',
-          background: 'var(--accent)',
-          color: '#FDFBF8',
-          fontWeight: 600,
-          fontSize: 14,
-          border: 0,
-          opacity: saving ? 0.6 : 1,
-          cursor: saving ? 'wait' : 'pointer',
-        }}
-      >
-        {saving ? 'Guardando…' : 'Confirmar'}
-      </button>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  value,
-  mono,
-  children,
-}: {
-  label: string;
-  value?: string;
-  mono?: boolean;
-  children?: React.ReactNode;
-}) {
-  return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <span
-        style={{
-          fontSize: 10.5,
-          fontWeight: 700,
-          letterSpacing: '0.08em',
-          textTransform: 'uppercase',
-          color: 'var(--text-muted)',
-        }}
-      >
-        {label}
-      </span>
-      {children ?? (
-        <span
-          style={{
-            fontSize: 13.5,
-            color: 'var(--text)',
-            fontFamily: mono ? 'ui-monospace, SFMono-Regular, Menlo, monospace' : undefined,
-            wordBreak: 'break-all',
-          }}
-        >
-          {value}
-        </span>
-      )}
-    </label>
-  );
-}
-
-function SelectChipsInline<T extends string>({
-  options,
-  value,
+function TabNav({
+  active,
   onChange,
 }: {
-  options: { value: T; label: string }[];
-  value: T;
-  onChange: (v: T) => void;
+  active: TabId;
+  onChange: (t: TabId) => void;
 }) {
   return (
     <div
-      className="hide-scrollbar"
+      role="tablist"
       style={{
-        display: 'flex',
-        gap: 6,
-        overflowX: 'auto',
-        scrollSnapType: 'x mandatory',
-        paddingBottom: 2,
+        display: 'grid',
+        gridTemplateColumns: 'repeat(4, 1fr)',
+        gap: 4,
+        padding: 4,
+        background: 'var(--bg-subtle)',
+        borderRadius: 'var(--radius-md)',
+        border: '1px solid var(--border)',
       }}
     >
-      {options.map((o) => {
-        const selected = o.value === value;
+      {TABS.map((t) => {
+        const sel = active === t.id;
         return (
           <button
-            key={String(o.value)}
-            type="button"
-            onClick={() => onChange(o.value)}
+            key={t.id}
+            role="tab"
+            aria-selected={sel}
+            onClick={() => onChange(t.id)}
             className="press-feedback"
-            aria-pressed={selected}
             style={{
-              minHeight: 36,
-              padding: '0 14px',
-              borderRadius: 999,
-              background: selected ? 'var(--accent)' : 'var(--bg-card)',
-              color: selected ? '#FDFBF8' : 'var(--text-muted)',
-              border: `1px solid ${selected ? 'var(--accent)' : 'var(--border)'}`,
-              fontSize: 12.5,
-              fontWeight: 600,
-              whiteSpace: 'nowrap',
+              minHeight: 38,
+              borderRadius: 'var(--radius-sm)',
+              background: sel ? 'var(--bg-card)' : 'transparent',
+              color: sel ? 'var(--text)' : 'var(--text-muted)',
+              fontWeight: sel ? 600 : 500,
+              fontSize: 13,
+              border: 0,
               cursor: 'pointer',
-              flexShrink: 0,
-              scrollSnapAlign: 'start',
+              boxShadow: sel ? 'var(--shadow-card)' : 'none',
+              transition: 'all 180ms var(--ease-ios)',
             }}
           >
-            {o.label}
+            {t.label}
           </button>
         );
       })}
@@ -1195,159 +228,806 @@ function SelectChipsInline<T extends string>({
   );
 }
 
-function ToggleRow({
-  checked,
-  onChange,
-  labelOn,
-  labelOff,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  labelOn: string;
-  labelOff: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={() => onChange(!checked)}
-      role="switch"
-      aria-checked={checked}
-      className="press-feedback"
-      style={{
-        minHeight: 'var(--touch-min)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '0 14px',
-        borderRadius: 'var(--radius-md)',
-        background: 'var(--bg-card)',
-        border: '1px solid var(--border)',
-        cursor: 'pointer',
-      }}
-    >
-      <span style={{ fontSize: 13.5, color: 'var(--text)', fontWeight: 600 }}>
-        {checked ? labelOn : labelOff}
-      </span>
-      <span
-        aria-hidden
-        style={{
-          width: 38,
-          height: 22,
-          borderRadius: 999,
-          background: checked ? 'var(--green)' : 'var(--border-strong)',
-          position: 'relative',
-          transition: 'background 220ms var(--ease-ios)',
-          flexShrink: 0,
-        }}
-      >
-        <span
-          style={{
-            position: 'absolute',
-            top: 2,
-            left: checked ? 18 : 2,
-            width: 18,
-            height: 18,
-            borderRadius: '50%',
-            background: '#FFFFFF',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.18)',
-            transition: 'left 220ms var(--ease-ios)',
-          }}
-        />
-      </span>
-    </button>
-  );
-}
+// ─── Period selector ──────────────────────────────────────────────
 
-function ErrorBanner({ text, hint }: { text: string; hint?: string }) {
+function PeriodoSelector({
+  meses,
+  value,
+  onChange,
+}: {
+  meses: ParsedPeriodo[];
+  value: string;
+  onChange: (p: string) => void;
+}) {
+  const idx = meses.findIndex((m) => m.periodo === value);
+  const prev = idx >= 0 && idx < meses.length - 1 ? meses[idx + 1] : null;
+  const next = idx > 0 ? meses[idx - 1] : null;
+  const curr = idx >= 0 ? meses[idx] : null;
+
   return (
     <div
-      role="alert"
       style={{
-        background: 'var(--critical-bg)',
-        border: '1px solid var(--critical)',
+        display: 'grid',
+        gridTemplateColumns: '40px 1fr 40px',
+        alignItems: 'center',
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border)',
         borderRadius: 'var(--radius-md)',
-        padding: 12,
-        fontSize: 12.5,
-        color: 'var(--critical)',
-        lineHeight: 1.45,
+        padding: 4,
+        boxShadow: 'var(--shadow-card)',
       }}
     >
-      <strong style={{ display: 'block', marginBottom: 2 }}>Error</strong>
-      {text}
-      {hint && (
-        <div style={{ marginTop: 6, fontSize: 11.5, color: 'var(--text-muted)' }}>
-          {hint}
+      <button
+        type="button"
+        onClick={() => prev && onChange(prev.periodo)}
+        disabled={!prev}
+        className="press-feedback"
+        aria-label="Mes anterior"
+        style={{
+          height: 36,
+          borderRadius: 'var(--radius-sm)',
+          background: 'transparent',
+          border: 0,
+          cursor: prev ? 'pointer' : 'default',
+          color: prev ? 'var(--text)' : 'var(--text-faint)',
+          fontSize: 18,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        ‹
+      </button>
+      <div style={{ textAlign: 'center' }}>
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 600,
+            color: 'var(--text)',
+            fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
+          }}
+        >
+          {curr?.label || '—'}
         </div>
-      )}
+        <div style={{ fontSize: 10.5, color: 'var(--text-muted)', letterSpacing: '0.08em' }}>
+          {curr?.tab || ''}
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={() => next && onChange(next.periodo)}
+        disabled={!next}
+        className="press-feedback"
+        aria-label="Mes siguiente"
+        style={{
+          height: 36,
+          borderRadius: 'var(--radius-sm)',
+          background: 'transparent',
+          border: 0,
+          cursor: next ? 'pointer' : 'default',
+          color: next ? 'var(--text)' : 'var(--text-faint)',
+          fontSize: 18,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        ›
+      </button>
     </div>
   );
 }
 
-function EmptyState({ onAdd }: { onAdd: () => void }) {
+// ─── Tab: Tabla (vista pivot) ─────────────────────────────────────
+
+function TabTabla({
+  data,
+  loading,
+  indice,
+}: {
+  data: ServicioMes | null;
+  loading: boolean;
+  indice: { locales: IndiceLocal[]; servicios: IndiceServicio[] };
+}) {
+  if (loading && !data) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div
+            key={i}
+            className="shimmer-modern"
+            style={{ height: 44, borderRadius: 10 }}
+          />
+        ))}
+      </div>
+    );
+  }
+  if (!data) return null;
+
+  const dataRows = data.rows.filter((r) => !r.esTotal);
+
+  // Resumen arriba
   return (
-    <div
+    <>
+      <ResumenMes data={data} />
+
+      {/* Tabla scroll horizontal */}
+      <div
+        style={{
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-md)',
+          boxShadow: 'var(--shadow-card)',
+          overflow: 'hidden',
+        }}
+      >
+        <div style={{ overflowX: 'auto', maxWidth: '100%' }}>
+          <table
+            style={{
+              width: '100%',
+              borderCollapse: 'collapse',
+              fontSize: 12,
+            }}
+          >
+            <thead>
+              <tr style={{ background: 'var(--bg-subtle)' }}>
+                <th
+                  style={{
+                    ...thStyle,
+                    position: 'sticky',
+                    left: 0,
+                    background: 'var(--bg-subtle)',
+                    zIndex: 2,
+                    minWidth: 150,
+                    textAlign: 'left',
+                  }}
+                >
+                  Servicio
+                </th>
+                {data.locales.map((loc) => (
+                  <th key={loc} style={thStyle}>
+                    {abreviarLocal(loc)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {dataRows.map((row, i) => (
+                <tr
+                  key={`${row.servicio}-${i}`}
+                  style={{
+                    background: i % 2 === 1 ? 'rgba(196,160,103,0.04)' : 'transparent',
+                  }}
+                >
+                  <td
+                    style={{
+                      ...tdStyle,
+                      position: 'sticky',
+                      left: 0,
+                      background: i % 2 === 1 ? '#faf6ef' : 'var(--bg-card)',
+                      zIndex: 1,
+                      minWidth: 150,
+                      fontWeight: 500,
+                      color: 'var(--text)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <span>{titleCase(row.servicio)}</span>
+                      <CategoriaChip
+                        servicio={row.servicio}
+                        indice={indice}
+                      />
+                    </div>
+                  </td>
+                  {data.locales.map((loc) => {
+                    const cell = row.porLocal[loc];
+                    return (
+                      <td key={loc} style={tdStyle}>
+                        <Celda cell={cell} />
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+              <tr style={{ background: 'var(--bg-subtle)', fontWeight: 700 }}>
+                <td
+                  style={{
+                    ...tdStyle,
+                    position: 'sticky',
+                    left: 0,
+                    background: 'var(--bg-subtle)',
+                    zIndex: 1,
+                    fontSize: 12,
+                  }}
+                >
+                  TOTAL
+                </td>
+                {data.locales.map((loc) => (
+                  <td
+                    key={loc}
+                    style={{
+                      ...tdStyle,
+                      fontSize: 11.5,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {data.totalPorLocal[loc]
+                      ? `$ ${Math.round(data.totalPorLocal[loc]).toLocaleString('es-AR')}`
+                      : '—'}
+                  </td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  );
+}
+
+const thStyle: React.CSSProperties = {
+  padding: '10px 8px',
+  fontSize: 10.5,
+  fontWeight: 700,
+  letterSpacing: '0.06em',
+  textTransform: 'uppercase',
+  color: 'var(--text-muted)',
+  textAlign: 'right',
+  whiteSpace: 'nowrap',
+  borderBottom: '1px solid var(--border)',
+};
+
+const tdStyle: React.CSSProperties = {
+  padding: '10px 8px',
+  fontSize: 11.5,
+  color: 'var(--text)',
+  textAlign: 'right',
+  whiteSpace: 'nowrap',
+  fontFamily: "'JetBrains Mono', monospace",
+  fontVariantNumeric: 'tabular-nums',
+};
+
+function Celda({ cell }: { cell?: { raw: string; monto: number; estado: CellEstado } }) {
+  if (!cell) return <span style={{ color: 'var(--text-faint)' }}>—</span>;
+  if (cell.estado === 'no_aplica') {
+    return <span style={{ color: 'var(--text-faint)', fontSize: 10 }}>no</span>;
+  }
+  if (cell.estado === 'pendiente') {
+    return (
+      <span
+        style={{
+          color: '#C84F3F',
+          fontSize: 10,
+          fontWeight: 600,
+          letterSpacing: '0.02em',
+          textTransform: 'uppercase',
+        }}
+      >
+        pendiente
+      </span>
+    );
+  }
+  if (cell.estado === 'pagado') {
+    return (
+      <span style={{ color: 'var(--text)' }}>
+        {cell.raw.includes('USD')
+          ? cell.raw.replace(/\s+/g, ' ').trim()
+          : `$ ${Math.round(cell.monto).toLocaleString('es-AR')}`}
+      </span>
+    );
+  }
+  return <span style={{ color: 'var(--text-faint)' }}>·</span>;
+}
+
+function ResumenMes({ data }: { data: ServicioMes }) {
+  return (
+    <section
+      className="lh-hero-total spring-in"
+      style={{ padding: '18px 20px' }}
+    >
+      <div
+        style={{
+          fontSize: 11,
+          letterSpacing: '0.16em',
+          textTransform: 'uppercase',
+          color: '#C4A067',
+          fontWeight: 600,
+          marginBottom: 6,
+        }}
+      >
+        Total pagado · {data.label}
+      </div>
+      <div
+        className="font-brand heading-tight-lg tabular-nums-strict"
+        style={{
+          fontSize: 32,
+          fontWeight: 700,
+          lineHeight: 1,
+          color: '#F9F7F3',
+          fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
+        }}
+      >
+        $ {Math.round(data.totalGeneral).toLocaleString('es-AR')}
+      </div>
+      <div
+        style={{
+          marginTop: 8,
+          display: 'flex',
+          gap: 16,
+          color: 'rgba(249,247,243,0.72)',
+          fontSize: 12.5,
+        }}
+      >
+        <span>{data.conteoPagados} pagados</span>
+        {data.conteoPendientes > 0 && (
+          <span style={{ color: '#FCA17D', fontWeight: 600 }}>
+            {data.conteoPendientes} pendientes
+          </span>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function CategoriaChip({
+  servicio,
+  indice,
+}: {
+  servicio: string;
+  indice: { servicios: IndiceServicio[] };
+}) {
+  const it = indice.servicios.find(
+    (s) => s.servicio.toUpperCase() === servicio.toUpperCase(),
+  );
+  if (!it || !it.categoria || it.categoria === '—') return null;
+  return (
+    <span
       style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        textAlign: 'center',
-        padding: '40px 16px',
+        fontSize: 9.5,
+        fontWeight: 600,
+        letterSpacing: '0.04em',
+        textTransform: 'uppercase',
+        color: 'var(--text-muted)',
       }}
     >
-      <svg
-        width="44"
-        height="44"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="var(--text-dim)"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden
-      >
-        <path d="M3 3h18v18H3z" />
-        <path d="M7 8h10M7 12h10M7 16h6" />
-      </svg>
-      <h3
-        style={{
-          fontSize: 16,
-          fontWeight: 600,
-          color: 'var(--text)',
-          marginTop: 10,
-        }}
-      >
-        Sin servicios cargados
-      </h3>
-      <p
-        style={{
-          fontSize: 13,
-          color: 'var(--text-muted)',
-          marginTop: 4,
-          maxWidth: 280,
-          lineHeight: 1.45,
-        }}
-      >
-        Sumá luz, agua, alquileres, IVA, expensas y demás obligaciones
-        recurrentes para verlas todas en un lugar.
-      </p>
+      {it.categoria}
+    </span>
+  );
+}
+
+// ─── Tab: Calendario ──────────────────────────────────────────────
+
+function TabCalendario({
+  indice,
+  mesData,
+  periodo,
+}: {
+  indice: { servicios: IndiceServicio[] };
+  mesData: ServicioMes | null;
+  periodo: ParsedPeriodo | undefined;
+}) {
+  const conVenc = indice.servicios
+    .map((s) => ({ ...s, diaNum: parseInt(s.diaVenc, 10) }))
+    .filter((s) => !isNaN(s.diaNum) && s.diaNum > 0 && s.diaNum <= 31)
+    .sort((a, b) => a.diaNum - b.diaNum);
+
+  if (conVenc.length === 0 && !indice.servicios.length) {
+    return (
+      <EmptyState
+        title="Sin ÍNDICE"
+        body="Generá el tab ÍNDICE del Sheet primero (botón al fondo)."
+      />
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <EyebrowTag>Vencimientos del mes</EyebrowTag>
+      {conVenc.length === 0 && (
+        <div
+          style={{
+            padding: 16,
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-md)',
+            color: 'var(--text-muted)',
+            fontSize: 13,
+            textAlign: 'center',
+          }}
+        >
+          No hay servicios con día de vencimiento definido en el ÍNDICE.
+          <br />
+          <span style={{ fontSize: 11.5 }}>
+            Editá el tab ÍNDICE del Sheet para agregarlos (columna "Día venc").
+          </span>
+        </div>
+      )}
+      {conVenc.map((s) => {
+        const filaMes = mesData?.rows.find(
+          (r) => r.servicio.toUpperCase() === s.servicio.toUpperCase(),
+        );
+        const tienePend = filaMes
+          ? Object.values(filaMes.porLocal).some((c) => c.estado === 'pendiente')
+          : false;
+        return (
+          <div
+            key={s.servicio}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              padding: 12,
+              background: 'var(--bg-card)',
+              border: `1px solid ${tienePend ? '#C84F3F' : 'var(--border)'}`,
+              borderRadius: 'var(--radius-md)',
+              boxShadow: 'var(--shadow-card)',
+            }}
+          >
+            <div
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 12,
+                background: tienePend ? '#FFF2EE' : 'var(--bg-subtle)',
+                color: tienePend ? '#C84F3F' : 'var(--accent)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <div style={{ fontSize: 16, fontWeight: 700, lineHeight: 1 }}>
+                {s.diaVenc}
+              </div>
+              <div
+                style={{
+                  fontSize: 8,
+                  letterSpacing: '0.1em',
+                  textTransform: 'uppercase',
+                  marginTop: 1,
+                }}
+              >
+                {periodo?.label.slice(0, 3).toLowerCase() || 'mes'}
+              </div>
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 600 }}>
+                {titleCase(s.servicio)}
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                {s.categoria} · {s.periodicidad}
+                {s.notas ? ` · ${s.notas}` : ''}
+              </div>
+            </div>
+            {tienePend && (
+              <span
+                style={{
+                  fontSize: 9.5,
+                  fontWeight: 700,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  color: '#C84F3F',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Pendiente
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Tab: Listado (catálogo desde ÍNDICE) ─────────────────────────
+
+function TabListado({
+  indice,
+  onAction,
+}: {
+  indice: { locales: IndiceLocal[]; servicios: IndiceServicio[]; tabExiste: boolean };
+  onAction: (m: string) => void;
+}) {
+  if (!indice.tabExiste) {
+    return (
+      <EmptyState
+        title="Tab ÍNDICE no existe"
+        body="Generá el ÍNDICE primero (botón al fondo) para ver el listado."
+      />
+    );
+  }
+
+  // Agrupar servicios por categoría
+  const porCategoria = new Map<string, IndiceServicio[]>();
+  for (const s of indice.servicios) {
+    const cat = s.categoria || 'Sin categoría';
+    const arr = porCategoria.get(cat) || [];
+    arr.push(s);
+    porCategoria.set(cat, arr);
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      {/* Servicios agrupados */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <EyebrowTag>Servicios — {indice.servicios.length} en catálogo</EyebrowTag>
+        {Array.from(porCategoria.entries()).map(([cat, arr]) => (
+          <section key={cat}>
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                color: 'var(--accent-hover)',
+                paddingLeft: 4,
+                marginBottom: 6,
+              }}
+            >
+              {cat}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {arr.map((s) => (
+                <div
+                  key={s.servicio}
+                  style={{
+                    padding: '10px 12px',
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-sm)',
+                  }}
+                >
+                  <div style={{ fontSize: 13.5, fontWeight: 600 }}>
+                    {titleCase(s.servicio)}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                    {s.periodicidad}
+                    {s.diaVenc && s.diaVenc !== '—'
+                      ? ` · vence día ${s.diaVenc}`
+                      : ''}
+                    {s.notas ? ` · ${s.notas}` : ''}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+
+      {/* Locales */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <EyebrowTag>Locales — {indice.locales.length}</EyebrowTag>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {indice.locales.map((l) => (
+            <div
+              key={l.col}
+              style={{
+                padding: '10px 12px',
+                background: 'var(--bg-card)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-sm)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: '0.04em',
+                  background: 'var(--bg-subtle)',
+                  color: 'var(--accent-hover)',
+                  padding: '4px 8px',
+                  borderRadius: 6,
+                  minWidth: 36,
+                  textAlign: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                {l.ancla || '—'}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{l.col}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
+                  {l.nombre || '—'}
+                  {l.notas ? ` · ${l.notas}` : ''}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <button
         type="button"
-        onClick={onAdd}
+        onClick={() => onAction('Editá el tab ÍNDICE del Sheet para agregar nuevos servicios o locales.')}
         className="press-feedback"
         style={{
-          marginTop: 16,
-          minHeight: 'var(--touch-min)',
+          minHeight: 42,
           borderRadius: 'var(--radius-md)',
-          padding: '0 20px',
+          padding: '10px 14px',
           background: 'var(--accent)',
           color: '#FDFBF8',
           fontWeight: 600,
-          fontSize: 14,
+          fontSize: 13,
           border: 0,
         }}
       >
-        Crear el primero
+        + Sumar servicio o local
       </button>
+    </div>
+  );
+}
+
+// ─── Tab: Baigun ──────────────────────────────────────────────────
+
+function TabBaigun({
+  mesData,
+  loading,
+}: {
+  mesData: ServicioMes | null;
+  loading: boolean;
+}) {
+  if (loading && !mesData) {
+    return (
+      <div className="shimmer-modern" style={{ height: 200, borderRadius: 10 }} />
+    );
+  }
+  if (!mesData) return null;
+
+  const movs = mesData.rows.filter((r) => !r.esTotal && r.baigun);
+  const saldoActual = movs.reduce((s, r) => s + r.baigunMonto, 0);
+
+  return (
+    <>
+      <section
+        className="lh-hero-total spring-in"
+        style={{ padding: '18px 20px' }}
+      >
+        <div
+          style={{
+            fontSize: 11,
+            letterSpacing: '0.16em',
+            textTransform: 'uppercase',
+            color: '#C4A067',
+            fontWeight: 600,
+            marginBottom: 6,
+          }}
+        >
+          Saldo Baigun · {mesData.label}
+        </div>
+        <div
+          className="font-brand heading-tight-lg tabular-nums-strict"
+          style={{
+            fontSize: 30,
+            fontWeight: 700,
+            lineHeight: 1,
+            color: saldoActual >= 0 ? '#F9F7F3' : '#FCA17D',
+            fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
+          }}
+        >
+          {saldoActual < 0 ? '−' : ''}$ {Math.abs(Math.round(saldoActual)).toLocaleString('es-AR')}
+        </div>
+        <div style={{ marginTop: 8, color: 'rgba(249,247,243,0.72)', fontSize: 12 }}>
+          {movs.length} movimientos asociados a Baigun este mes
+        </div>
+      </section>
+
+      {movs.length === 0 ? (
+        <EmptyState
+          title="Sin movimientos Baigun"
+          body="La columna BAIGUN está vacía o sin valores numéricos en este mes."
+        />
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {movs.map((m, i) => (
+            <div
+              key={`${m.servicio}-${i}`}
+              style={{
+                padding: '10px 14px',
+                background: 'var(--bg-card)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-sm)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 600 }}>
+                  {titleCase(m.servicio)}
+                </div>
+                {m.notas && (
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
+                    {m.notas}
+                  </div>
+                )}
+              </div>
+              <div
+                className="tabular-nums-strict"
+                style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: m.baigunMonto < 0 ? '#C84F3F' : 'var(--text)',
+                  fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {m.baigun}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─── Helpers UI ───────────────────────────────────────────────────
+
+function abreviarLocal(loc: string): string {
+  const map: Record<string, string> = {
+    'SEGUI': 'Seguí',
+    'MAURE': 'Maure',
+    'NICARAGUA': 'Nicaragua',
+    'ZABALA': 'Zabala',
+    'LIBERTADOR': 'Libertador',
+    'NUÑEZ': 'Núñez',
+    'CASA MEL Y MARTIN': 'Casa M&M',
+    'BAMBINA': 'Bambina',
+    'BAIGUN': 'Baigun',
+  };
+  const upper = loc.toUpperCase();
+  return map[upper] || titleCase(loc);
+}
+
+function titleCase(s: string): string {
+  return s
+    .toLowerCase()
+    .split(/\s+/)
+    .map((w) => (w.length > 2 ? w[0].toUpperCase() + w.slice(1) : w.toUpperCase()))
+    .join(' ');
+}
+
+function EmptyState({ title, body }: { title: string; body: string }) {
+  return (
+    <div
+      style={{
+        padding: 24,
+        background: 'var(--bg-card)',
+        border: '1px dashed var(--border)',
+        borderRadius: 'var(--radius-md)',
+        textAlign: 'center',
+      }}
+    >
+      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
+        {title}
+      </div>
+      <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 4 }}>
+        {body}
+      </div>
+    </div>
+  );
+}
+
+function ErrorBanner({ text }: { text: string }) {
+  return (
+    <div
+      style={{
+        padding: 12,
+        background: 'rgba(217,95,78,0.10)',
+        border: '1px solid rgba(217,95,78,0.25)',
+        borderRadius: 'var(--radius-md)',
+        color: '#C84F3F',
+        fontSize: 12.5,
+        lineHeight: 1.5,
+      }}
+    >
+      <strong style={{ fontSize: 13 }}>Error</strong>
+      <div style={{ marginTop: 2 }}>{text}</div>
     </div>
   );
 }
@@ -1355,23 +1035,20 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
 function Toast({ message }: { message: string }) {
   return (
     <div
-      role="status"
-      aria-live="polite"
       style={{
         position: 'fixed',
         left: '50%',
+        bottom: 'calc(var(--nav-height) + var(--safe-bottom) + 16px)',
         transform: 'translateX(-50%)',
-        bottom: 'calc(var(--nav-height) + var(--safe-bottom) + 14px)',
-        zIndex: 1000,
-        background: 'var(--header-bg)',
-        color: 'var(--text-inverse)',
-        borderRadius: 14,
+        background: 'var(--text)',
+        color: 'var(--bg-card)',
         padding: '10px 16px',
+        borderRadius: 'var(--radius-md)',
         fontSize: 13,
-        fontWeight: 600,
-        maxWidth: 'calc(100vw - 32px)',
-        boxShadow: 'var(--shadow-float)',
-        animation: 'toastIn 0.5s var(--ease-spring)',
+        fontWeight: 500,
+        boxShadow: 'var(--shadow-lg)',
+        zIndex: 100,
+        maxWidth: '90vw',
       }}
     >
       {message}
@@ -1379,46 +1056,8 @@ function Toast({ message }: { message: string }) {
   );
 }
 
-function Chevron({ isOpen }: { isOpen: boolean }) {
-  return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="var(--text-muted)"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-      style={{
-        transition: 'transform 220ms var(--ease-ios)',
-        transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-        flexShrink: 0,
-      }}
-    >
-      <path d="m6 9 6 6 6-6" />
-    </svg>
-  );
-}
+// ─── Botón: regenerar tab ÍNDICE en el Sheet ──────────────────────
 
-function PlusIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function CloseIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
-      <path d="M3 3l8 8M11 3l-8 8" stroke="var(--text)" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-// ─── Botón: regenerar tab ÍNDICE en el Sheet (owner only) ─────────
 function SeedIndiceButton({ onDone }: { onDone: (msg: string) => void }) {
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -1428,7 +1067,7 @@ function SeedIndiceButton({ onDone }: { onDone: (msg: string) => void }) {
     try {
       const r = await fetch('/api/servicios/seed-indice', { method: 'POST' });
       const d = await r.json();
-      if (d.ok) onDone('Tab ÍNDICE creado / regenerado en el Sheet');
+      if (d.ok) onDone('Tab ÍNDICE regenerado en el Sheet — recargá la página');
       else onDone(d.error || 'Error generando ÍNDICE');
     } catch {
       onDone('Error de red');
@@ -1445,27 +1084,27 @@ function SeedIndiceButton({ onDone }: { onDone: (msg: string) => void }) {
         onClick={() => setConfirming(true)}
         className="press-feedback"
         style={{
-          minHeight: 38,
+          marginTop: 24,
+          minHeight: 36,
           borderRadius: 'var(--radius-md)',
-          padding: '8px 12px',
+          padding: '6px 12px',
           background: 'transparent',
           color: 'var(--text-muted)',
           fontWeight: 500,
-          fontSize: 12,
+          fontSize: 11.5,
           border: '1px dashed var(--border)',
-          letterSpacing: '0.02em',
         }}
       >
         Regenerar tab ÍNDICE en el Sheet
       </button>
     );
   }
-
   return (
     <div
       style={{
+        marginTop: 24,
         background: 'var(--bg-card)',
-        border: '1px solid var(--border-accent, #C4A067)',
+        border: '1px solid #C4A067',
         borderRadius: 'var(--radius-md)',
         padding: 12,
         display: 'flex',
@@ -1473,13 +1112,10 @@ function SeedIndiceButton({ onDone }: { onDone: (msg: string) => void }) {
         gap: 10,
       }}
     >
-      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
-        Regenerar ÍNDICE
-      </div>
+      <div style={{ fontSize: 13, fontWeight: 600 }}>Regenerar ÍNDICE</div>
       <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-        Esto va a borrar y recrear el tab <strong>ÍNDICE</strong> del Sheet de
-        Servicios con la estructura canónica de la app. Cualquier edición
-        manual que hayas hecho en ese tab se pierde. ¿Seguir?
+        Borra y recrea el tab <strong>ÍNDICE</strong> del Sheet con la
+        estructura canónica. Cualquier edición manual se pierde.
       </div>
       <div style={{ display: 'flex', gap: 8 }}>
         <button
@@ -1487,13 +1123,9 @@ function SeedIndiceButton({ onDone }: { onDone: (msg: string) => void }) {
           onClick={() => setConfirming(false)}
           disabled={busy}
           style={{
-            flex: 1,
-            height: 38,
-            borderRadius: 'var(--radius-md)',
-            background: 'var(--bg-subtle)',
-            color: 'var(--text)',
-            fontWeight: 500,
-            fontSize: 13,
+            flex: 1, height: 36, borderRadius: 'var(--radius-md)',
+            background: 'var(--bg-subtle)', color: 'var(--text)',
+            fontWeight: 500, fontSize: 13,
             border: '1px solid var(--border)',
           }}
         >
@@ -1504,14 +1136,9 @@ function SeedIndiceButton({ onDone }: { onDone: (msg: string) => void }) {
           onClick={run}
           disabled={busy}
           style={{
-            flex: 2,
-            height: 38,
-            borderRadius: 'var(--radius-md)',
-            background: 'var(--accent)',
-            color: '#FDFBF8',
-            fontWeight: 600,
-            fontSize: 13,
-            border: 0,
+            flex: 2, height: 36, borderRadius: 'var(--radius-md)',
+            background: 'var(--accent)', color: '#FDFBF8',
+            fontWeight: 600, fontSize: 13, border: 0,
             opacity: busy ? 0.7 : 1,
           }}
         >
