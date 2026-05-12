@@ -10,10 +10,13 @@ import {
   CATEGORIA_COLORS,
   MONEDA_SYMBOLS,
   TIPO_LABELS,
+  esRowDeSesion,
   fmtMonto,
+  formatMontoLive,
   mesTabFromISO,
   nuevoIdMov,
   parseMontoInput,
+  parsePrefijoSesion,
   type Categoria,
   type Moneda,
   type MovimientoCaja,
@@ -76,6 +79,12 @@ export default function CajaPage() {
   // Filtros
   const [filterMoneda, setFilterMoneda] = useState<Moneda | 'todas'>('todas');
   const [filterCategoria, setFilterCategoria] = useState<Categoria | 'todas'>('todas');
+  const [filterTexto, setFilterTexto] = useState('');
+  const [hideSesionRows, setHideSesionRows] = useState(true);
+  // Orden: 'recientes' (desc por fila) o 'cronologico' (asc por fila).
+  // Recientes arriba es el default para que Iara vea al toque lo que
+  // acaba de cargar.
+  const [orden, setOrden] = useState<'recientes' | 'cronologico'>('recientes');
 
   // Tabs + sesiones
   const [tab, setTab] = useState<CajaTab>('sesion');
@@ -190,10 +199,29 @@ export default function CajaPage() {
   // Filtros aplicados a items
   const itemsFiltered = useMemo(() => {
     let list = items;
+    if (hideSesionRows) {
+      // Las filas que pertenecen a una sesión (descripción arranca con
+      // "S. " o "SESION ") las ocultamos por default — esos movs viven
+      // dentro del card de su sesión en el tab Sesión y rellenan ruido
+      // acá. El toggle permite verlas si Iara quiere.
+      list = list.filter((i) => !esRowDeSesion(i.descripcion));
+    }
     if (filterMoneda !== 'todas') list = list.filter((i) => i.moneda === filterMoneda);
     if (filterCategoria !== 'todas') list = list.filter((i) => i.categoria === filterCategoria);
-    return list;
-  }, [items, filterMoneda, filterCategoria]);
+    const q = filterTexto.trim().toLowerCase();
+    if (q) {
+      list = list.filter(
+        (i) =>
+          i.descripcion.toLowerCase().includes(q) ||
+          (i.categoria || '').toLowerCase().includes(q),
+      );
+    }
+    // Sort: por fila desc (newest top) o asc (cronológico).
+    const sorted = [...list].sort((a, b) =>
+      orden === 'recientes' ? b.fila - a.fila : a.fila - b.fila,
+    );
+    return sorted;
+  }, [items, filterMoneda, filterCategoria, filterTexto, hideSesionRows, orden]);
 
   // Saldo del mes (por moneda)
   const saldoMes = useMemo(() => {
@@ -540,17 +568,23 @@ export default function CajaPage() {
                     gap: 8,
                   }}
                 >
-                  {sesiones.map((s) => (
-                    <li key={s.prefijo}>
-                      <SesionRow
-                        sesion={s}
-                        confirming={deletingPrefijo === s.prefijo}
-                        onAskDelete={() => setDeletingPrefijo(s.prefijo)}
-                        onCancelDelete={() => setDeletingPrefijo(null)}
-                        onConfirmDelete={() => deleteSesion(s.prefijo)}
-                      />
-                    </li>
-                  ))}
+                  {sesiones.map((s) => {
+                    const movsDeLaSesion = items
+                      .filter((it) => it.descripcion.startsWith(s.prefijo))
+                      .sort((a, b) => a.fila - b.fila);
+                    return (
+                      <li key={s.prefijo}>
+                        <SesionRow
+                          sesion={s}
+                          movs={movsDeLaSesion}
+                          confirming={deletingPrefijo === s.prefijo}
+                          onAskDelete={() => setDeletingPrefijo(s.prefijo)}
+                          onCancelDelete={() => setDeletingPrefijo(null)}
+                          onConfirmDelete={() => deleteSesion(s.prefijo)}
+                        />
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             )}
@@ -691,6 +725,64 @@ export default function CajaPage() {
 
         {/* Filtros */}
         <section style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {/* Buscador */}
+          <div style={{ position: 'relative' }}>
+            <span
+              aria-hidden
+              style={{
+                position: 'absolute',
+                left: 12,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                color: 'var(--text-muted)',
+                pointerEvents: 'none',
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+                <path d="m20 20-3.5-3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+            </span>
+            <input
+              type="text"
+              value={filterTexto}
+              onChange={(e) => setFilterTexto(e.target.value)}
+              placeholder="Buscar por descripción o categoría…"
+              className="input-pro"
+              style={{
+                width: '100%',
+                paddingLeft: 34,
+                paddingRight: filterTexto ? 32 : 12,
+                minHeight: 40,
+                fontSize: 13,
+              }}
+            />
+            {filterTexto && (
+              <button
+                type="button"
+                onClick={() => setFilterTexto('')}
+                aria-label="Limpiar búsqueda"
+                style={{
+                  position: 'absolute',
+                  right: 6,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  width: 24,
+                  height: 24,
+                  borderRadius: 999,
+                  background: 'var(--bg-subtle)',
+                  border: 0,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                }}
+              >
+                <CloseIcon />
+              </button>
+            )}
+          </div>
           <FilterRow
             label="Moneda"
             options={[
@@ -710,6 +802,33 @@ export default function CajaPage() {
             value={filterCategoria}
             onChange={(v) => setFilterCategoria(v as Categoria | 'todas')}
           />
+          <FilterRow
+            label="Orden"
+            options={[
+              { value: 'recientes', label: 'Recientes ↑' },
+              { value: 'cronologico', label: 'Cronológico' },
+            ]}
+            value={orden}
+            onChange={(v) => setOrden(v as 'recientes' | 'cronologico')}
+          />
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              fontSize: 12,
+              color: 'var(--text-muted)',
+              padding: '4px 4px',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={hideSesionRows}
+              onChange={(e) => setHideSesionRows(e.target.checked)}
+              style={{ accentColor: 'var(--accent)', width: 16, height: 16 }}
+            />
+            <span>Ocultar filas de sesiones (se ven adentro de cada sesión)</span>
+          </label>
         </section>
 
         {/* Lista */}
@@ -784,18 +903,21 @@ function MovRow({
 }) {
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const isIngreso = mov.importe >= 0;
   const catColors = mov.categoria
     ? CATEGORIA_COLORS[mov.categoria]
     : { fg: 'var(--text-muted)', bg: 'var(--bg-subtle)' };
   const canDelete = !mov._pending && !mov._failed && mov.fila >= 3;
+  const fechaAR = mov.fecha
+    ? (() => {
+        const m = mov.fecha.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        return m ? `${m[3]}/${m[2]}/${m[1]}` : mov.fecha;
+      })()
+    : '—';
   return (
     <div
       style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 12,
-        padding: 14,
         background: mov._failed
           ? 'var(--red-bg)'
           : confirming
@@ -805,189 +927,325 @@ function MovRow({
         borderRadius: 'var(--radius-md)',
         boxShadow: 'var(--shadow-card)',
         opacity: mov._pending ? 0.7 : 1,
+        overflow: 'hidden',
         transition: 'background 180ms var(--ease-ios), border-color 180ms var(--ease-ios)',
       }}
     >
-      <div
-        aria-hidden
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        className="press-feedback"
         style={{
-          width: 40,
-          height: 40,
-          borderRadius: '50%',
-          background: isIngreso ? 'var(--green-bg)' : 'var(--red-bg)',
-          color: isIngreso ? 'var(--green)' : 'var(--red)',
+          width: '100%',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0,
+          gap: 12,
+          padding: 14,
+          background: 'transparent',
+          border: 0,
+          cursor: 'pointer',
+          textAlign: 'left',
+          color: 'inherit',
         }}
       >
-        {isIngreso ? <ArrowDownIcon /> : <ArrowUpIcon />}
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
         <div
+          aria-hidden
           style={{
-            fontSize: 14,
-            fontWeight: 600,
-            color: 'var(--text)',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}
-        >
-          {mov.descripcion || '—'}
-        </div>
-        <div
-          style={{
-            display: 'flex',
-            gap: 6,
-            alignItems: 'center',
-            marginTop: 3,
-            flexWrap: 'wrap',
-          }}
-        >
-          <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
-            {mov.fecha || '—'}
-          </span>
-          {mov.categoria && (
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                fontSize: 9.5,
-                fontWeight: 700,
-                letterSpacing: '0.04em',
-                textTransform: 'uppercase',
-                background: catColors.bg,
-                color: catColors.fg,
-                padding: '2px 7px',
-                borderRadius: 999,
-              }}
-            >
-              {mov.categoria}
-            </span>
-          )}
-          {mov._pending && (
-            <span
-              style={{
-                fontSize: 9.5,
-                fontWeight: 700,
-                letterSpacing: '0.04em',
-                textTransform: 'uppercase',
-                color: 'var(--text-muted)',
-              }}
-            >
-              · guardando…
-            </span>
-          )}
-          {mov._failed && (
-            <span
-              style={{
-                fontSize: 9.5,
-                fontWeight: 700,
-                letterSpacing: '0.04em',
-                textTransform: 'uppercase',
-                color: 'var(--red)',
-              }}
-            >
-              · falló · reintentá
-            </span>
-          )}
-        </div>
-      </div>
-      <div
-        className="tabular-nums-strict"
-        style={{
-          fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
-          fontWeight: 700,
-          fontSize: 15,
-          color: isIngreso ? 'var(--green)' : 'var(--red)',
-          whiteSpace: 'nowrap',
-          flexShrink: 0,
-        }}
-      >
-        {isIngreso ? '+' : ''}{fmtMonto(mov.importe, mov.moneda)}
-      </div>
-      {canDelete && !confirming && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            setConfirming(true);
-          }}
-          aria-label="Eliminar movimiento"
-          className="press-feedback"
-          style={{
-            width: 36,
-            height: 36,
-            minWidth: 36,
+            width: 40,
+            height: 40,
             borderRadius: '50%',
-            background: 'var(--bg-subtle)',
-            border: 0,
-            display: 'inline-flex',
+            background: isIngreso ? 'var(--green-bg)' : 'var(--red-bg)',
+            color: isIngreso ? 'var(--green)' : 'var(--red)',
+            display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: 'var(--text-muted)',
-            cursor: 'pointer',
             flexShrink: 0,
           }}
         >
-          <TrashIcon />
-        </button>
-      )}
-      {canDelete && confirming && (
-        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-          <button
-            type="button"
-            onClick={() => setConfirming(false)}
-            disabled={deleting}
-            aria-label="Cancelar"
-            className="press-feedback"
+          {isIngreso ? <ArrowDownIcon /> : <ArrowUpIcon />}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
             style={{
-              width: 36,
-              height: 36,
-              borderRadius: '50%',
-              background: 'var(--bg-card)',
-              border: '1px solid var(--border)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--text-muted)',
-              cursor: 'pointer',
+              fontSize: 14,
+              fontWeight: 600,
+              color: 'var(--text)',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
             }}
           >
-            <CloseIcon />
-          </button>
-          <button
-            type="button"
-            onClick={async () => {
-              setDeleting(true);
-              await onDelete(mov);
-              // si falló, el row se re-render con refresh y este state se pierde
-            }}
-            disabled={deleting}
-            aria-label="Confirmar eliminar"
-            className="press-feedback"
+            {mov.descripcion || '—'}
+          </div>
+          <div
             style={{
-              minHeight: 36,
-              padding: '0 12px',
-              borderRadius: 18,
-              background: 'var(--red)',
-              color: '#FDFBF8',
-              border: 0,
-              fontSize: 12,
-              fontWeight: 700,
-              cursor: deleting ? 'wait' : 'pointer',
-              opacity: deleting ? 0.6 : 1,
-              display: 'inline-flex',
+              display: 'flex',
+              gap: 6,
               alignItems: 'center',
-              gap: 4,
+              marginTop: 3,
+              flexWrap: 'wrap',
             }}
           >
-            {deleting ? '...' : 'Borrar'}
-          </button>
+            <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+              {fechaAR}
+            </span>
+            {mov.categoria && (
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  fontSize: 9.5,
+                  fontWeight: 700,
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                  background: catColors.bg,
+                  color: catColors.fg,
+                  padding: '2px 7px',
+                  borderRadius: 999,
+                }}
+              >
+                {mov.categoria}
+              </span>
+            )}
+            {mov._pending && (
+              <span
+                style={{
+                  fontSize: 9.5,
+                  fontWeight: 700,
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                  color: 'var(--text-muted)',
+                }}
+              >
+                · guardando…
+              </span>
+            )}
+            {mov._failed && (
+              <span
+                style={{
+                  fontSize: 9.5,
+                  fontWeight: 700,
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                  color: 'var(--red)',
+                }}
+              >
+                · falló · reintentá
+              </span>
+            )}
+          </div>
+        </div>
+        <div
+          className="tabular-nums-strict"
+          style={{
+            fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
+            fontWeight: 700,
+            fontSize: 15,
+            color: isIngreso ? 'var(--green)' : 'var(--red)',
+            whiteSpace: 'nowrap',
+            flexShrink: 0,
+          }}
+        >
+          {isIngreso ? '+' : ''}{fmtMonto(mov.importe, mov.moneda)}
+        </div>
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 14 14"
+          fill="none"
+          aria-hidden
+          style={{
+            transition: 'transform 220ms var(--ease-ios)',
+            transform: expanded ? 'rotate(90deg)' : 'none',
+            flexShrink: 0,
+            color: 'var(--text-muted)',
+          }}
+        >
+          <path
+            d="M5 2l5 5-5 5"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+
+      {/* Panel expandido — detalles + acción borrar */}
+      {expanded && (
+        <div
+          style={{
+            borderTop: '1px solid var(--border)',
+            padding: '12px 14px',
+            background: 'var(--bg-card-alt)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+          }}
+        >
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: 11.5 }}>
+            <Detalle label="Fila Sheet" value={String(mov.fila)} mono />
+            <Detalle label="Fecha" value={fechaAR} mono />
+            <Detalle label="Moneda" value={mov.moneda} />
+            <Detalle
+              label="Tipo"
+              value={isIngreso ? 'Ingreso' : 'Egreso'}
+              color={isIngreso ? 'var(--green)' : 'var(--red)'}
+            />
+            <Detalle
+              label="Importe firmado"
+              value={fmtMonto(mov.importe, mov.moneda)}
+              mono
+              color={isIngreso ? 'var(--green)' : 'var(--red)'}
+            />
+            {mov.saldoCol !== null && (
+              <Detalle
+                label="Saldo en Sheet"
+                value={fmtMonto(mov.saldoCol, mov.moneda)}
+                mono
+              />
+            )}
+          </div>
+          {mov.descripcion && (
+            <div
+              style={{
+                fontSize: 12,
+                color: 'var(--text)',
+                background: 'var(--bg-card)',
+                borderRadius: 8,
+                padding: '8px 10px',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                lineHeight: 1.45,
+              }}
+            >
+              {mov.descripcion}
+            </div>
+          )}
+          {canDelete && !confirming && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setConfirming(true);
+              }}
+              className="press-feedback"
+              style={{
+                alignSelf: 'flex-end',
+                height: 32,
+                padding: '0 12px',
+                borderRadius: 16,
+                background: 'transparent',
+                border: '1px solid var(--red)',
+                color: 'var(--red)',
+                fontWeight: 700,
+                fontSize: 11.5,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+              }}
+            >
+              <TrashIcon /> Eliminar
+            </button>
+          )}
+          {canDelete && confirming && (
+            <div
+              style={{
+                display: 'flex',
+                gap: 6,
+                alignSelf: 'stretch',
+                justifyContent: 'flex-end',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setConfirming(false)}
+                disabled={deleting}
+                className="press-feedback"
+                style={{
+                  height: 32,
+                  padding: '0 12px',
+                  borderRadius: 16,
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text-muted)',
+                  fontWeight: 600,
+                  fontSize: 11.5,
+                  cursor: 'pointer',
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setDeleting(true);
+                  await onDelete(mov);
+                }}
+                disabled={deleting}
+                className="press-feedback"
+                style={{
+                  height: 32,
+                  padding: '0 14px',
+                  borderRadius: 16,
+                  background: 'var(--red)',
+                  color: '#FDFBF8',
+                  border: 0,
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  cursor: deleting ? 'wait' : 'pointer',
+                  opacity: deleting ? 0.6 : 1,
+                }}
+              >
+                {deleting ? 'Borrando…' : 'Sí, borrar'}
+              </button>
+            </div>
+          )}
         </div>
       )}
+    </div>
+  );
+}
+
+function Detalle({
+  label,
+  value,
+  mono,
+  color,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+  color?: string;
+}) {
+  return (
+    <div>
+      <div
+        style={{
+          fontSize: 9.5,
+          fontWeight: 700,
+          letterSpacing: '0.08em',
+          textTransform: 'uppercase',
+          color: 'var(--text-muted)',
+          marginBottom: 1,
+        }}
+      >
+        {label}
+      </div>
+      <div
+        className={mono ? 'tabular-nums-strict' : undefined}
+        style={{
+          fontSize: 13,
+          fontWeight: 600,
+          color: color || 'var(--text)',
+        }}
+      >
+        {value}
+      </div>
     </div>
   );
 }
@@ -1396,7 +1654,12 @@ function NuevoMovSheet({
                 inputMode="numeric"
                 pattern="[0-9\-.,]*"
                 value={importeRaw}
-                onChange={(e) => setImporteRaw(e.target.value)}
+                onChange={(e) => {
+                  // Preserva el signo negativo si está al inicio (egreso)
+                  const neg = e.target.value.trim().startsWith('-');
+                  const formatted = formatMontoLive(e.target.value);
+                  setImporteRaw(neg && formatted && !formatted.startsWith('-') ? `-${formatted}` : formatted);
+                }}
                 placeholder="0"
                 className="input-pro tabular-nums-strict"
                 style={{
@@ -1788,145 +2051,353 @@ function ArrowUpIcon() {
 
 function SesionRow({
   sesion,
+  movs,
   confirming,
   onAskDelete,
   onCancelDelete,
   onConfirmDelete,
 }: {
   sesion: SesionResumenAPI;
+  movs: OptimisticMov[];
   confirming: boolean;
   onAskDelete: () => void;
   onCancelDelete: () => void;
   onConfirmDelete: () => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const totalArs = sesion.retiradoArs - sesion.gastadoArs + sesion.diferenciaArs;
+  // Sacar el turno del prefijo si está en el formato nuevo
+  const parsed = parsePrefijoSesion(sesion.prefijo);
+  const turno = parsed?.turno || '';
+  const fechaAuditada = parsed?.fechaAuditada || '';
   return (
     <div
       style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 12,
-        padding: 14,
         background: confirming ? 'var(--red-bg)' : 'var(--bg-card)',
-        border: `1px solid ${confirming ? 'var(--red)' : 'var(--border)'}`,
+        border: `1px solid ${confirming ? 'var(--red)' : expanded ? 'var(--accent)' : 'var(--border)'}`,
         borderRadius: 'var(--radius-md)',
         boxShadow: 'var(--shadow-card)',
+        overflow: 'hidden',
         transition: 'background 180ms var(--ease-ios), border-color 180ms var(--ease-ios)',
       }}
     >
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div
-          style={{
-            fontSize: 14,
-            fontWeight: 600,
-            color: 'var(--text)',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}
-        >
-          {sesion.fechaSesion} · {sesion.local}
-        </div>
-        <div
-          style={{
-            fontSize: 11.5,
-            color: 'var(--text-muted)',
-            marginTop: 3,
-          }}
-        >
-          Retiró {fmtMonto(sesion.retiradoArs, 'PESO')} · Gastó {fmtMonto(sesion.gastadoArs, 'PESO')}
-          {Math.round(sesion.diferenciaArs) !== 0 && (
-            <span style={{ color: 'var(--warn-strong)', fontWeight: 600 }}>
-              {' · '}dif {fmtMonto(sesion.diferenciaArs, 'PESO')}
-            </span>
-          )}
-        </div>
-      </div>
-      <div
-        className="tabular-nums-strict"
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        className="press-feedback"
         style={{
-          fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
-          fontWeight: 700,
-          fontSize: 16,
-          color: 'var(--text)',
-          whiteSpace: 'nowrap',
-          flexShrink: 0,
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          padding: 14,
+          background: 'transparent',
+          border: 0,
+          cursor: 'pointer',
+          textAlign: 'left',
+          color: 'inherit',
         }}
       >
-        {fmtMonto(totalArs, 'PESO')}
-      </div>
-      {!confirming ? (
-        <button
-          type="button"
-          onClick={onAskDelete}
-          aria-label="Eliminar sesión"
-          className="press-feedback"
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 600,
+              color: 'var(--text)',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {sesion.fechaSesion} · {sesion.local}
+            {turno && (
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  color: 'var(--accent-hover)',
+                  background: 'var(--accent-bg)',
+                  padding: '2px 6px',
+                  borderRadius: 4,
+                  marginLeft: 8,
+                  verticalAlign: 'middle',
+                }}
+              >
+                {turno}
+              </span>
+            )}
+          </div>
+          <div
+            style={{
+              fontSize: 11.5,
+              color: 'var(--text-muted)',
+              marginTop: 3,
+            }}
+          >
+            Retiró {fmtMonto(sesion.retiradoArs, 'PESO')} · Gastó {fmtMonto(sesion.gastadoArs, 'PESO')}
+            {Math.round(sesion.diferenciaArs) !== 0 && (
+              <span style={{ color: 'var(--warn-strong)', fontWeight: 600 }}>
+                {' · '}dif {fmtMonto(sesion.diferenciaArs, 'PESO')}
+              </span>
+            )}
+            {fechaAuditada && (
+              <span style={{ marginLeft: 6, color: 'var(--text-faint)' }}>
+                · cierra caja del {fechaAuditada}
+              </span>
+            )}
+          </div>
+        </div>
+        <div
+          className="tabular-nums-strict"
           style={{
-            width: 36,
-            height: 36,
-            minWidth: 36,
-            borderRadius: '50%',
-            background: 'var(--bg-subtle)',
-            border: 0,
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--text-muted)',
-            cursor: 'pointer',
+            fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
+            fontWeight: 700,
+            fontSize: 16,
+            color: 'var(--text)',
+            whiteSpace: 'nowrap',
             flexShrink: 0,
           }}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
-            <path
-              d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14zM10 11v6M14 11v6"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+          {fmtMonto(totalArs, 'PESO')}
+        </div>
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 14 14"
+          fill="none"
+          aria-hidden
+          style={{
+            transition: 'transform 220ms var(--ease-ios)',
+            transform: expanded ? 'rotate(90deg)' : 'none',
+            flexShrink: 0,
+            color: 'var(--text-muted)',
+          }}
+        >
+          <path
+            d="M5 2l5 5-5 5"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+
+      {expanded && (
+        <div
+          style={{
+            borderTop: '1px solid var(--border)',
+            background: 'var(--bg-card-alt)',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          {/* Detalles compactos arriba */}
+          <div
+            style={{
+              padding: '10px 14px 8px',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: 6,
+              borderBottom: movs.length > 0 ? '1px solid var(--border)' : 'none',
+            }}
+          >
+            <Detalle label="Retiró" value={fmtMonto(sesion.retiradoArs, 'PESO')} mono color="var(--green)" />
+            <Detalle label="Gastó" value={fmtMonto(sesion.gastadoArs, 'PESO')} mono color="var(--red)" />
+            <Detalle
+              label="Diferencia"
+              value={fmtMonto(sesion.diferenciaArs, 'PESO')}
+              mono
+              color={Math.abs(sesion.diferenciaArs) > 0 ? 'var(--warn-strong)' : 'var(--text-muted)'}
             />
-          </svg>
-        </button>
-      ) : (
-        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-          <button
-            type="button"
-            onClick={onCancelDelete}
-            aria-label="Cancelar"
-            className="press-feedback"
+            {sesion.retiradoUsd > 0 && (
+              <Detalle label="Retiró USD" value={fmtMonto(sesion.retiradoUsd, 'DOLAR')} mono color="var(--green)" />
+            )}
+            {sesion.gastadoUsd > 0 && (
+              <Detalle label="Gastó USD" value={fmtMonto(sesion.gastadoUsd, 'DOLAR')} mono color="var(--red)" />
+            )}
+            <Detalle label="Filas Sheet" value={String(sesion.totalRows)} mono />
+          </div>
+
+          {/* Lista de movs */}
+          {movs.length > 0 && (
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 4,
+                padding: '8px 8px',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 9.5,
+                  fontWeight: 700,
+                  letterSpacing: '0.10em',
+                  textTransform: 'uppercase',
+                  color: 'var(--text-muted)',
+                  padding: '0 6px 4px',
+                }}
+              >
+                Movimientos · {movs.length}
+              </div>
+              {movs.map((m) => {
+                const ingreso = m.importe >= 0;
+                const cat = m.categoria
+                  ? CATEGORIA_COLORS[m.categoria]
+                  : { fg: 'var(--text-muted)', bg: 'var(--bg-subtle)' };
+                // Limpiamos el prefijo del concepto para mostrar solo lo útil
+                const conceptoLimpio = m.descripcion
+                  .replace(sesion.prefijo, '')
+                  .replace(/^\s*·\s*/, '')
+                  .trim();
+                return (
+                  <div
+                    key={m._localId}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '8px 10px',
+                      background: 'var(--bg-card)',
+                      borderRadius: 8,
+                      border: '1px solid var(--border)',
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontSize: 12.5,
+                          fontWeight: 600,
+                          color: 'var(--text)',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {conceptoLimpio || '(sin descripción)'}
+                      </div>
+                      {m.categoria && (
+                        <span
+                          style={{
+                            display: 'inline-block',
+                            marginTop: 2,
+                            fontSize: 9,
+                            fontWeight: 700,
+                            letterSpacing: '0.04em',
+                            textTransform: 'uppercase',
+                            background: cat.bg,
+                            color: cat.fg,
+                            padding: '1px 6px',
+                            borderRadius: 999,
+                          }}
+                        >
+                          {m.categoria}
+                        </span>
+                      )}
+                    </div>
+                    <div
+                      className="tabular-nums-strict"
+                      style={{
+                        fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
+                        fontSize: 13,
+                        fontWeight: 700,
+                        color: ingreso ? 'var(--green)' : 'var(--red)',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {ingreso ? '+' : ''}
+                      {fmtMonto(m.importe, m.moneda)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Acciones */}
+          <div
             style={{
-              width: 36,
-              height: 36,
-              borderRadius: '50%',
-              background: 'var(--bg-card)',
-              border: '1px solid var(--border)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--text-muted)',
-              cursor: 'pointer',
+              padding: '8px 14px 12px',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: 6,
             }}
           >
-            <CloseIcon />
-          </button>
-          <button
-            type="button"
-            onClick={onConfirmDelete}
-            aria-label="Confirmar eliminar"
-            className="press-feedback"
-            style={{
-              minHeight: 36,
-              padding: '0 12px',
-              borderRadius: 18,
-              background: 'var(--red)',
-              color: '#FDFBF8',
-              border: 0,
-              fontSize: 12,
-              fontWeight: 700,
-              cursor: 'pointer',
-            }}
-          >
-            Borrar
-          </button>
+            {!confirming ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAskDelete();
+                }}
+                className="press-feedback"
+                style={{
+                  height: 32,
+                  padding: '0 12px',
+                  borderRadius: 16,
+                  background: 'transparent',
+                  border: '1px solid var(--red)',
+                  color: 'var(--red)',
+                  fontWeight: 700,
+                  fontSize: 11.5,
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                  cursor: 'pointer',
+                }}
+              >
+                Eliminar sesión
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCancelDelete();
+                  }}
+                  className="press-feedback"
+                  style={{
+                    height: 32,
+                    padding: '0 12px',
+                    borderRadius: 16,
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border)',
+                    color: 'var(--text-muted)',
+                    fontWeight: 600,
+                    fontSize: 11.5,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onConfirmDelete();
+                  }}
+                  className="press-feedback"
+                  style={{
+                    height: 32,
+                    padding: '0 14px',
+                    borderRadius: 16,
+                    background: 'var(--red)',
+                    color: '#FDFBF8',
+                    border: 0,
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Sí, borrar todo
+                </button>
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>

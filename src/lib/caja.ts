@@ -155,6 +155,46 @@ export function parseMontoInput(raw: string): number {
   return isNaN(n) ? 0 : n;
 }
 
+/** Formatea un input mientras el usuario escribe.
+ *  Entrada: lo que escribió el usuario (ej "1234567" o "1.234,5").
+ *  Salida: el mismo input pero con puntos de miles en la parte entera
+ *  (ej "1.234.567" o "1.234,5"). No prepende el símbolo de moneda —
+ *  eso lo dibuja la UI como prefix afuera del input.
+ *
+ *  Preserva los siguientes caracteres del usuario:
+ *    - signo - al inicio
+ *    - dígitos
+ *    - una sola coma como separador decimal (max 2 decimales)
+ *  Descarta todo lo demás (espacios, $, letras, etc).
+ *
+ *  Si el usuario termina escribiendo "1.234." porque viene tipeando,
+ *  igualmente devolvemos un string bien formado — la coma decimal
+ *  solo aparece si el usuario la escribió explícitamente. */
+export function formatMontoLive(raw: string): string {
+  if (!raw) return '';
+  // Permitir signo negativo al inicio
+  const neg = raw.trim().startsWith('-');
+  // Quitar todo menos dígitos y coma (la coma es decimal)
+  let cleaned = raw.replace(/[^0-9,]/g, '');
+  // Una sola coma permitida — quedarnos con la primera
+  const partes = cleaned.split(',');
+  let entero = partes[0] || '';
+  let decimal = partes.length > 1 ? partes.slice(1).join('') : null;
+  // Quitar ceros a la izquierda salvo que sea solo "0"
+  entero = entero.replace(/^0+(?=\d)/, '');
+  // Insertar puntos de miles en la parte entera (de derecha a izquierda)
+  if (entero) {
+    entero = entero.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  }
+  // Recortar decimal a 2 dígitos máximo
+  if (decimal !== null) {
+    decimal = decimal.slice(0, 2);
+  }
+  cleaned = decimal !== null ? `${entero},${decimal}` : entero;
+  if (!cleaned) return '';
+  return neg ? `-${cleaned}` : cleaned;
+}
+
 // ─── Tipos de fila ──────────────────────────────────────────────
 
 export interface MovimientoCaja {

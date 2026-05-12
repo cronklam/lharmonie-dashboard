@@ -6,8 +6,11 @@ import {
   SESION_TIPO_LABEL,
   SESION_TIPO_COLOR,
   SESION_CATEGORIAS_GASTO,
+  MONEDA_SYMBOLS,
   fmtMonto,
+  formatMontoLive,
   parseMontoInput,
+  type Moneda,
   type SesionMovInput,
   type SesionTipoMov,
   type SesionEstadoMov,
@@ -147,7 +150,7 @@ export function SesionWizard({
   // paralelos que no quedaron en la sesión.
   useEffect(() => {
     if (paso === 3 && !saldoConfirmadoStr) {
-      setSaldoConfirmadoStr(String(Math.round(encontradoArsNum)));
+      setSaldoConfirmadoStr(formatMontoLive(String(Math.round(encontradoArsNum))));
     }
   }, [paso, saldoConfirmadoStr, encontradoArsNum]);
 
@@ -752,14 +755,10 @@ function MovForm({
           </select>
         </FieldLabel>
         <FieldLabel label={`Monto ${mov.moneda === 'DOLAR' ? 'USD' : 'ARS'}`}>
-          <input
-            type="text"
-            inputMode="decimal"
-            value={mov.monto || ''}
-            onChange={(e) => onUpdate({ monto: parseMontoInput(e.target.value) })}
-            placeholder="0"
-            className="input-pro tabular-nums-strict"
-            style={{ minHeight: 'var(--touch-min)' }}
+          <MoneyInput
+            value={mov.monto}
+            moneda={mov.moneda}
+            onChange={(n) => onUpdate({ monto: n })}
           />
         </FieldLabel>
       </div>
@@ -918,39 +917,18 @@ function Paso2({
       </section>
 
       <FieldLabel label="Encontrado en caja grande · ARS">
-        <input
-          type="text"
-          inputMode="decimal"
+        <PrefixedInput
+          prefix={MONEDA_SYMBOLS.PESO}
           value={encontradoArs}
-          onChange={(e) => setEncontradoArs(e.target.value)}
-          placeholder="0"
-          className="input-pro tabular-nums-strict"
-          style={{
-            minHeight: 56,
-            fontSize: 22,
-            fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
-            fontWeight: 700,
-            textAlign: 'left',
-            paddingLeft: 16,
-          }}
+          onChange={(s) => setEncontradoArs(formatMontoLive(s))}
         />
       </FieldLabel>
 
       <FieldLabel label="Encontrado · USD (opcional)">
-        <input
-          type="text"
-          inputMode="decimal"
+        <PrefixedInput
+          prefix={MONEDA_SYMBOLS.DOLAR}
           value={encontradoUsd}
-          onChange={(e) => setEncontradoUsd(e.target.value)}
-          placeholder="0"
-          className="input-pro tabular-nums-strict"
-          style={{
-            minHeight: 56,
-            fontSize: 22,
-            fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
-            fontWeight: 700,
-            paddingLeft: 16,
-          }}
+          onChange={(s) => setEncontradoUsd(formatMontoLive(s))}
         />
       </FieldLabel>
 
@@ -1088,19 +1066,10 @@ function Paso3({
         label="Saldo confirmado · ARS"
         help="Por defecto = saldo sugerido. Editalo si Martín hizo un movimiento en paralelo."
       >
-        <input
-          type="text"
-          inputMode="decimal"
+        <PrefixedInput
+          prefix={MONEDA_SYMBOLS.PESO}
           value={saldoConfirmadoStr}
-          onChange={(e) => setSaldoConfirmadoStr(e.target.value)}
-          className="input-pro tabular-nums-strict"
-          style={{
-            minHeight: 56,
-            fontSize: 22,
-            fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
-            fontWeight: 700,
-            paddingLeft: 16,
-          }}
+          onChange={(s) => setSaldoConfirmadoStr(formatMontoLive(s))}
         />
       </FieldLabel>
 
@@ -1486,5 +1455,105 @@ function CloseIcon() {
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
       <path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
+  );
+}
+
+// ─── Money inputs ───────────────────────────────────────────────
+// MoneyInput: input controlado por número. Renderea el monto con
+// puntos de miles a medida que el usuario escribe, con $ o US$ como
+// prefix afuera del input. La parent guarda el número crudo; el
+// componente maneja su estado de texto local para preservar el
+// rastro del usuario (puede tipear "1.234,5", etc).
+
+function MoneyInput({
+  value,
+  moneda,
+  onChange,
+  placeholder = '0',
+  large = true,
+}: {
+  value: number;
+  moneda: Moneda;
+  onChange: (n: number) => void;
+  placeholder?: string;
+  large?: boolean;
+}) {
+  // estado local de texto: lo que muestra el input
+  const [text, setText] = useState<string>(() =>
+    value ? formatMontoLive(String(value)) : '',
+  );
+  // si el padre cambia el value externamente (ej al elegir tipo) re-sync
+  useEffect(() => {
+    const currentParsed = parseMontoInput(text);
+    if (Math.round(currentParsed) !== Math.round(value)) {
+      setText(value ? formatMontoLive(String(value)) : '');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+  return (
+    <PrefixedInput
+      prefix={MONEDA_SYMBOLS[moneda]}
+      value={text}
+      onChange={(s) => {
+        const formatted = formatMontoLive(s);
+        setText(formatted);
+        onChange(parseMontoInput(formatted));
+      }}
+      placeholder={placeholder}
+      large={large}
+    />
+  );
+}
+
+// PrefixedInput: input visual con un símbolo de moneda a la izq.
+// El estado es solo string — útil cuando el padre ya formatea.
+function PrefixedInput({
+  prefix,
+  value,
+  onChange,
+  placeholder = '0',
+  large = true,
+}: {
+  prefix: string;
+  value: string;
+  onChange: (s: string) => void;
+  placeholder?: string;
+  large?: boolean;
+}) {
+  return (
+    <div style={{ position: 'relative' }}>
+      <span
+        aria-hidden
+        style={{
+          position: 'absolute',
+          left: 16,
+          top: '50%',
+          transform: 'translateY(-50%)',
+          fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
+          fontWeight: 600,
+          fontSize: large ? 18 : 14,
+          color: 'var(--text-muted)',
+          pointerEvents: 'none',
+        }}
+      >
+        {prefix}
+      </span>
+      <input
+        type="text"
+        inputMode="decimal"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="input-pro tabular-nums-strict"
+        style={{
+          width: '100%',
+          minHeight: large ? 56 : 'var(--touch-min)',
+          fontSize: large ? 22 : 16,
+          fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
+          fontWeight: 700,
+          paddingLeft: prefix === 'US$' ? 56 : 38,
+        }}
+      />
+    </div>
   );
 }

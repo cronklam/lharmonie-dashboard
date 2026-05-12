@@ -485,7 +485,7 @@ export default function HomePage() {
         <div
           className="font-brand heading-tight-lg tabular-nums-strict"
           style={{
-            fontSize: 28,
+            fontSize: 40,
             fontWeight: 700,
             color: 'var(--text)',
             lineHeight: 1,
