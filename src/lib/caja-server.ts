@@ -441,7 +441,7 @@ export async function writeSesion(input: SesionInput): Promise<WriteSesionResult
       },
       mov,
     );
-    const cat = categoriaSheetParaSesion(mov.tipo);
+    const cat = categoriaSheetParaSesion(mov.tipo, mov.categoriaFina);
     if (Math.abs(mov.montoArs) > 0) {
       rowsToWrite.push({
         fecha: input.fechaControl,
@@ -640,17 +640,19 @@ export async function listSesiones(maxMonthsBack = 6): Promise<SesionResumen[]> 
       resumen.totalRows++;
       resumen.filas.push({ tab, fila });
 
-      // Clasificar por la CATEGORIA del Sheet (no confiable a 100% si
-      // alguien edita el row a mano, pero es nuestra fuente).
-      if (catRaw === 'CA') {
-        // Retiro: importe positivo entra
-        if (isUsd) resumen.retiradoUsd += importe;
-        else resumen.retiradoArs += importe;
-      } else if (catRaw === 'DIFERENCIA') {
+      // Clasificar el mov:
+      //   - categoria DIFERENCIA → ajuste de cierre
+      //   - importe > 0          → retiro (suma a caja grande)
+      //   - importe < 0          → gasto (sale de caja grande)
+      //   - categoria "CA" (legacy) → retiro, por compat con sesiones
+      //     viejas escritas antes del fix de mayo 2026.
+      if (catRaw === 'DIFERENCIA') {
         if (isUsd) resumen.diferenciaUsd += importe;
         else resumen.diferenciaArs += importe;
+      } else if (catRaw === 'CA' || importe > 0) {
+        if (isUsd) resumen.retiradoUsd += Math.abs(importe);
+        else resumen.retiradoArs += Math.abs(importe);
       } else {
-        // BISTRO u otros → gasto. El importe llega negativo en col F.
         if (isUsd) resumen.gastadoUsd += Math.abs(importe);
         else resumen.gastadoArs += Math.abs(importe);
       }

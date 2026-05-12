@@ -43,6 +43,9 @@ export const TIPO_COLORS: Record<Tipo, { fg: string; bg: string }> = {
 
 // ─── Categorías (whitelist exacto, MAYÚSCULAS) ──────────────────
 
+// Categoría "CA" se sacó del whitelist (2026-05-12) — era un error
+// en la primera versión. Si alguna fila vieja del Sheet quedó con
+// CA, queda como string libre pero no se acepta más como opción.
 export const CATEGORIAS = [
   'BISTRO',
   'SUELDOS',
@@ -54,7 +57,6 @@ export const CATEGORIAS = [
   'DIFERENCIA',
   'MES ANTERIOR',
   'VENTA IVA',
-  'CA',
 ] as const;
 
 export type Categoria = (typeof CATEGORIAS)[number];
@@ -70,7 +72,6 @@ export const CATEGORIA_COLORS: Record<Categoria, { fg: string; bg: string }> = {
   DIFERENCIA: { fg: 'var(--red)', bg: 'var(--red-bg)' },
   'MES ANTERIOR': { fg: 'var(--text-muted)', bg: 'var(--bg-subtle)' },
   'VENTA IVA': { fg: 'var(--green)', bg: 'var(--green-bg)' },
-  CA: { fg: 'var(--accent-hover)', bg: 'var(--accent-bg)' },
 };
 
 export function isCategoria(s: string): s is Categoria {
@@ -317,12 +318,23 @@ export function descripcionSesionMov(
 
 /** Mapea un mov de sesión a la CATEGORIA whitelist del Sheet.
  *  Reglas confirmadas con Martín (2026-05-12):
- *    - RETIRO → BISTRO (antes era CA, era bug)
- *    - GASTO  → BISTRO
- *    - AJUSTE → DIFERENCIA
- */
-export function categoriaSheetParaSesion(_tipo: SesionTipoMov): Categoria {
-  if (_tipo === 'AJUSTE') return 'DIFERENCIA';
+ *    - RETIRO          → siempre BISTRO.
+ *    - GASTO           → depende de la categoríaFina elegida.
+ *    - AJUSTE          → DIFERENCIA.
+ *  El mapping de categoriaFina → Categoria:
+ *    Servicios → SERVICIOS
+ *    Personal  → SUELDOS
+ *    resto     → BISTRO (Limpieza, Insumos, Bebidas, Mantenimiento,
+ *                Mensajería, Papelería, Imprevistos, Otros, sin def). */
+export function categoriaSheetParaSesion(
+  tipo: SesionTipoMov,
+  categoriaFina?: SesionCategoriaGasto | '',
+): Categoria {
+  if (tipo === 'AJUSTE') return 'DIFERENCIA';
+  if (tipo === 'RETIRO') return 'BISTRO';
+  // GASTO — depende de la categoría fina
+  if (categoriaFina === 'Servicios') return 'SERVICIOS';
+  if (categoriaFina === 'Personal') return 'SUELDOS';
   return 'BISTRO';
 }
 
