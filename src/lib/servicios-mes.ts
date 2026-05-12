@@ -90,6 +90,19 @@ export const LOCAL_TO_ANCLA: Record<string, Ancla | 'BAIGUN' | 'NOTAS'> = {
   'BAIGUN': 'BAIGUN',
 };
 
+// Reverse: ancla → nombre de columna canónico en el Sheet
+// (lo que recibe la API /api/servicios/celda como localCol)
+export const ANCLA_TO_LOCAL_COL: Record<Ancla, string> = {
+  LH1: 'SEGUI',
+  LH2: 'NICARAGUA',
+  LH3: 'MAURE',
+  LH4: 'ZABALA',
+  LH5: 'LIBERTADOR',
+  LH6: 'NUÑEZ',
+  CRONKLAM: 'BAMBINA',
+  MyP: 'CASA MEL Y MARTIN',
+};
+
 // Display name corto por ancla (la cabecera de la tabla)
 export const ANCLA_SHORT_LABEL: Record<Ancla, string> = {
   LH1: 'Segui',

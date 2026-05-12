@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../components/AuthProvider';
 import { PageHeader } from '../components/PageHeader';
@@ -10,18 +10,16 @@ import type {
   ParsedPeriodo,
   CeldaServicio,
 } from '@/lib/servicios-mes';
-import { ANCLAS_OPERATIVAS, ANCLA_SHORT_LABEL } from '@/lib/servicios-mes';
+import {
+  ANCLAS_OPERATIVAS,
+  ANCLA_SHORT_LABEL,
+  ANCLA_TO_LOCAL_COL,
+} from '@/lib/servicios-mes';
 import type { Ancla } from '@/lib/anclas';
 import type {
   IndiceLocal,
   IndiceServicio,
 } from '../api/servicios/indice/route';
-
-// /servicios — 4 tabs portados del staff app:
-//   Tabla     → pivot servicios × locales, dark espresso
-//   Calendario→ servicios por día de vencimiento (lee ÍNDICE)
-//   Listado   → KPIs + Por Local / Por Categoría
-//   Baigun    → cta cte del subarriendo Libertador
 
 type TabId = 'tabla' | 'calendario' | 'listado' | 'baigun';
 
@@ -31,6 +29,12 @@ const TABS: Array<{ id: TabId; label: string }> = [
   { id: 'listado', label: 'Listado' },
   { id: 'baigun', label: 'Baigun' },
 ];
+
+const MESES = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+];
+const MESES_ABBR = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
 export default function ServiciosPage() {
   const { user, loading, isOwner } = useAuth();
@@ -56,6 +60,11 @@ export default function ServiciosPage() {
     window.setTimeout(() => setToast(''), 3000);
   }, []);
 
+  const [editing, setEditing] = useState<{
+    row: ServicioMesRow;
+    ancla: Ancla;
+  } | null>(null);
+
   useEffect(() => {
     if (loading || !user) return;
     if (!isOwner) {
@@ -75,19 +84,27 @@ export default function ServiciosPage() {
       .catch(() => setMesError('Error de red leyendo meses'));
   }, [loading, user, isOwner, router]);
 
-  useEffect(() => {
+  const reloadMes = useCallback(async () => {
     if (!periodo) return;
     setMesLoading(true);
     setMesError(null);
-    fetch(`/api/servicios/mes?periodo=${periodo}`)
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.ok) setMesData(d.data);
-        else setMesError(d.error || 'Error cargando mes');
-      })
-      .catch(() => setMesError('Error de red'))
-      .finally(() => setMesLoading(false));
+    try {
+      const r = await fetch(`/api/servicios/mes?periodo=${periodo}`, {
+        cache: 'no-store',
+      });
+      const d = await r.json();
+      if (d.ok) setMesData(d.data);
+      else setMesError(d.error || 'Error cargando mes');
+    } catch {
+      setMesError('Error de red');
+    } finally {
+      setMesLoading(false);
+    }
   }, [periodo]);
+
+  useEffect(() => {
+    reloadMes();
+  }, [reloadMes]);
 
   useEffect(() => {
     if (loading || !user || !isOwner) return;
@@ -142,7 +159,11 @@ export default function ServiciosPage() {
         {mesError && <ErrorBanner text={mesError} />}
 
         {tab === 'tabla' && (
-          <TabTabla data={mesData} loading={mesLoading} />
+          <TabTabla
+            data={mesData}
+            loading={mesLoading}
+            onClickCell={(row, ancla) => setEditing({ row, ancla })}
+          />
         )}
         {tab === 'calendario' && (
           <TabCalendario indice={indice} mesData={mesData} />
@@ -156,6 +177,22 @@ export default function ServiciosPage() {
 
         <SeedIndiceButton onDone={flashToast} />
       </div>
+
+      {editing && (
+        <RegistrarPagoModal
+          row={editing.row}
+          ancla={editing.ancla}
+          periodo={periodo}
+          periodoLabel={mesData?.label || ''}
+          onClose={() => setEditing(null)}
+          onSaved={async (msg) => {
+            setEditing(null);
+            flashToast(msg);
+            await reloadMes();
+          }}
+          onError={flashToast}
+        />
+      )}
 
       {toast && <Toast message={toast} />}
     </div>
@@ -239,7 +276,6 @@ function PeriodoChips({
         margin: '0 -16px',
         padding: '4px 16px 8px 16px',
       }}
-      className="hide-scrollbar"
     >
       {meses.map((m) => {
         const active = m.periodo === value;
@@ -259,9 +295,6 @@ function PeriodoChips({
               fontSize: 12.5,
               fontWeight: active ? 700 : 500,
               whiteSpace: 'nowrap',
-              boxShadow: active
-                ? '0 2px 8px -2px rgba(184,149,111,0.35)'
-                : 'none',
             }}
           >
             {abbrevLabel(m.label)}
@@ -273,18 +306,19 @@ function PeriodoChips({
 }
 
 function abbrevLabel(label: string): string {
-  // "Mayo 2026" → "Mayo 26"
   return label.replace(/\s(\d{2})(\d{2})$/, ' $2');
 }
 
-// ─── Tab: TABLA (espresso dark, pivot, CRONKLAM/MyP split) ───────
+// ─── Tab: TABLA — light theme con celdas clickables ──────────────
 
 function TabTabla({
   data,
   loading,
+  onClickCell,
 }: {
   data: ServicioMes | null;
   loading: boolean;
+  onClickCell: (row: ServicioMesRow, ancla: Ancla) => void;
 }) {
   if (loading && !data) {
     return (
@@ -303,28 +337,27 @@ function TabTabla({
 
   return (
     <>
-      <ResumenMes data={data} />
-
-      <div
+      <p
         style={{
           fontSize: 11.5,
           color: 'var(--text-muted)',
-          padding: '0 4px',
-          lineHeight: 1.4,
+          lineHeight: 1.5,
+          padding: '0 2px',
         }}
       >
-        <span style={{ color: '#2D7A4F', fontWeight: 600 }}>Verde</span> = pagado este mes ·{' '}
-        <span style={{ color: '#C84F3F', fontWeight: 600 }}>Pagar</span> = pendiente ·{' '}
-        <span style={{ color: 'var(--text-faint)' }}>—</span> = no aplica
-      </div>
+        Tocá una celda para registrar el pago.{' '}
+        <span style={{ color: 'var(--green)', fontWeight: 600 }}>Verde</span> = ya pagado este mes ·{' '}
+        <span style={{ color: 'var(--accent)', fontWeight: 600 }}>Pagar</span> = pendiente ·{' '}
+        <span style={{ color: 'var(--text-faint)' }}>—</span> = no aplica.
+      </p>
 
-      {/* Tabla espresso oscuro */}
       <div
         style={{
-          background: '#0D0805',
+          background: 'var(--bg-card)',
           borderRadius: 'var(--radius-md)',
           overflow: 'hidden',
-          boxShadow: '0 4px 24px -8px rgba(0,0,0,0.30)',
+          boxShadow: 'var(--shadow-card)',
+          border: '1px solid var(--border)',
         }}
       >
         <div
@@ -333,96 +366,121 @@ function TabTabla({
             WebkitOverflowScrolling: 'touch',
           }}
         >
-          <table
+          <div
             style={{
-              width: '100%',
-              borderCollapse: 'collapse',
-              fontSize: 12,
-              minWidth: 600,
+              display: 'grid',
+              gridTemplateColumns: `130px repeat(${data.anclasOperativas.length}, minmax(82px, 1fr))`,
+              minWidth: `calc(130px + ${data.anclasOperativas.length * 82}px)`,
             }}
           >
-            <thead>
-              <tr>
-                <th
-                  style={{
-                    ...thDark,
-                    position: 'sticky',
-                    left: 0,
-                    background: '#0D0805',
-                    textAlign: 'left',
-                    minWidth: 140,
-                    zIndex: 2,
-                  }}
-                >
-                  Servicio
-                </th>
-                {data.anclasOperativas.map((a) => (
-                  <th key={a} style={thDark}>
-                    {ANCLA_SHORT_LABEL[a]}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {data.filasLocales.map((row, i) => (
+            {/* Header: esquina */}
+            <div
+              style={{
+                position: 'sticky',
+                left: 0,
+                zIndex: 4,
+                background: 'var(--header-bg)',
+                color: 'var(--text-inverse)',
+                padding: '10px 12px',
+                fontSize: 9.5,
+                fontWeight: 700,
+                letterSpacing: '0.14em',
+                textTransform: 'uppercase',
+                borderRight: '1px solid rgba(255,255,255,0.08)',
+              }}
+            >
+              Servicio
+            </div>
+            {/* Header: columnas */}
+            {data.anclasOperativas.map((a) => (
+              <div
+                key={a}
+                style={{
+                  background: 'var(--header-bg)',
+                  color: 'var(--text-inverse)',
+                  padding: '10px 6px',
+                  fontSize: 10.5,
+                  fontWeight: 700,
+                  letterSpacing: '0.04em',
+                  textAlign: 'center',
+                  borderLeft: '1px solid rgba(255,255,255,0.08)',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {ANCLA_SHORT_LABEL[a]}
+              </div>
+            ))}
+
+            {/* Filas locales */}
+            {data.filasLocales.map((row, idx) => {
+              const bg = idx % 2 === 0 ? 'var(--bg-card)' : 'var(--bg-card-alt)';
+              return (
                 <FilaTabla
-                  key={`${row.servicio}-${i}`}
+                  key={`${row.servicio}-${idx}`}
                   row={row}
                   anclas={data.anclasOperativas}
-                  zebra={i % 2 === 1}
+                  bg={bg}
+                  onClickCell={onClickCell}
                 />
-              ))}
-              {/* TOTAL */}
-              {data.filasLocales.length > 0 && (
-                <tr style={{ background: 'rgba(196,160,103,0.15)' }}>
-                  <td
-                    style={{
-                      ...tdDark,
-                      position: 'sticky',
-                      left: 0,
-                      background: '#1E1512',
-                      fontWeight: 800,
-                      letterSpacing: '0.10em',
-                      textTransform: 'uppercase',
-                      fontSize: 11,
-                      zIndex: 1,
-                    }}
-                  >
-                    TOTAL
-                  </td>
-                  {data.anclasOperativas.map((a) => {
-                    const t = data.totalPorAncla[a] || 0;
-                    return (
-                      <td
-                        key={a}
-                        style={{
-                          ...tdDark,
-                          fontWeight: 700,
-                          color: '#F9F7F3',
-                          fontSize: 11.5,
-                        }}
-                      >
-                        {t > 0
-                          ? `$${Math.round(t).toLocaleString('es-AR')}`
-                          : '—'}
-                      </td>
-                    );
-                  })}
-                </tr>
-              )}
-            </tbody>
-          </table>
+              );
+            })}
+
+            {/* Fila TOTAL */}
+            {data.filasLocales.length > 0 && (
+              <>
+                <div
+                  style={{
+                    position: 'sticky',
+                    left: 0,
+                    zIndex: 2,
+                    background: 'var(--header-bg-light)',
+                    color: 'var(--text-inverse)',
+                    padding: '12px 12px',
+                    fontSize: 10.5,
+                    fontWeight: 800,
+                    letterSpacing: '0.10em',
+                    textTransform: 'uppercase',
+                    borderTop: '1px solid var(--border)',
+                    borderRight: '1px solid rgba(255,255,255,0.08)',
+                  }}
+                >
+                  Total
+                </div>
+                {data.anclasOperativas.map((a) => {
+                  const t = data.totalPorAncla[a] || 0;
+                  return (
+                    <div
+                      key={a}
+                      className="tabular-nums-strict"
+                      style={{
+                        background: 'var(--header-bg-light)',
+                        color: 'var(--text-inverse)',
+                        padding: '12px 6px',
+                        fontSize: 10.5,
+                        fontWeight: 700,
+                        textAlign: 'center',
+                        borderTop: '1px solid var(--border)',
+                        borderLeft: '1px solid rgba(255,255,255,0.08)',
+                      }}
+                    >
+                      {t > 0 ? `$${Math.round(t).toLocaleString('es-AR')}` : '—'}
+                    </div>
+                  );
+                })}
+              </>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* CRONKLAM + MyP split */}
+      {/* Cronklam + MyP split 50/50 */}
       {(data.filasCronklam.length > 0 || data.filasMyP.length > 0) && (
         <div
           style={{
             display: 'grid',
             gridTemplateColumns: data.filasMyP.length > 0 ? '1fr 1fr' : '1fr',
             gap: 8,
-            marginTop: 8,
+            marginTop: 4,
           }}
         >
           {data.filasCronklam.length > 0 && (
@@ -431,6 +489,7 @@ function TabTabla({
               count={data.filasCronklam.length}
               filas={data.filasCronklam}
               ancla="CRONKLAM"
+              onClickCell={onClickCell}
             />
           )}
           {data.filasMyP.length > 0 && (
@@ -439,6 +498,7 @@ function TabTabla({
               count={data.filasMyP.length}
               filas={data.filasMyP}
               ancla="MyP"
+              onClickCell={onClickCell}
             />
           )}
         </div>
@@ -447,77 +507,92 @@ function TabTabla({
   );
 }
 
-const thDark: React.CSSProperties = {
-  padding: '10px 8px',
-  fontSize: 9.5,
-  fontWeight: 700,
-  letterSpacing: '0.10em',
-  textTransform: 'uppercase',
-  color: 'rgba(249,247,243,0.55)',
-  textAlign: 'right',
-  whiteSpace: 'nowrap',
-  borderBottom: '1px solid rgba(255,255,255,0.08)',
-};
-
-const tdDark: React.CSSProperties = {
-  padding: '11px 8px',
-  fontSize: 12,
-  textAlign: 'right',
-  whiteSpace: 'nowrap',
-  fontVariantNumeric: 'tabular-nums',
-  borderBottom: '1px solid rgba(255,255,255,0.04)',
-  color: '#F9F7F3',
-};
-
 function FilaTabla({
   row,
   anclas,
-  zebra,
+  bg,
+  onClickCell,
 }: {
   row: ServicioMesRow;
   anclas: Ancla[];
-  zebra: boolean;
+  bg: string;
+  onClickCell: (row: ServicioMesRow, ancla: Ancla) => void;
 }) {
-  const bg = zebra ? 'rgba(196,160,103,0.03)' : 'transparent';
   return (
-    <tr style={{ background: bg }}>
-      <td
+    <>
+      <div
         style={{
-          ...tdDark,
           position: 'sticky',
           left: 0,
-          background: zebra ? '#110A07' : '#0D0805',
-          textAlign: 'left',
+          zIndex: 1,
+          background: bg,
+          padding: '12px 12px',
+          fontSize: 13,
           fontWeight: 500,
-          color: '#F9F7F3',
-          minWidth: 140,
+          color: 'var(--text)',
+          borderTop: '1px solid var(--border)',
+          borderRight: '1px solid var(--border)',
+          display: 'flex',
+          alignItems: 'center',
         }}
       >
         {row.servicio}
-      </td>
+      </div>
       {anclas.map((a) => {
         const cell = row.porAncla[a];
         return (
-          <td key={a} style={tdDark}>
+          <button
+            key={a}
+            type="button"
+            onClick={() => onClickCell(row, a)}
+            className="press-feedback"
+            style={{
+              background: bg,
+              padding: '12px 6px',
+              fontSize: 12,
+              textAlign: 'center',
+              borderTop: '1px solid var(--border)',
+              borderLeft: '1px solid var(--border)',
+              cursor: 'pointer',
+              minHeight: 44,
+              border: 0,
+            }}
+          >
             <CeldaTabla cell={cell} />
-          </td>
+          </button>
         );
       })}
-    </tr>
+    </>
   );
 }
 
 function CeldaTabla({ cell }: { cell?: CeldaServicio }) {
-  if (!cell || cell.estado === 'no_aplica' || cell.estado === 'vacio') {
-    return <span style={{ color: 'rgba(249,247,243,0.20)' }}>—</span>;
+  if (!cell || cell.estado === 'vacio') {
+    return (
+      <span
+        style={{
+          color: 'var(--accent)',
+          fontWeight: 600,
+          fontSize: 11,
+          letterSpacing: '0.02em',
+          textTransform: 'uppercase',
+          opacity: 0.7,
+        }}
+      >
+        Pagar
+      </span>
+    );
+  }
+  if (cell.estado === 'no_aplica') {
+    return <span style={{ color: 'var(--text-faint)', fontSize: 12 }}>—</span>;
   }
   if (cell.estado === 'pendiente') {
     return (
       <span
         style={{
-          color: '#FCA17D',
+          color: '#C84F3F',
           fontSize: 11,
-          fontWeight: 600,
+          fontWeight: 700,
           letterSpacing: '0.02em',
           textTransform: 'uppercase',
         }}
@@ -527,18 +602,19 @@ function CeldaTabla({ cell }: { cell?: CeldaServicio }) {
     );
   }
   // pagado
-  let texto = cell.raw;
+  let texto: string;
   if (cell.esUsd) {
-    // ej "1400 USD" o "USD 800" → "US$ 1.400"
     texto = `US$ ${Math.round(cell.monto).toLocaleString('es-AR')}`;
   } else {
     texto = `$${Math.round(cell.monto).toLocaleString('es-AR')}`;
   }
   return (
     <span
+      className="tabular-nums-strict"
       style={{
-        color: '#86C29A',
+        color: 'var(--green)',
         fontWeight: 600,
+        fontSize: 12,
       }}
     >
       {texto}
@@ -551,11 +627,13 @@ function SplitSection({
   count,
   filas,
   ancla,
+  onClickCell,
 }: {
   label: string;
   count: number;
   filas: ServicioMesRow[];
   ancla: 'CRONKLAM' | 'MyP';
+  onClickCell: (row: ServicioMesRow, ancla: Ancla) => void;
 }) {
   return (
     <div
@@ -579,6 +657,7 @@ function SplitSection({
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
+          background: 'var(--bg-subtle)',
         }}
       >
         <span>· {label}</span>
@@ -588,44 +667,52 @@ function SplitSection({
         {filas.map((row, i) => {
           const cell = row.porAncla[ancla];
           return (
-            <div
+            <button
               key={`${row.servicio}-${i}`}
+              type="button"
+              onClick={() => onClickCell(row, ancla as Ancla)}
+              className="press-feedback"
               style={{
-                padding: '10px 12px',
+                width: '100%',
+                padding: '12px 12px',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 borderBottom: i < filas.length - 1 ? '1px solid var(--border)' : 0,
                 fontSize: 13,
+                background: 'transparent',
+                border: 0,
+                cursor: 'pointer',
+                textAlign: 'left',
               }}
             >
               <span style={{ color: 'var(--text)', fontWeight: 500 }}>
                 {row.servicio}
               </span>
               <span
+                className="tabular-nums-strict"
                 style={{
-                  fontVariantNumeric: 'tabular-nums',
-                  fontWeight: cell?.estado === 'pagado' ? 700 : 500,
+                  fontWeight: cell?.estado === 'pagado' ? 700 : 600,
                   color:
                     cell?.estado === 'pagado'
-                      ? '#2D7A4F'
+                      ? 'var(--green)'
                       : cell?.estado === 'pendiente'
                       ? '#C84F3F'
-                      : 'var(--text-muted)',
-                  fontSize: cell?.estado === 'pagado' ? 13 : 12,
-                  textTransform: cell?.estado === 'pendiente' ? 'uppercase' : 'none',
-                  letterSpacing: cell?.estado === 'pendiente' ? '0.02em' : 'normal',
+                      : 'var(--accent)',
+                  fontSize: cell?.estado === 'pagado' ? 13 : 11,
+                  textTransform: cell?.estado === 'pagado' ? 'none' : 'uppercase',
+                  letterSpacing: cell?.estado === 'pagado' ? 'normal' : '0.04em',
                 }}
               >
                 {cell?.estado === 'pagado'
                   ? cell.esUsd
                     ? `US$ ${Math.round(cell.monto).toLocaleString('es-AR')}`
                     : `$${Math.round(cell.monto).toLocaleString('es-AR')}`
-                  : cell?.estado === 'pendiente'
-                  ? 'Pagar'
-                  : '—'}
+                  : cell?.estado === 'no_aplica'
+                  ? '—'
+                  : 'Pagar'}
               </span>
-            </div>
+            </button>
           );
         })}
       </div>
@@ -633,72 +720,7 @@ function SplitSection({
   );
 }
 
-function ResumenMes({ data }: { data: ServicioMes }) {
-  const totalServs =
-    data.filasLocales.length + data.filasCronklam.length + data.filasMyP.length;
-  return (
-    <section
-      className="lh-hero-total spring-in"
-      style={{ padding: '18px 20px' }}
-    >
-      <div
-        style={{
-          fontSize: 11,
-          letterSpacing: '0.16em',
-          textTransform: 'uppercase',
-          color: '#C4A067',
-          fontWeight: 600,
-          marginBottom: 6,
-          display: 'flex',
-          gap: 12,
-          alignItems: 'center',
-        }}
-      >
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <span
-            style={{
-              width: 6, height: 6, borderRadius: 999,
-              background: '#86C29A', display: 'inline-block',
-            }}
-          />
-          Operativo
-        </span>
-        <span style={{ opacity: 0.6 }}>·</span>
-        <span>{totalServs} servicios</span>
-      </div>
-      <div
-        className="font-brand heading-tight-lg tabular-nums-strict"
-        style={{
-          fontSize: 30,
-          fontWeight: 700,
-          lineHeight: 1,
-          color: '#F9F7F3',
-          fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
-        }}
-      >
-        $ {Math.round(data.totalGeneral).toLocaleString('es-AR')}
-      </div>
-      <div
-        style={{
-          marginTop: 8,
-          display: 'flex',
-          gap: 14,
-          color: 'rgba(249,247,243,0.72)',
-          fontSize: 12,
-        }}
-      >
-        <span>{data.conteoPagados} pagados</span>
-        {data.conteoPendientes > 0 && (
-          <span style={{ color: '#FCA17D', fontWeight: 600 }}>
-            {data.conteoPendientes} pendientes
-          </span>
-        )}
-      </div>
-    </section>
-  );
-}
-
-// ─── Tab: CALENDARIO ─────────────────────────────────────────────
+// ─── Tab: CALENDARIO con scroll-to-today ─────────────────────────
 
 function TabCalendario({
   indice,
@@ -707,17 +729,76 @@ function TabCalendario({
   indice: { servicios: IndiceServicio[] };
   mesData: ServicioMes | null;
 }) {
-  const conVenc = indice.servicios
-    .map((s) => ({ ...s, diaNum: parseInt(s.diaVenc, 10) }))
-    .filter((s) => !isNaN(s.diaNum) && s.diaNum > 0 && s.diaNum <= 31)
-    .sort((a, b) => a.diaNum - b.diaNum);
+  const todayRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // Scrollear al banner HOY cuando se monta
+    const t = setTimeout(() => {
+      todayRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
+    return () => clearTimeout(t);
+  }, []);
 
   const hoy = new Date();
-  const hoyLabel = hoy.toLocaleDateString('es-AR', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  }).toUpperCase();
+
+  // Rango: mes anterior + actual + 12 adelante. Mismo patrón staff.
+  const entries = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const startMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+
+    type Entry = {
+      id: string;
+      servicio: IndiceServicio;
+      fecha: Date;
+      periodo: string;
+      pagado: boolean;
+      pendiente: boolean;
+    };
+    const out: Entry[] = [];
+
+    for (let i = 0; i < 14; i++) {
+      const m = new Date(startMonth.getFullYear(), startMonth.getMonth() + i, 1);
+      const lastDay = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
+      const periodo = `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}`;
+
+      for (const s of indice.servicios) {
+        const dia = parseInt(s.diaVenc, 10);
+        if (isNaN(dia) || dia < 1 || dia > 31) continue;
+        const diaReal = Math.min(dia, lastDay);
+        const fecha = new Date(m.getFullYear(), m.getMonth(), diaReal);
+
+        // Buscar si está pagado en mesData (solo si periodo matchea el actual)
+        let pagado = false;
+        let pendiente = false;
+        if (mesData && mesData.periodo === periodo) {
+          const fila = [
+            ...mesData.filasLocales,
+            ...mesData.filasCronklam,
+            ...mesData.filasMyP,
+          ].find(
+            (r) => r.servicio.toLowerCase() === s.servicio.toLowerCase(),
+          );
+          if (fila) {
+            const cells = Object.values(fila.porAncla);
+            pagado = cells.some((c) => c.estado === 'pagado');
+            pendiente = cells.some((c) => c.estado === 'pendiente') && !pagado;
+          }
+        }
+
+        out.push({
+          id: `${s.servicio}-${periodo}`,
+          servicio: s,
+          fecha,
+          periodo,
+          pagado,
+          pendiente,
+        });
+      }
+    }
+    out.sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
+    return out;
+  }, [indice.servicios, mesData]);
 
   if (!indice.servicios.length) {
     return (
@@ -728,199 +809,265 @@ function TabCalendario({
     );
   }
 
+  // Agrupar por mes
+  const grupos = new Map<string, typeof entries>();
+  for (const e of entries) {
+    const k = `${e.fecha.getFullYear()}-${String(e.fecha.getMonth() + 1).padStart(2, '0')}`;
+    const arr = grupos.get(k) || [];
+    arr.push(e);
+    grupos.set(k, arr);
+  }
+
+  const hoyKey = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`;
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {/* Banner HOY */}
-      <div
-        style={{
-          background: 'var(--accent)',
-          color: '#FDFBF8',
-          padding: '12px 16px',
-          borderRadius: 'var(--radius-md)',
-          fontSize: 12,
-          fontWeight: 700,
-          letterSpacing: '0.10em',
-          textTransform: 'uppercase',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-        }}
-      >
-        <span
-          style={{
-            width: 8, height: 8, borderRadius: 999,
-            background: '#FDFBF8', display: 'inline-block',
-          }}
-        />
-        Hoy · {hoyLabel}
-      </div>
-
-      {conVenc.length === 0 && (
-        <div
-          style={{
-            padding: 16,
-            background: 'var(--bg-card)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-md)',
-            color: 'var(--text-muted)',
-            fontSize: 13,
-            textAlign: 'center',
-          }}
-        >
-          No hay servicios con día de vencimiento en el ÍNDICE.
-          <br />
-          <span style={{ fontSize: 11.5 }}>
-            Editá el tab ÍNDICE → columna "Día venc".
-          </span>
-        </div>
-      )}
-
-      {conVenc.map((s) => {
-        const filaMes = mesData?.filasLocales.find(
-          (r) => r.servicio.toLowerCase() === s.servicio.toLowerCase(),
-        ) || mesData?.filasCronklam.find(
-          (r) => r.servicio.toLowerCase() === s.servicio.toLowerCase(),
-        );
-        const tienePend = filaMes
-          ? Object.values(filaMes.porAncla).some((c) => c.estado === 'pendiente')
-          : false;
-        const tienePag = filaMes
-          ? Object.values(filaMes.porAncla).some((c) => c.estado === 'pagado')
-          : false;
-        const colors = catColors(s.categoria);
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {Array.from(grupos.entries()).map(([mkey, items]) => {
+        const [y, mNum] = mkey.split('-').map((x) => parseInt(x, 10));
+        const label = `${MESES[mNum - 1]} ${y}`;
+        const esEsteMes = mkey === hoyKey;
         return (
-          <div
-            key={s.servicio}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-              padding: 12,
-              background: 'var(--bg-card)',
-              border: `1px solid ${tienePend ? '#C84F3F' : 'var(--border)'}`,
-              borderRadius: 'var(--radius-md)',
-              boxShadow: 'var(--shadow-card)',
-            }}
-          >
+          <section key={mkey}>
             <div
               style={{
-                width: 48,
-                height: 48,
-                borderRadius: 12,
-                background: tienePend ? '#FFF2EE' : 'var(--bg-subtle)',
-                color: tienePend ? '#C84F3F' : 'var(--text)',
                 display: 'flex',
-                flexDirection: 'column',
                 alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
+                justifyContent: 'space-between',
+                padding: '0 4px',
+                marginBottom: 8,
               }}
             >
-              <div style={{ fontSize: 16, fontWeight: 700, lineHeight: 1 }}>
-                {s.diaVenc}
-              </div>
-              <div
-                style={{
-                  fontSize: 8.5,
-                  letterSpacing: '0.1em',
-                  textTransform: 'uppercase',
-                  marginTop: 1,
-                  fontWeight: 600,
-                }}
-              >
-                {MESES_CORTOS[hoy.getMonth()]}
-              </div>
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div
-                style={{
-                  fontSize: 14,
-                  fontWeight: 600,
-                  color: 'var(--text)',
-                  marginBottom: 4,
-                }}
-              >
-                {s.servicio}
-              </div>
-              <div
-                style={{
-                  display: 'flex',
-                  gap: 6,
-                  flexWrap: 'wrap',
-                  alignItems: 'center',
-                }}
-              >
-                {s.categoria && (
-                  <span
-                    style={{
-                      fontSize: 9.5,
-                      fontWeight: 700,
-                      letterSpacing: '0.06em',
-                      textTransform: 'uppercase',
-                      padding: '2px 6px',
-                      borderRadius: 4,
-                      background: colors.bg,
-                      color: colors.fg,
-                    }}
-                  >
-                    {s.categoria}
-                  </span>
-                )}
-                <span
-                  style={{
-                    fontSize: 9.5,
-                    fontWeight: 600,
-                    letterSpacing: '0.05em',
-                    textTransform: 'uppercase',
-                    color: 'var(--text-muted)',
-                  }}
-                >
-                  {s.periodicidad === 'mensual' ? 'manual' : s.periodicidad}
-                </span>
-                {tienePag && !tienePend && (
-                  <span style={{ fontSize: 11, color: '#2D7A4F', fontWeight: 600 }}>
-                    ✓ pagado
-                  </span>
-                )}
-              </div>
-            </div>
-            {tienePend && (
               <span
                 style={{
-                  fontSize: 10,
+                  fontSize: 11,
                   fontWeight: 700,
-                  letterSpacing: '0.06em',
+                  letterSpacing: '0.10em',
                   textTransform: 'uppercase',
-                  color: '#C84F3F',
+                  color: esEsteMes ? 'var(--accent-hover)' : 'var(--text-muted)',
                 }}
               >
-                Pendiente
+                {esEsteMes && (
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      width: 6,
+                      height: 6,
+                      borderRadius: 999,
+                      background: 'var(--accent)',
+                      marginRight: 6,
+                      verticalAlign: 'middle',
+                    }}
+                  />
+                )}
+                {label}
               </span>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                {items.length} servs
+              </span>
+            </div>
+
+            {/* Banner HOY si este mes */}
+            {esEsteMes && (
+              <div
+                ref={todayRef}
+                style={{
+                  background: 'var(--accent)',
+                  color: '#FDFBF8',
+                  padding: '12px 16px',
+                  borderRadius: 'var(--radius-md)',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: '0.10em',
+                  textTransform: 'uppercase',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  marginBottom: 8,
+                  boxShadow: '0 4px 16px -4px rgba(196,160,103,0.35)',
+                }}
+              >
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: 999,
+                    background: '#FDFBF8',
+                    display: 'inline-block',
+                  }}
+                />
+                Hoy · {hoy.getDate()} de {MESES[hoy.getMonth()]} de {hoy.getFullYear()}
+              </div>
             )}
-          </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {items.map((e) => (
+                <CalendarioCard key={e.id} entry={e} hoy={hoy} />
+              ))}
+            </div>
+          </section>
         );
       })}
     </div>
   );
 }
 
-const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+function CalendarioCard({
+  entry,
+  hoy,
+}: {
+  entry: {
+    id: string;
+    servicio: IndiceServicio;
+    fecha: Date;
+    periodo: string;
+    pagado: boolean;
+    pendiente: boolean;
+  };
+  hoy: Date;
+}) {
+  const dia = entry.fecha.getDate();
+  const mes = MESES_ABBR[entry.fecha.getMonth()].toUpperCase();
+  const esHoy =
+    entry.fecha.getDate() === hoy.getDate() &&
+    entry.fecha.getMonth() === hoy.getMonth() &&
+    entry.fecha.getFullYear() === hoy.getFullYear();
+  const esPasado = entry.fecha.getTime() < hoy.setHours(0, 0, 0, 0);
+  const colors = catColors(entry.servicio.categoria);
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        padding: 12,
+        background: 'var(--bg-card)',
+        border: `1px solid ${
+          entry.pendiente ? '#C84F3F' : esHoy ? 'var(--accent)' : 'var(--border)'
+        }`,
+        borderRadius: 'var(--radius-md)',
+        boxShadow: 'var(--shadow-card)',
+        opacity: esPasado && !entry.pagado && !entry.pendiente ? 0.65 : 1,
+      }}
+    >
+      <div
+        style={{
+          width: 48,
+          height: 48,
+          borderRadius: 12,
+          background: entry.pagado
+            ? 'var(--green-bg)'
+            : entry.pendiente
+            ? 'rgba(217,95,78,0.10)'
+            : 'var(--bg-subtle)',
+          color: entry.pagado
+            ? 'var(--green)'
+            : entry.pendiente
+            ? '#C84F3F'
+            : 'var(--text)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}
+      >
+        <div
+          className="tabular-nums-strict"
+          style={{ fontSize: 17, fontWeight: 700, lineHeight: 1 }}
+        >
+          {dia}
+        </div>
+        <div
+          style={{
+            fontSize: 8.5,
+            letterSpacing: '0.10em',
+            marginTop: 1,
+            fontWeight: 600,
+          }}
+        >
+          {mes}
+        </div>
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontSize: 14,
+            fontWeight: 600,
+            color: 'var(--text)',
+            marginBottom: 4,
+          }}
+        >
+          {entry.servicio.servicio}
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            gap: 6,
+            flexWrap: 'wrap',
+            alignItems: 'center',
+          }}
+        >
+          {entry.servicio.categoria && (
+            <span
+              style={{
+                fontSize: 9,
+                fontWeight: 700,
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                padding: '2px 6px',
+                borderRadius: 4,
+                background: colors.bg,
+                color: colors.fg,
+              }}
+            >
+              {entry.servicio.categoria}
+            </span>
+          )}
+          {entry.servicio.notas && (
+            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+              {entry.servicio.notas}
+            </span>
+          )}
+          {entry.pagado && (
+            <span style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700 }}>
+              ✓ pagado
+            </span>
+          )}
+        </div>
+      </div>
+      {entry.pendiente && (
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: '0.06em',
+            textTransform: 'uppercase',
+            color: '#C84F3F',
+          }}
+        >
+          Pendiente
+        </span>
+      )}
+    </div>
+  );
+}
 
 function catColors(cat: string): { bg: string; fg: string } {
   const c = (cat || '').toLowerCase();
+  if (c.includes('luz')) return { bg: 'rgba(245,158,11,0.14)', fg: '#A05A00' };
+  if (c.includes('agua')) return { bg: 'rgba(59,130,246,0.14)', fg: '#1E40AF' };
+  if (c.includes('gas')) return { bg: 'rgba(220,38,38,0.12)', fg: '#991B1B' };
+  if (c.includes('internet')) return { bg: 'rgba(124,58,237,0.12)', fg: '#5B21B6' };
+  if (c.includes('iva')) return { bg: 'rgba(31,20,16,0.10)', fg: '#3E2A1F' };
+  if (c.includes('alquiler')) return { bg: 'rgba(74,124,62,0.14)', fg: '#2E7D32' };
+  if (c.includes('expensas')) return { bg: 'rgba(184,149,111,0.16)', fg: '#8B6D5A' };
   if (c.includes('impositivo')) return { bg: 'rgba(124,58,237,0.10)', fg: '#7C3AED' };
-  if (c.includes('expensas')) return { bg: 'rgba(184,149,111,0.15)', fg: '#8B6F47' };
-  if (c.includes('iva')) return { bg: 'rgba(217,95,78,0.10)', fg: '#C84F3F' };
-  if (c.includes('agua')) return { bg: 'rgba(21,101,192,0.10)', fg: '#1565C0' };
-  if (c.includes('gas')) return { bg: 'rgba(217,95,78,0.10)', fg: '#C84F3F' };
-  if (c.includes('luz')) return { bg: 'rgba(217,165,31,0.12)', fg: '#B7791F' };
-  if (c.includes('internet')) return { bg: 'rgba(124,58,237,0.10)', fg: '#7C3AED' };
-  if (c.includes('alquiler')) return { bg: 'rgba(78,52,46,0.10)', fg: '#4E342E' };
   if (c.includes('sistema')) return { bg: 'var(--bg-subtle)', fg: 'var(--text)' };
   return { bg: 'var(--bg-subtle)', fg: 'var(--text-muted)' };
 }
 
-// ─── Tab: LISTADO (KPIs + Por Local / Por Categoría) ─────────────
+// ─── Tab: LISTADO con cards expandables ───────────────────────────
 
 function TabListado({
   indice,
@@ -932,6 +1079,7 @@ function TabListado({
   onAction: (m: string) => void;
 }) {
   const [view, setView] = useState<'local' | 'categoria'>('local');
+  const [expandedAncla, setExpandedAncla] = useState<string | null>(null);
 
   if (!indice.tabExiste) {
     return (
@@ -942,20 +1090,18 @@ function TabListado({
     );
   }
 
-  // KPIs
   const pagadoArs = mesData?.totalGeneral || 0;
-  const pagadosCount = mesData?.conteoPagados || 0;
   const pendientesCount = mesData?.conteoPendientes || 0;
+  const pagadosCount = mesData?.conteoPagados || 0;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      {/* KPI cards 2x2 */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
         <KPICard
-          eyebrow="Pagado · este mes"
+          eyebrow="Pagado este mes"
           value={`$${Math.round(pagadoArs).toLocaleString('es-AR')}`}
-          sub={`${pagadosCount} celdas pagadas`}
-          color="#2D7A4F"
+          sub={`${pagadosCount} pagos cargados`}
+          color="var(--green)"
         />
         <KPICard
           eyebrow="Falta pagar"
@@ -965,7 +1111,6 @@ function TabListado({
         />
       </div>
 
-      {/* Toggle Por Local | Por Categoría */}
       <div
         style={{
           display: 'grid',
@@ -1003,17 +1148,20 @@ function TabListado({
       </div>
 
       {view === 'local' ? (
-        <ListadoPorLocal locales={indice.locales} mesData={mesData} />
+        <ListadoPorLocal
+          locales={indice.locales}
+          mesData={mesData}
+          expandedAncla={expandedAncla}
+          onToggle={(a) => setExpandedAncla((p) => (p === a ? null : a))}
+        />
       ) : (
-        <ListadoPorCategoria servicios={indice.servicios} />
+        <ListadoPorCategoria servicios={indice.servicios} mesData={mesData} />
       )}
 
       <button
         type="button"
         onClick={() =>
-          onAction(
-            'Editá el tab ÍNDICE del Sheet para sumar nuevos servicios o locales.',
-          )
+          onAction('Editá el tab ÍNDICE del Sheet para sumar nuevos servicios o locales.')
         }
         className="press-feedback"
         style={{
@@ -1029,6 +1177,312 @@ function TabListado({
       >
         + Sumar servicio o local
       </button>
+    </div>
+  );
+}
+
+function ListadoPorLocal({
+  locales,
+  mesData,
+  expandedAncla,
+  onToggle,
+}: {
+  locales: IndiceLocal[];
+  mesData: ServicioMes | null;
+  expandedAncla: string | null;
+  onToggle: (a: string) => void;
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {locales.map((l) => {
+        const ancla = l.ancla || '—';
+        // Servicios que tienen data en este local este mes
+        const allRows = mesData
+          ? [...mesData.filasLocales, ...mesData.filasCronklam, ...mesData.filasMyP]
+          : [];
+        const servicios = allRows.filter((r) => {
+          const cell = r.porAncla[ancla];
+          return cell && (cell.estado === 'pagado' || cell.estado === 'pendiente');
+        });
+        const totalLocal = servicios.reduce((s, r) => {
+          const c = r.porAncla[ancla];
+          if (!c || c.estado !== 'pagado' || c.esUsd) return s;
+          return s + c.monto;
+        }, 0);
+        const expanded = expandedAncla === ancla;
+        return (
+          <div
+            key={l.col}
+            style={{
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-md)',
+              boxShadow: 'var(--shadow-card)',
+              overflow: 'hidden',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => onToggle(ancla)}
+              className="press-feedback"
+              aria-expanded={expanded}
+              style={{
+                width: '100%',
+                padding: '12px 14px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                background: 'transparent',
+                border: 0,
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              <div
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 999,
+                  background: 'var(--bg-subtle)',
+                  color: 'var(--accent-hover)',
+                  fontWeight: 700,
+                  fontSize: 11,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  letterSpacing: '0.02em',
+                  flexShrink: 0,
+                }}
+              >
+                {l.ancla || '?'}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
+                  {l.nombre || l.col}
+                </div>
+                <div
+                  className="tabular-nums-strict"
+                  style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}
+                >
+                  {servicios.length} servicios
+                  {totalLocal > 0
+                    ? ` · $${Math.round(totalLocal).toLocaleString('es-AR')}/mes`
+                    : ''}
+                </div>
+              </div>
+              <Chevron expanded={expanded} />
+            </button>
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateRows: expanded ? '1fr' : '0fr',
+                transition: 'grid-template-rows 240ms var(--ease-ios)',
+              }}
+            >
+              <div style={{ overflow: 'hidden', minHeight: 0 }}>
+                {servicios.length === 0 ? (
+                  <div
+                    style={{
+                      padding: '12px 14px',
+                      borderTop: '1px solid var(--border)',
+                      fontSize: 12.5,
+                      color: 'var(--text-muted)',
+                      textAlign: 'center',
+                    }}
+                  >
+                    Sin movimientos este mes.
+                  </div>
+                ) : (
+                  <div>
+                    {servicios.map((r, i) => {
+                      const cell = r.porAncla[ancla];
+                      return (
+                        <div
+                          key={`${r.servicio}-${i}`}
+                          style={{
+                            padding: '10px 14px',
+                            borderTop: '1px solid var(--border)',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            gap: 8,
+                          }}
+                        >
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 600 }}>
+                              {r.servicio}
+                            </div>
+                            {r.notas && (
+                              <div
+                                style={{
+                                  fontSize: 11,
+                                  color: 'var(--text-muted)',
+                                  marginTop: 1,
+                                }}
+                              >
+                                {r.notas}
+                              </div>
+                            )}
+                          </div>
+                          <span
+                            className="tabular-nums-strict"
+                            style={{
+                              fontSize: 12.5,
+                              fontWeight: cell?.estado === 'pagado' ? 700 : 600,
+                              color:
+                                cell?.estado === 'pagado'
+                                  ? 'var(--green)'
+                                  : '#C84F3F',
+                              whiteSpace: 'nowrap',
+                              textTransform: cell?.estado === 'pendiente' ? 'uppercase' : 'none',
+                              letterSpacing: cell?.estado === 'pendiente' ? '0.04em' : 'normal',
+                            }}
+                          >
+                            {cell?.estado === 'pagado'
+                              ? cell.esUsd
+                                ? `US$ ${Math.round(cell.monto).toLocaleString('es-AR')}`
+                                : `$${Math.round(cell.monto).toLocaleString('es-AR')}`
+                              : 'Pagar'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function Chevron({ expanded }: { expanded: boolean }) {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      style={{
+        transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+        transition: 'transform 240ms var(--ease-ios)',
+        color: 'var(--text-muted)',
+        flexShrink: 0,
+      }}
+    >
+      <path d="m6 9 6 6 6-6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function ListadoPorCategoria({
+  servicios,
+  mesData,
+}: {
+  servicios: IndiceServicio[];
+  mesData: ServicioMes | null;
+}) {
+  const porCategoria = new Map<string, IndiceServicio[]>();
+  for (const s of servicios) {
+    const cat = s.categoria || 'Sin categoría';
+    const arr = porCategoria.get(cat) || [];
+    arr.push(s);
+    porCategoria.set(cat, arr);
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {Array.from(porCategoria.entries()).map(([cat, arr]) => {
+        const colors = catColors(cat);
+        return (
+          <section key={cat}>
+            <div
+              style={{
+                display: 'inline-block',
+                padding: '4px 8px',
+                borderRadius: 6,
+                fontSize: 9.5,
+                fontWeight: 700,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                background: colors.bg,
+                color: colors.fg,
+                marginBottom: 6,
+              }}
+            >
+              {cat} · {arr.length}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {arr.map((s) => {
+                // Buscar último monto pagado
+                const allRows = mesData
+                  ? [
+                      ...mesData.filasLocales,
+                      ...mesData.filasCronklam,
+                      ...mesData.filasMyP,
+                    ]
+                  : [];
+                const fila = allRows.find(
+                  (r) => r.servicio.toLowerCase() === s.servicio.toLowerCase(),
+                );
+                const pagados = fila
+                  ? Object.values(fila.porAncla).filter((c) => c.estado === 'pagado')
+                  : [];
+                const totalPagado = pagados.reduce(
+                  (sum, c) => sum + (c.esUsd ? 0 : c.monto),
+                  0,
+                );
+                return (
+                  <div
+                    key={s.servicio}
+                    style={{
+                      padding: '10px 12px',
+                      background: 'var(--bg-card)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius-sm)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: 8,
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 600 }}>{s.servicio}</div>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: 'var(--text-muted)',
+                          marginTop: 1,
+                        }}
+                      >
+                        {s.periodicidad}
+                        {s.diaVenc && s.diaVenc !== '—'
+                          ? ` · vence ${s.diaVenc}`
+                          : ''}
+                      </div>
+                    </div>
+                    {totalPagado > 0 && (
+                      <span
+                        className="tabular-nums-strict"
+                        style={{
+                          fontSize: 12.5,
+                          fontWeight: 700,
+                          color: 'var(--green)',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        ${Math.round(totalPagado).toLocaleString('es-AR')}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })}
     </div>
   );
 }
@@ -1085,135 +1539,6 @@ function KPICard({
   );
 }
 
-function ListadoPorLocal({
-  locales,
-  mesData,
-}: {
-  locales: IndiceLocal[];
-  mesData: ServicioMes | null;
-}) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      {locales.map((l) => {
-        const totalLocal = mesData
-          ? Object.values(mesData.totalPorAncla).reduce((s, v) => {
-              // sum del local específico — buscamos por ancla
-              return s;
-            }, 0)
-          : 0;
-        const ancla = l.ancla || '—';
-        const totalAncla = mesData?.totalPorAncla[ancla] || 0;
-        const servCount = mesData
-          ? mesData.filasLocales.filter((r) =>
-              r.porAncla[ancla] &&
-              (r.porAncla[ancla].estado === 'pagado' ||
-                r.porAncla[ancla].estado === 'pendiente'),
-            ).length
-          : 0;
-        return (
-          <div
-            key={l.col}
-            style={{
-              padding: '12px 14px',
-              background: 'var(--bg-card)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-md)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-            }}
-          >
-            <div
-              style={{
-                width: 44, height: 44,
-                borderRadius: 999,
-                background: 'var(--bg-subtle)',
-                color: 'var(--accent-hover)',
-                fontWeight: 700, fontSize: 11,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                letterSpacing: '0.02em',
-                flexShrink: 0,
-              }}
-            >
-              {l.ancla || '?'}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
-                {l.nombre || l.col}
-              </div>
-              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>
-                {servCount > 0
-                  ? `${servCount} servicios · $${Math.round(totalAncla).toLocaleString('es-AR')}/mes`
-                  : 'sin movimiento este mes'}
-              </div>
-            </div>
-            <span style={{ color: 'var(--text-faint)', fontSize: 18 }}>›</span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function ListadoPorCategoria({ servicios }: { servicios: IndiceServicio[] }) {
-  const porCategoria = new Map<string, IndiceServicio[]>();
-  for (const s of servicios) {
-    const cat = s.categoria || 'Sin categoría';
-    const arr = porCategoria.get(cat) || [];
-    arr.push(s);
-    porCategoria.set(cat, arr);
-  }
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      {Array.from(porCategoria.entries()).map(([cat, arr]) => {
-        const colors = catColors(cat);
-        return (
-          <section key={cat}>
-            <div
-              style={{
-                display: 'inline-block',
-                padding: '4px 8px',
-                borderRadius: 6,
-                fontSize: 9.5,
-                fontWeight: 700,
-                letterSpacing: '0.08em',
-                textTransform: 'uppercase',
-                background: colors.bg,
-                color: colors.fg,
-                marginBottom: 6,
-              }}
-            >
-              {cat} · {arr.length}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {arr.map((s) => (
-                <div
-                  key={s.servicio}
-                  style={{
-                    padding: '10px 12px',
-                    background: 'var(--bg-card)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 'var(--radius-sm)',
-                  }}
-                >
-                  <div style={{ fontSize: 13.5, fontWeight: 600 }}>{s.servicio}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
-                    {s.periodicidad}
-                    {s.diaVenc && s.diaVenc !== '—' ? ` · vence ${s.diaVenc}` : ''}
-                    {s.notas ? ` · ${s.notas}` : ''}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        );
-      })}
-    </div>
-  );
-}
-
 // ─── Tab: BAIGUN ──────────────────────────────────────────────────
 
 function TabBaigun({
@@ -1224,9 +1549,7 @@ function TabBaigun({
   loading: boolean;
 }) {
   if (loading && !mesData) {
-    return (
-      <div className="shimmer-modern" style={{ height: 200, borderRadius: 10 }} />
-    );
+    return <div className="shimmer-modern" style={{ height: 200, borderRadius: 10 }} />;
   }
   if (!mesData) return null;
 
@@ -1235,6 +1558,7 @@ function TabBaigun({
     ...mesData.filasCronklam,
     ...mesData.filasMyP,
   ].filter((r) => !r.esTotal && r.baigun);
+
   const saldoActual = movs.reduce((s, r) => s + r.baigunMonto, 0);
   const debitos = movs.filter((m) => m.baigunMonto < 0).reduce((s, m) => s + m.baigunMonto, 0);
   const creditos = movs.filter((m) => m.baigunMonto > 0).reduce((s, m) => s + m.baigunMonto, 0);
@@ -1248,7 +1572,7 @@ function TabBaigun({
           borderRadius: 'var(--radius-md)',
           padding: 18,
           boxShadow: 'var(--shadow-card)',
-          borderLeft: `4px solid ${saldoActual >= 0 ? '#2D7A4F' : '#C84F3F'}`,
+          borderLeft: `4px solid ${saldoActual >= 0 ? 'var(--green)' : '#C84F3F'}`,
         }}
       >
         <div
@@ -1269,19 +1593,23 @@ function TabBaigun({
             fontSize: 32,
             fontWeight: 700,
             lineHeight: 1,
-            color: saldoActual >= 0 ? '#2D7A4F' : '#C84F3F',
+            color: saldoActual >= 0 ? 'var(--green)' : '#C84F3F',
             fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
           }}
         >
           {saldoActual < 0 ? '−' : ''}${Math.abs(Math.round(saldoActual)).toLocaleString('es-AR')}
         </div>
         <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
-          {saldoActual > 0 ? 'a favor de Lharmonie' : saldoActual < 0 ? 'a favor de Baigun' : 'sin saldo'}
+          {saldoActual > 0
+            ? 'a favor de Lharmonie'
+            : saldoActual < 0
+            ? 'a favor de Baigun'
+            : 'sin saldo'}
         </div>
         <div
           style={{
             display: 'flex',
-            gap: 12,
+            gap: 14,
             marginTop: 12,
             fontSize: 11.5,
             color: 'var(--text-muted)',
@@ -1350,7 +1678,7 @@ function TabBaigun({
                     style={{
                       fontSize: 13,
                       fontWeight: 700,
-                      color: m.baigunMonto < 0 ? '#C84F3F' : '#2D7A4F',
+                      color: m.baigunMonto < 0 ? '#C84F3F' : 'var(--green)',
                       whiteSpace: 'nowrap',
                     }}
                   >
@@ -1372,7 +1700,305 @@ function TabBaigun({
   );
 }
 
-// ─── Helpers UI compartidos ───────────────────────────────────────
+// ─── Modal: Registrar pago (click celda) ─────────────────────────
+
+function RegistrarPagoModal({
+  row,
+  ancla,
+  periodo,
+  periodoLabel,
+  onClose,
+  onSaved,
+  onError,
+}: {
+  row: ServicioMesRow;
+  ancla: Ancla;
+  periodo: string;
+  periodoLabel: string;
+  onClose: () => void;
+  onSaved: (msg: string) => Promise<void> | void;
+  onError: (msg: string) => void;
+}) {
+  const cell = row.porAncla[ancla];
+  const yaPagado = cell?.estado === 'pagado';
+  const noAplica = cell?.estado === 'no_aplica';
+  const localCol = ANCLA_TO_LOCAL_COL[ancla];
+
+  const [monto, setMonto] = useState('');
+  const [moneda, setMoneda] = useState<'ARS' | 'USD'>(cell?.esUsd ? 'USD' : 'ARS');
+  const [saving, setSaving] = useState(false);
+  const [confirmForzar, setConfirmForzar] = useState(false);
+
+  useEffect(() => {
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onEsc);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onEsc);
+      document.body.style.overflow = '';
+    };
+  }, [onClose]);
+
+  const submit = useCallback(
+    async (forzar: boolean) => {
+      if (saving) return;
+      const m = parseFloat(monto.replace(/\./g, '').replace(',', '.'));
+      if (!m || isNaN(m) || m <= 0) {
+        onError('Monto inválido');
+        return;
+      }
+      setSaving(true);
+      try {
+        const valor =
+          moneda === 'USD'
+            ? `${Math.round(m).toLocaleString('es-AR')} USD`
+            : `$${Math.round(m).toLocaleString('es-AR')}`;
+        const r = await fetch('/api/servicios/celda', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            periodo,
+            servicioRaw: row.servicioRaw,
+            localCol,
+            valor,
+            forzar,
+          }),
+        });
+        const d = await r.json();
+        if (d.ok) {
+          onSaved('Pago registrado');
+        } else if (r.status === 409 && !forzar) {
+          setConfirmForzar(true);
+        } else {
+          onError(d.error || 'Error guardando');
+        }
+      } catch {
+        onError('Error de red');
+      } finally {
+        setSaving(false);
+      }
+    },
+    [saving, monto, moneda, periodo, row.servicioRaw, localCol, onError, onSaved],
+  );
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(13,8,5,0.50)',
+        backdropFilter: 'blur(4px)',
+        zIndex: 200,
+        display: 'flex',
+        alignItems: 'flex-end',
+        justifyContent: 'center',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          maxWidth: 480,
+          background: 'var(--bg-card)',
+          borderTopLeftRadius: 24,
+          borderTopRightRadius: 24,
+          padding: 20,
+          maxHeight: '90vh',
+          overflowY: 'auto',
+          boxShadow: '0 -8px 32px -8px rgba(0,0,0,0.30)',
+        }}
+      >
+        <div
+          style={{
+            width: 40,
+            height: 4,
+            borderRadius: 999,
+            background: 'var(--border)',
+            margin: '0 auto 16px',
+          }}
+        />
+
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: '0.10em',
+            textTransform: 'uppercase',
+            color: 'var(--accent-hover)',
+            marginBottom: 6,
+          }}
+        >
+          · {ANCLA_SHORT_LABEL[ancla]} · {periodoLabel}
+        </div>
+        <h2
+          style={{
+            fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
+            fontSize: 22,
+            fontWeight: 700,
+            color: 'var(--text)',
+            margin: 0,
+            marginBottom: 12,
+          }}
+        >
+          {row.servicio}
+        </h2>
+
+        {noAplica && (
+          <div
+            style={{
+              background: 'rgba(217,95,78,0.08)',
+              border: '1px solid rgba(217,95,78,0.25)',
+              borderRadius: 'var(--radius-md)',
+              padding: 12,
+              fontSize: 12.5,
+              color: '#C84F3F',
+              marginBottom: 12,
+            }}
+          >
+            La celda dice <strong>NO</strong> (ese local no tiene este servicio). Si querés
+            cambiar eso, editá el Sheet a mano.
+          </div>
+        )}
+
+        {yaPagado && !confirmForzar && (
+          <div
+            style={{
+              background: 'var(--green-bg)',
+              border: '1px solid var(--green)',
+              borderRadius: 'var(--radius-md)',
+              padding: 12,
+              fontSize: 12.5,
+              color: 'var(--green)',
+              marginBottom: 12,
+            }}
+          >
+            <strong>✓ Ya está pagada</strong>: <span className="tabular-nums-strict">{cell?.raw}</span>.<br />
+            Solo cargá un monto si querés sobrescribir (te va a pedir confirmación).
+          </div>
+        )}
+
+        {confirmForzar && (
+          <div
+            style={{
+              background: 'rgba(217,95,78,0.10)',
+              border: '1px solid #C84F3F',
+              borderRadius: 'var(--radius-md)',
+              padding: 12,
+              fontSize: 12.5,
+              color: '#C84F3F',
+              marginBottom: 12,
+            }}
+          >
+            ⚠ La celda ya tiene un valor cargado. ¿Sobrescribir? Esta acción no se puede deshacer.
+          </div>
+        )}
+
+        {!noAplica && (
+          <>
+            <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              Monto
+            </label>
+            <div style={{ display: 'flex', gap: 8, marginTop: 6, marginBottom: 14 }}>
+              <div style={{ display: 'flex', gap: 4 }}>
+                {(['ARS', 'USD'] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setMoneda(m)}
+                    style={{
+                      padding: '0 12px',
+                      height: 44,
+                      borderRadius: 'var(--radius-md)',
+                      background: moneda === m ? 'var(--text)' : 'var(--bg-subtle)',
+                      color: moneda === m ? 'var(--bg-card)' : 'var(--text-muted)',
+                      border: '1px solid var(--border)',
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {m === 'ARS' ? '$' : 'US$'}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="text"
+                inputMode="numeric"
+                autoFocus
+                value={monto}
+                onChange={(e) => setMonto(e.target.value)}
+                placeholder="0"
+                className="tabular-nums-strict"
+                style={{
+                  flex: 1,
+                  height: 44,
+                  padding: '0 12px',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--border)',
+                  background: 'var(--bg-card)',
+                  color: 'var(--text)',
+                  fontSize: 16,
+                  fontWeight: 600,
+                  outline: 'none',
+                  textAlign: 'right',
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={saving}
+                style={{
+                  flex: 1,
+                  height: 44,
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--bg-subtle)',
+                  color: 'var(--text)',
+                  fontWeight: 600,
+                  fontSize: 13.5,
+                  border: '1px solid var(--border)',
+                  cursor: 'pointer',
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => submit(confirmForzar)}
+                disabled={saving}
+                style={{
+                  flex: 2,
+                  height: 44,
+                  borderRadius: 'var(--radius-md)',
+                  background: confirmForzar ? '#C84F3F' : 'var(--accent)',
+                  color: '#FDFBF8',
+                  fontWeight: 700,
+                  fontSize: 13.5,
+                  border: 0,
+                  cursor: 'pointer',
+                  opacity: saving ? 0.7 : 1,
+                }}
+              >
+                {saving
+                  ? 'Guardando…'
+                  : confirmForzar
+                  ? 'Sí, sobrescribir'
+                  : 'Guardar pago'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Helpers UI ───────────────────────────────────────────────────
 
 function EmptyState({ title, body }: { title: string; body: string }) {
   return (
@@ -1385,12 +2011,8 @@ function EmptyState({ title, body }: { title: string; body: string }) {
         textAlign: 'center',
       }}
     >
-      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
-        {title}
-      </div>
-      <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 4 }}>
-        {body}
-      </div>
+      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{title}</div>
+      <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 4 }}>{body}</div>
     </div>
   );
 }
