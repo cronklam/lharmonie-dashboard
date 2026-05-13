@@ -1483,7 +1483,11 @@ function NuevoMovSheet({
           inset: 0,
           background: 'rgba(0,0,0,0.45)',
           backdropFilter: 'blur(4px)',
-          zIndex: 90,
+          // El BottomNav usa zIndex 110, así que el overlay tiene que
+          // estar arriba (115) para que cubra también el nav, y el
+          // sheet aún más alto (120) para que su footer Cancelar/Guardar
+          // no quede tapado por el nav.
+          zIndex: 115,
           animation: 'fadeIn 0.22s var(--ease-ios) both',
         }}
       />
@@ -1501,7 +1505,7 @@ function NuevoMovSheet({
           borderTopLeftRadius: 22,
           borderTopRightRadius: 22,
           boxShadow: '0 -16px 40px rgba(0,0,0,0.18)',
-          zIndex: 100,
+          zIndex: 120,
           display: 'flex',
           flexDirection: 'column',
           paddingBottom: 'var(--safe-bottom)',
