@@ -898,7 +898,8 @@ function MovRow({
   const [expanded, setExpanded] = useState(false);
   const isIngreso = mov.importe >= 0;
   const catColors = mov.categoria
-    ? CATEGORIA_COLORS[mov.categoria]
+    ? CATEGORIA_COLORS[mov.categoria as Categoria] ||
+      { fg: 'var(--accent-hover)', bg: 'var(--accent-bg)' }
     : { fg: 'var(--text-muted)', bg: 'var(--bg-subtle)' };
   const canDelete = !mov._pending && !mov._failed && mov.fila >= 3;
   const fechaAR = mov.fecha
@@ -1399,7 +1400,8 @@ function NuevoMovSheet({
 }) {
   const [fecha, setFecha] = useState(defaultFecha);
   const [moneda, setMoneda] = useState<Moneda>('PESO');
-  const [categoria, setCategoria] = useState<Categoria>('BISTRO');
+  const [categoria, setCategoria] = useState<Categoria | '__NEW__'>('BISTRO');
+  const [customCategoria, setCustomCategoria] = useState('');
   const [descripcion, setDescripcion] = useState('');
   // Importe puede ser positivo (ingreso) o negativo (egreso). El signo
   // determina el tipo: + = INGRESO, − = EGRESO. Sin botones aparte.
@@ -1444,18 +1446,32 @@ function NuevoMovSheet({
       setError('Fecha inválida');
       return;
     }
+    // Resolver categoría final: si eligió "+ Nueva categoría" usar el
+    // texto custom; si no, el valor del select. Trim + uppercase
+    // para mantener la convención del Sheet.
+    const finalCategoria: Categoria =
+      categoria === '__NEW__'
+        ? ((customCategoria.trim().toUpperCase() || 'BISTRO') as Categoria)
+        : (categoria as Categoria);
+    if (categoria === '__NEW__' && !customCategoria.trim()) {
+      setError('Cargá el nombre de la nueva categoría.');
+      return;
+    }
     setSaving(true);
     const ok = await onSubmit({
       tipo,
       fecha,
       moneda,
-      categoria,
+      categoria: finalCategoria,
       descripcion: descripcion.trim(),
       importeAbs: Math.abs(importeNum),
     });
     setSaving(false);
     if (ok) onClose();
-  }, [saving, descripcion, importeNum, fecha, tipo, moneda, categoria, onSubmit, onClose]);
+  }, [
+    saving, descripcion, importeNum, fecha, tipo, moneda, categoria,
+    customCategoria, onSubmit, onClose,
+  ]);
 
   return (
     <>
@@ -1589,11 +1605,13 @@ function NuevoMovSheet({
             </select>
           </FieldLabel>
 
-          {/* Categoría — dropdown compacto en lugar de grid 3×4 */}
+          {/* Categoría — dropdown compacto + opción "Nueva categoría"
+              que abre un input libre. Si el user elige "Nueva categoría"
+              el submit usa customCategoria en vez del valor del select. */}
           <FieldLabel label="Categoría">
             <select
               value={categoria}
-              onChange={(e) => setCategoria(e.target.value as Categoria)}
+              onChange={(e) => setCategoria(e.target.value as Categoria | '__NEW__')}
               className="input-pro"
               style={{ minHeight: 'var(--touch-min)' }}
             >
@@ -1602,8 +1620,26 @@ function NuevoMovSheet({
                   {c}
                 </option>
               ))}
+              <option value="__NEW__">+ Nueva categoría…</option>
             </select>
           </FieldLabel>
+          {categoria === '__NEW__' && (
+            <FieldLabel label="Nombre de la nueva categoría">
+              <input
+                type="text"
+                value={customCategoria}
+                onChange={(e) =>
+                  setCustomCategoria(e.target.value.toUpperCase().slice(0, 30))
+                }
+                placeholder="ej. EQUIPOS"
+                className="input-pro"
+                style={{
+                  minHeight: 'var(--touch-min)',
+                  letterSpacing: '0.02em',
+                }}
+              />
+            </FieldLabel>
+          )}
 
           {/* Descripción */}
           <FieldLabel label="Descripción">
@@ -1644,13 +1680,8 @@ function NuevoMovSheet({
                 inputMode="numeric"
                 pattern="[0-9\-.,]*"
                 value={importeRaw}
-                onChange={(e) => {
-                  // Preserva el signo negativo si está al inicio (egreso)
-                  const neg = e.target.value.trim().startsWith('-');
-                  const formatted = formatMontoLive(e.target.value);
-                  setImporteRaw(neg && formatted && !formatted.startsWith('-') ? `-${formatted}` : formatted);
-                }}
-                placeholder="0"
+                onChange={(e) => setImporteRaw(formatMontoLive(e.target.value))}
+                placeholder="0 ó -0 para egreso"
                 className="input-pro tabular-nums-strict"
                 style={{
                   minHeight: 'var(--touch-min)',
@@ -2235,7 +2266,8 @@ function SesionRow({
               {movs.map((m) => {
                 const ingreso = m.importe >= 0;
                 const cat = m.categoria
-                  ? CATEGORIA_COLORS[m.categoria]
+                  ? CATEGORIA_COLORS[m.categoria as Categoria] ||
+                    { fg: 'var(--accent-hover)', bg: 'var(--accent-bg)' }
                   : { fg: 'var(--text-muted)', bg: 'var(--bg-subtle)' };
                 // Limpiamos el prefijo del concepto para mostrar solo lo útil
                 const conceptoLimpio = m.descripcion

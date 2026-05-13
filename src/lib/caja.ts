@@ -172,7 +172,9 @@ export function parseMontoInput(raw: string): number {
  *  solo aparece si el usuario la escribió explícitamente. */
 export function formatMontoLive(raw: string): string {
   if (!raw) return '';
-  // Permitir signo negativo al inicio
+  // Permitir signo negativo al inicio (Iara puede escribir "-" antes de
+  // tipear el monto para indicar egreso). Si el user solo escribió "-"
+  // sin dígitos atrás, devolvemos "-" para que el caret no salte.
   const neg = raw.trim().startsWith('-');
   // Quitar todo menos dígitos y coma (la coma es decimal)
   let cleaned = raw.replace(/[^0-9,]/g, '');
@@ -191,7 +193,8 @@ export function formatMontoLive(raw: string): string {
     decimal = decimal.slice(0, 2);
   }
   cleaned = decimal !== null ? `${entero},${decimal}` : entero;
-  if (!cleaned) return '';
+  // Caso "solo escribió -": preservamos el guión para que pueda seguir.
+  if (!cleaned) return neg ? '-' : '';
   return neg ? `-${cleaned}` : cleaned;
 }
 

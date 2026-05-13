@@ -58,12 +58,21 @@ export const POST = withAuth(async (req, user) => {
       { status: 400 },
     );
   }
-  const categoria = String(body.categoria || '').toUpperCase() as Categoria;
-  if (!CATEGORIAS.includes(categoria)) {
+  const categoria = String(body.categoria || '').toUpperCase().trim() as Categoria;
+  // Validación liviana: la categoría puede ser una del whitelist o una
+  // nueva libre (mayo 2026 — Martín pidió poder sumar categorías a mano).
+  // Constraints: 2-30 chars, solo letras/dígitos/espacios/guiones.
+  if (!categoria) {
+    return NextResponse.json(
+      { ok: false, error: 'Falta categoría' },
+      { status: 400 },
+    );
+  }
+  if (categoria.length > 30 || !/^[A-Z0-9ÁÉÍÓÚÑ\s\-/]+$/.test(categoria)) {
     return NextResponse.json(
       {
         ok: false,
-        error: `Categoría inválida. Valores aceptados: ${CATEGORIAS.join(', ')}`,
+        error: `Categoría inválida ("${categoria}"). Máximo 30 caracteres, solo letras/dígitos/espacios/guiones.`,
       },
       { status: 400 },
     );
