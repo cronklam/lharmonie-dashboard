@@ -213,14 +213,11 @@ export function FacturaCard({
 
       {/* Monto */}
       <div
-        className="tabular-nums-strict"
+        className="importe"
         style={{
-          fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
-          fontWeight: 700,
           fontSize: 16,
           color: status === 'pagada' ? 'var(--text-muted)' : 'var(--text)',
           whiteSpace: 'nowrap',
-          letterSpacing: '-0.01em',
           flexShrink: 0,
         }}
       >

@@ -89,13 +89,10 @@ export default function PagosPage() {
             Total a pagar
           </div>
           <div
-            className="font-brand heading-tight-lg tabular-nums-strict"
+            className="importe"
             style={{
-              fontSize: 38,
-              fontWeight: 700,
-              lineHeight: 1,
+              fontSize: 40,
               color: '#F9F7F3',
-              fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
             }}
           >
             <AnimatedNumber
@@ -213,10 +210,8 @@ export default function PagosPage() {
                       </div>
                     </div>
                     <div
-                      className="tabular-nums-strict"
+                      className="importe"
                       style={{
-                        fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
-                        fontWeight: 700,
                         fontSize: 15,
                         color: 'var(--text)',
                       }}

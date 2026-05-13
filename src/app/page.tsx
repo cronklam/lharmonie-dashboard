@@ -300,13 +300,10 @@ export default function HomePage() {
             Total a pagar
           </div>
           <div
-            className="font-brand heading-tight-lg tabular-nums-strict"
+            className="importe"
             style={{
               fontSize: 40,
-              fontWeight: 700,
-              lineHeight: 1,
               color: '#F9F7F3',
-              fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
             }}
           >
             <AnimatedNumber
@@ -483,13 +480,10 @@ export default function HomePage() {
             : 'Gasto total'}
         </div>
         <div
-          className="font-brand heading-tight-lg tabular-nums-strict"
+          className="importe"
           style={{
             fontSize: 40,
-            fontWeight: 700,
             color: 'var(--text)',
-            lineHeight: 1,
-            fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
           }}
         >
           <AnimatedNumber
@@ -1013,13 +1007,10 @@ function StatCard({
         {label}
       </div>
       <div
-        className="font-brand"
+        className="importe"
         style={{
           fontSize: 22,
-          fontWeight: 700,
           color: 'var(--text)',
-          lineHeight: 1,
-          fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
         }}
       >
         {value}

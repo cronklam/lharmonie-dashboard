@@ -230,13 +230,10 @@ function SmallCard({ label, value }: { label: string; value: string }) {
         {label}
       </div>
       <div
-        className="font-brand heading-tight tabular-nums-strict"
+        className="importe"
         style={{
           fontSize: 18,
-          fontWeight: 700,
           color: 'var(--text)',
-          fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
-          lineHeight: 1.1,
         }}
       >
         {value}

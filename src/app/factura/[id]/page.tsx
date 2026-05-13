@@ -169,14 +169,11 @@ export default function FacturaDetailPage({
             Monto total
           </div>
           <div
-            className="font-brand heading-tight-lg tabular-nums-strict"
+            className="importe"
             style={{
-              fontSize: 32,
-              fontWeight: 700,
+              fontSize: 40,
               color: 'var(--text)',
-              fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
               marginTop: 2,
-              lineHeight: 1,
             }}
           >
             {fmtMoney(parseNum(f[COL.total]))}

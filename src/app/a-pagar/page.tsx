@@ -183,13 +183,10 @@ export default function APagarPage() {
             Total a pagar
           </div>
           <div
-            className="font-brand heading-tight-lg tabular-nums-strict"
+            className="importe"
             style={{
-              fontSize: 32,
-              fontWeight: 700,
+              fontSize: 40,
               color: '#F9F7F3',
-              fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
-              lineHeight: 1,
             }}
           >
             <AnimatedNumber value={total} duration={900} format={(n) => fmtMoney(n)} />

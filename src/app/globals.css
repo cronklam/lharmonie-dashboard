@@ -1281,6 +1281,19 @@ input:disabled {
   font-feature-settings: "tnum" 1;
 }
 
+/* ── .importe ── tipografía oficial para todos los montos.
+   Match exacto con el hero "Total a pagar" del home:
+   Recoleta serif · weight 700 · letter-spacing -0.025em · tabular nums.
+   El tamaño lo controla el contexto (heredado o fontSize inline). */
+.importe {
+  font-family: 'Recoleta', 'Fraunces', 'Georgia', serif;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  line-height: 1;
+}
+
 /* ── numeric-display ──────────────────────────────────────────────
    Para montos / saldos / totales donde la prioridad es LEGIBILIDAD
    numérica antes que la voz editorial. Stack: DM Sans (que ya carga

@@ -421,27 +421,21 @@ export default function CajaPage() {
             Saldo total · efectivo
           </div>
           <div
-            className="font-brand heading-tight-lg tabular-nums-strict"
+            className="importe"
             style={{
               fontSize: 40,
-              fontWeight: 700,
-              lineHeight: 1,
               color: '#F9F7F3',
-              fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
             }}
           >
             {saldos ? fmtMonto(saldos.pesos, 'PESO') : '—'}
           </div>
           {saldos && saldos.dolares !== 0 && (
             <div
-              className="font-brand tabular-nums-strict"
+              className="importe"
               style={{
                 marginTop: 6,
                 fontSize: 22,
                 color: 'rgba(249,247,243,0.85)',
-                fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
-                fontWeight: 600,
-                lineHeight: 1,
               }}
             >
               {fmtMonto(saldos.dolares, 'DOLAR')}
@@ -702,12 +696,10 @@ export default function CajaPage() {
               {tabDisplay} · neto del mes
             </span>
             <span
-              className="tabular-nums-strict"
+              className="importe"
               style={{
                 fontSize: 13,
-                fontWeight: 700,
                 color: saldoMes.pesos >= 0 ? 'var(--green)' : 'var(--red)',
-                fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
               }}
             >
               {fmtMonto(saldoMes.pesos, 'PESO')}
@@ -1037,10 +1029,8 @@ function MovRow({
           </div>
         </div>
         <div
-          className="tabular-nums-strict"
+          className="importe"
           style={{
-            fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
-            fontWeight: 700,
             fontSize: 15,
             color: isIngreso ? 'var(--green)' : 'var(--red)',
             whiteSpace: 'nowrap',
@@ -1237,10 +1227,10 @@ function Detalle({
         {label}
       </div>
       <div
-        className={mono ? 'tabular-nums-strict' : undefined}
+        className={mono ? 'importe' : undefined}
         style={{
           fontSize: 13,
-          fontWeight: 600,
+          fontWeight: mono ? 700 : 600,
           color: color || 'var(--text)',
         }}
       >
@@ -2151,10 +2141,8 @@ function SesionRow({
           </div>
         </div>
         <div
-          className="tabular-nums-strict"
+          className="importe"
           style={{
-            fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
-            fontWeight: 700,
             fontSize: 16,
             color: 'var(--text)',
             whiteSpace: 'nowrap',
@@ -2300,11 +2288,9 @@ function SesionRow({
                       )}
                     </div>
                     <div
-                      className="tabular-nums-strict"
+                      className="importe"
                       style={{
-                        fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
                         fontSize: 13,
-                        fontWeight: 700,
                         color: ingreso ? 'var(--green)' : 'var(--red)',
                         whiteSpace: 'nowrap',
                       }}
