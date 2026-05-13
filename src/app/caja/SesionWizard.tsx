@@ -267,7 +267,12 @@ export function SesionWizard({
         display: 'flex',
         flexDirection: 'column',
         gap: 16,
-        paddingBottom: 'calc(var(--nav-height) + var(--safe-bottom) + 60px)',
+        // Clearance: bottom nav (~64) + safe area + BottomBar fijo del
+        // wizard (~56) + margen para que el "+ Agregar movimiento" no
+        // quede tapado. Antes era +60px pero el BottomBar a veces
+        // crece (stats wraps en mobile chico) y tapaba el botón.
+        paddingBottom:
+          'calc(var(--nav-height) + var(--safe-bottom) + 140px)',
       }}
     >
       {/* Wizard header */}
