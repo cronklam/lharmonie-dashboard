@@ -1,8 +1,10 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { withAuth, AuthError } from '@/lib/auth-guard';
 import { hasCapability } from '@/lib/users';
 import { getSheetsClient } from '@/lib/servicios-server';
 import { periodoToTab } from '@/lib/servicios-mes';
+import { parseMontoBaigun } from '@/lib/baigun-cta-cte';
+import { derivarUnaCelda } from '@/lib/baigun-server';
 
 export const dynamic = 'force-dynamic';
 
@@ -198,6 +200,42 @@ export const POST = withAuth(async (req, user) => {
     console.log(
       `[SERVICIOS/CELDA] ${user.email} ${tabName} ${servicioRaw} × ${localCol} = "${valor}" (era "${existing}")`,
     );
+
+    // ─── Auto-derivación Baigun ──────────────────────────────────
+    // Si la celda editada es LIBERTADOR (col del pivot que mapea a
+    // ancla LH5), disparar derivarUnaCelda en background. Si el valor
+    // nuevo es número > 0 → genera/actualiza cargo a Baigun por el %
+    // del LISTADO. Si es "NO"/"TODAVIA NO"/vacío → elimina cargo
+    // previo (soft-delete). after() corre post-response así no bloquea
+    // al user que mandó el write. Cualquier error queda en logs.
+    if (localCol.toUpperCase() === 'LIBERTADOR') {
+      const valorUp = valor.toUpperCase().trim();
+      const esBorrado =
+        !valor || valorUp === 'NO' || valorUp === 'TODAVIA NO' || valorUp === 'TODAVÍA NO';
+      // Solo numérico explícito o un "vaciado" disparan el trigger.
+      // Texto raro (sin dígitos, ni NO) → no se dispara.
+      const tieneDigitos = /\d/.test(valor);
+      if (esBorrado || tieneDigitos) {
+        const montoLH5 = esBorrado ? 0 : parseMontoBaigun(valor);
+        const trigger = {
+          mes: periodo,
+          servicio: servicioRaw,
+          montoLH5,
+          userEmail: user.email,
+        };
+        after(async () => {
+          try {
+            const res = await derivarUnaCelda(trigger);
+            console.log(
+              `[BAIGUN AUTO] Derivado: servicio=${servicioRaw} mes=${periodo} monto=${montoLH5} accion=${res.accion}${res.razon ? ` (${res.razon})` : ''}`,
+            );
+          } catch (err) {
+            console.error('[BAIGUN AUTO] error en derivarUnaCelda:', err);
+          }
+        });
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       celda: cellRange,
