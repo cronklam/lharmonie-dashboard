@@ -6,7 +6,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { verifySession } from '@/lib/session';
 
-const PUBLIC_PREFIXES = ['/api/auth/'];
+const PUBLIC_PREFIXES = ['/api/auth/', '/api/baigun/derivar-mes-cron'];
 
 function isSameOrigin(req: NextRequest): boolean {
   const origin = req.headers.get('origin');
