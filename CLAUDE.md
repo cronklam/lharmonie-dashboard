@@ -463,6 +463,14 @@ git checkout main && git merge --ff-only feat/<branch> && git push origin main
       del Sheet "Artículos" — eso lo hacía la API key del dash viejo
       contra el tab "Artículos" de Facturas. Ver si se quiere migrar
       esa data específica más adelante).
+- [ ] **Servicios — sync con staff PENDIENTE**: el staff
+      (`~/Desktop/lharmonie-staff/`) tiene su propio catálogo en
+      `ENVIOS_SHEETS_ID` tab "Servicios Catalogo". El dashboard ahora
+      tiene su catálogo canónico en el tab "ÍNDICE" del
+      `SERVICIOS_SHEET_ID`. Por ahora coexisten — en una fase
+      posterior queremos que el staff lea el ÍNDICE del dashboard
+      como fuente única, para que no haya divergencia. Hasta entonces,
+      si cambia un servicio acá hay que cambiarlo también allá manual.
 
 ---
 
