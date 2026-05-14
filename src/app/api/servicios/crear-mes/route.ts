@@ -10,6 +10,7 @@ import {
 } from '@/lib/servicios-mes';
 import {
   INDICE_TAB,
+  INDICE_LAST_COL,
   indiceRowToObject,
   type IndiceServicio,
 } from '@/lib/indice';
@@ -146,7 +147,7 @@ export const POST = withAuth(async (req, user) => {
     try {
       const indRes = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
-        range: `'${INDICE_TAB}'!A1:K500`,
+        range: `'${INDICE_TAB}'!A1:${INDICE_LAST_COL}500`,
       });
       const indRows = indRes.data.values || [];
       if (indRows.length > 0 && (indRows[0][0] || '').trim() === 'Servicio') {

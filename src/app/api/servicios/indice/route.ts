@@ -5,21 +5,25 @@ import { getSheetsClient } from '@/lib/servicios-server';
 import {
   INDICE_TAB,
   INDICE_HEADERS,
+  INDICE_LAST_COL,
   INDICE_TIPOS,
   INDICE_METODO_PAGO,
   INDICE_FRECUENCIA,
+  INDICE_MONEDA,
   indiceRowToObject,
   indiceObjectToRow,
   type IndiceServicio,
   type IndiceTipo,
   type IndiceMetodoPago,
   type IndiceFrecuencia,
+  type IndiceMoneda,
 } from '@/lib/indice';
 import { ANCLAS, type Ancla } from '@/lib/anclas';
 
 export const dynamic = 'force-dynamic';
 
 const SHEET_ID = process.env.SERVICIOS_SHEET_ID || '';
+const RANGE_FULL = `'${INDICE_TAB}'!A1:${INDICE_LAST_COL}500`;
 
 // ─── Helpers shared ───────────────────────────────────────────────
 
@@ -40,15 +44,14 @@ async function readIndice(): Promise<ParsedIndice | { error: string; status: num
   try {
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
-      range: `'${INDICE_TAB}'!A1:K500`,
+      range: RANGE_FULL,
     });
     const rows = res.data.values || [];
     if (rows.length < 1) {
       return { tabExiste: true, servicios: [], locales: [] };
     }
     // Header check: si A1 no es "Servicio" asumimos que es formato
-    // viejo (3 secciones) y devolvemos vacío para indicar que hay
-    // que regenerar.
+    // viejo y devolvemos vacío para indicar que hay que regenerar.
     const a1 = (rows[0][0] || '').trim();
     if (a1 !== 'Servicio') {
       return {
@@ -125,12 +128,25 @@ interface PostBody {
   ancla?: string;
   localDisplay?: string;
   diaVencimiento?: number | string | null;
-  metodoPago?: string;
   frecuencia?: string;
-  activo?: boolean;
-  subarrendadoBaigun?: boolean;
+  metodoPago?: string;
+  montoEstimadoArs?: number | string | null;
+  montoEstimadoUsd?: number | string | null;
+  monedaDefault?: string;
+  titularNombre?: string;
+  titularCuit?: string;
+  cuentaNumero?: string;
   cbu?: string;
+  subarrendadoBaigun?: boolean;
+  baigunPct?: number | string | null;
+  activo?: boolean;
   notas?: string;
+}
+
+function parseNumOrNull(v: unknown): number | null {
+  if (v === null || v === undefined || v === '') return null;
+  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/[$\s,]/g, ''));
+  return isNaN(n) ? null : n;
 }
 
 function validateBody(body: PostBody): {
@@ -169,6 +185,18 @@ function validateBody(body: PostBody): {
   ).includes(frecRaw)
     ? (frecRaw as IndiceFrecuencia)
     : 'mensual';
+  const monedaRaw = (body.monedaDefault || 'ARS').toUpperCase();
+  const monedaDefault: IndiceMoneda = (
+    INDICE_MONEDA as readonly string[]
+  ).includes(monedaRaw)
+    ? (monedaRaw as IndiceMoneda)
+    : 'ARS';
+  const baigunPctRaw = parseNumOrNull(body.baigunPct);
+  const baigunPct =
+    baigunPctRaw !== null && (baigunPctRaw < 0 || baigunPctRaw > 100)
+      ? null
+      : baigunPctRaw;
+  const cuit = (body.titularCuit || '').trim().replace(/[^\d]/g, '');
   return {
     data: {
       servicio,
@@ -176,11 +204,18 @@ function validateBody(body: PostBody): {
       ancla,
       localDisplay: (body.localDisplay || '').trim(),
       diaVencimiento: dia,
-      metodoPago,
       frecuencia,
-      activo: body.activo !== false,
-      subarrendadoBaigun: body.subarrendadoBaigun === true,
+      metodoPago,
+      montoEstimadoArs: parseNumOrNull(body.montoEstimadoArs),
+      montoEstimadoUsd: parseNumOrNull(body.montoEstimadoUsd),
+      monedaDefault,
+      titularNombre: (body.titularNombre || '').trim(),
+      titularCuit: cuit,
+      cuentaNumero: (body.cuentaNumero || '').trim(),
       cbu: (body.cbu || '').trim(),
+      subarrendadoBaigun: body.subarrendadoBaigun === true,
+      baigunPct: body.subarrendadoBaigun ? (baigunPct ?? 50) : null,
+      activo: body.activo !== false,
       notas: (body.notas || '').trim(),
     },
   };
@@ -207,7 +242,7 @@ export const POST = withAuth(async (req, user) => {
   try {
     await sheets.spreadsheets.values.append({
       spreadsheetId: SHEET_ID,
-      range: `'${INDICE_TAB}'!A2:K`,
+      range: `'${INDICE_TAB}'!A2:${INDICE_LAST_COL}`,
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: [indiceObjectToRow(v.data)] },
     });
@@ -250,7 +285,7 @@ export const PATCH = withAuth(async (req, user) => {
   try {
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
-      range: `'${INDICE_TAB}'!A${row}:K${row}`,
+      range: `'${INDICE_TAB}'!A${row}:${INDICE_LAST_COL}${row}`,
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: [indiceObjectToRow(v.data)] },
     });
@@ -295,11 +330,13 @@ export const DELETE = withAuth(async (req, user) => {
       { status: 400 },
     );
   }
+  // Activo es la col Q (17ma → index 16) en el schema nuevo
+  // INDICE_HEADERS indexa Activo en posición 16 (Q).
+  const activoCol = String.fromCharCode('A'.charCodeAt(0) + INDICE_HEADERS.indexOf('Activo'));
   try {
-    // Solo escribir la celda H (activo)
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
-      range: `'${INDICE_TAB}'!H${row}`,
+      range: `'${INDICE_TAB}'!${activoCol}${row}`,
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: [['FALSE']] },
     });
@@ -322,6 +359,3 @@ export interface IndiceLocal {
   nombre: string;
   notas: string;
 }
-// El field "Servicio" del IndiceServicio compat — el page.tsx usa
-// `s.servicio` que sigue existiendo, y `categoria` que ya no. Vamos
-// a actualizar el page.tsx para usar el nuevo type.

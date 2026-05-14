@@ -5,9 +5,11 @@ import { getSheetsClient, ServiciosError } from '@/lib/servicios-server';
 import {
   INDICE_TAB,
   INDICE_HEADERS,
+  INDICE_LAST_COL,
   INDICE_TIPOS,
   INDICE_METODO_PAGO,
   INDICE_FRECUENCIA,
+  INDICE_MONEDA,
   inferirTipo,
   localDisplayDefault,
   defaultSubarrendadoBaigun,
@@ -106,7 +108,7 @@ export const POST = withAuth(async (req, user) => {
       try {
         const probe = await sheets.spreadsheets.values.get({
           spreadsheetId: SHEET_ID,
-          range: `'${INDICE_TAB}'!A1:K1`,
+          range: `'${INDICE_TAB}'!A1:${INDICE_LAST_COL}1`,
         });
         const a1 = (probe.data.values?.[0]?.[0] || '').trim();
         if (a1 === 'Servicio') {
@@ -296,6 +298,7 @@ export const POST = withAuth(async (req, user) => {
     const values: string[][] = [];
     values.push([...INDICE_HEADERS]);
     for (const s of seedUnique) {
+      const baigun = defaultSubarrendadoBaigun(s.ancla, s.tipo);
       values.push(
         indiceObjectToRow({
           servicio: s.servicio,
@@ -303,18 +306,25 @@ export const POST = withAuth(async (req, user) => {
           ancla: s.ancla,
           localDisplay: localDisplayDefault(s.ancla),
           diaVencimiento: null,
-          metodoPago: '',
           frecuencia: 'mensual',
-          activo: true,
-          subarrendadoBaigun: defaultSubarrendadoBaigun(s.ancla, s.tipo),
+          metodoPago: '',
+          montoEstimadoArs: null,
+          montoEstimadoUsd: null,
+          monedaDefault: 'ARS',
+          titularNombre: '',
+          titularCuit: '',
+          cuentaNumero: '',
           cbu: '',
+          subarrendadoBaigun: baigun,
+          baigunPct: baigun ? 50 : null,
+          activo: true,
           notas: '',
         }),
       );
     }
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
-      range: `'${INDICE_TAB}'!A1:K${values.length}`,
+      range: `'${INDICE_TAB}'!A1:${INDICE_LAST_COL}${values.length}`,
       valueInputOption: 'RAW',
       requestBody: { values },
     });
@@ -415,7 +425,7 @@ export const POST = withAuth(async (req, user) => {
         },
       },
     });
-    // Col F: Método Pago
+    // Col F: Frecuencia (índice 5)
     requests.push({
       setDataValidation: {
         range: {
@@ -428,14 +438,14 @@ export const POST = withAuth(async (req, user) => {
         rule: {
           condition: {
             type: 'ONE_OF_LIST',
-            values: INDICE_METODO_PAGO.map((v) => ({ userEnteredValue: v })),
+            values: INDICE_FRECUENCIA.map((v) => ({ userEnteredValue: v })),
           },
           strict: false,
           showCustomUi: true,
         },
       },
     });
-    // Col G: Frecuencia
+    // Col G: Método Pago (índice 6)
     requests.push({
       setDataValidation: {
         range: {
@@ -448,15 +458,35 @@ export const POST = withAuth(async (req, user) => {
         rule: {
           condition: {
             type: 'ONE_OF_LIST',
-            values: INDICE_FRECUENCIA.map((v) => ({ userEnteredValue: v })),
+            values: INDICE_METODO_PAGO.map((v) => ({ userEnteredValue: v })),
           },
           strict: false,
           showCustomUi: true,
         },
       },
     });
-    // Col H, I: Activo, Subarrendado Baigun (TRUE/FALSE)
-    for (const colIdx of [7, 8]) {
+    // Col J: Moneda Default (índice 9)
+    requests.push({
+      setDataValidation: {
+        range: {
+          sheetId: newSheetId,
+          startRowIndex: 1,
+          endRowIndex: dataEndRow,
+          startColumnIndex: 9,
+          endColumnIndex: 10,
+        },
+        rule: {
+          condition: {
+            type: 'ONE_OF_LIST',
+            values: INDICE_MONEDA.map((v) => ({ userEnteredValue: v })),
+          },
+          strict: false,
+          showCustomUi: true,
+        },
+      },
+    });
+    // Col O: Subarrendado Baigun (índice 14), Col Q: Activo (índice 16)
+    for (const colIdx of [14, 16]) {
       requests.push({
         setDataValidation: {
           range: {
@@ -481,8 +511,8 @@ export const POST = withAuth(async (req, user) => {
       });
     }
 
-    // Anchos de columna
-    const colWidths = [200, 110, 90, 220, 110, 150, 110, 80, 130, 180, 280];
+    // Anchos de columna (18 cols)
+    const colWidths = [200, 110, 90, 220, 120, 110, 150, 140, 140, 100, 180, 140, 140, 180, 140, 90, 80, 280];
     colWidths.forEach((w, i) => {
       requests.push({
         updateDimensionProperties: {

@@ -1,18 +1,24 @@
 // Catálogo canónico de servicios — tab "ÍNDICE" del Sheet de SERVICIOS.
 //
-// Schema flat (1 fila por (servicio × ancla) único). Antes era un doc
-// con 3 secciones (Locales, Servicios, Convenciones), ahora es una
-// tabla editable con 11 cols + dropdowns.
+// Schema flat (1 fila por (servicio × ancla) único). Cada fila guarda
+// toda la info que el management necesita para ese servicio en ese
+// local: tipo, día de venc, método de pago, monto estimado en ARS y
+// USD, titular que factura, CUIT, número de cuenta cliente, CBU/alias,
+// si va al subarriendo Baigun y en qué %.
 //
 // Es la fuente única de verdad para:
 //   - QUÉ servicios existen
 //   - su tipo (categoría operativa: luz, agua, alquiler, etc)
 //   - a qué ancla pertenecen (local físico / corporativo / personal)
-//   - su día de vencimiento del mes
+//   - cuándo vencen (día del mes) y con qué frecuencia
 //   - método de pago (efectivo/transfer/débito automático/tarjeta)
-//   - frecuencia (mensual/bimestral/...)
+//   - monto estimado/sugerido para nuevos meses (ARS y USD por separado)
+//   - moneda primaria (ARS o USD)
+//   - titular que factura + CUIT
+//   - número de cuenta cliente del servicio (ej. # cliente Edenor)
+//   - datos para transferir (CBU/CVU/Alias)
+//   - subarriendo Baigun: si va y en qué % (default 50% a cta cte)
 //   - si está activo (si false → no se sugiere al crear mes nuevo)
-//   - si va al subarriendo Baigun (50% al saldo cta cte)
 //
 // Los tabs mensuales (MAYO 26, ABRIL 26, etc) siguen siendo la fuente
 // de pagos efectivos por mes. El ÍNDICE es metadata + plantilla.
@@ -20,21 +26,32 @@
 import type { Ancla } from './anclas';
 import { ANCLA_LABELS } from './anclas';
 
-export const INDICE_TAB = 'ÍNDICE';
+export const INDICE_TAB = 'LISTADO';
 
 export const INDICE_HEADERS = [
-  'Servicio',
-  'Tipo',
-  'Ancla',
-  'Local Display',
-  'Día Vencimiento',
-  'Método Pago',
-  'Frecuencia',
-  'Activo',
-  'Subarrendado Baigun',
-  'CBU/CVU/Alias',
-  'Notas',
+  'Servicio',              // A
+  'Tipo',                  // B
+  'Ancla',                 // C
+  'Local Display',         // D
+  'Día Vencimiento',       // E
+  'Frecuencia',            // F
+  'Método Pago',           // G
+  'Monto Estimado ARS',    // H
+  'Monto Estimado USD',    // I
+  'Moneda Default',        // J  (ARS / USD)
+  'Titular Nombre',        // K
+  'Titular CUIT',          // L
+  'Cuenta Número',         // M
+  'CBU/CVU/Alias',         // N
+  'Subarrendado Baigun',   // O
+  'Baigun %',              // P
+  'Activo',                // Q
+  'Notas',                 // R
 ] as const;
+
+/** Columna final (1-indexed → letra) para el range A:R. */
+export const INDICE_LAST_COL = 'R';
+export const INDICE_NUM_COLS = INDICE_HEADERS.length; // 18
 
 // Tipos = categoría operativa del servicio
 export const INDICE_TIPOS = [
@@ -98,6 +115,9 @@ export const INDICE_FRECUENCIA_LABELS: Record<IndiceFrecuencia, string> = {
   unico: 'Único',
 };
 
+export const INDICE_MONEDA = ['ARS', 'USD'] as const;
+export type IndiceMoneda = (typeof INDICE_MONEDA)[number];
+
 export interface IndiceServicio {
   /** Fila 1-indexed del Sheet (para PATCH/DELETE). */
   _row: number;
@@ -108,11 +128,33 @@ export interface IndiceServicio {
    *  derivado de ancla pero editable. */
   localDisplay: string;
   diaVencimiento: number | null;
-  metodoPago: IndiceMetodoPago | '';
   frecuencia: IndiceFrecuencia | '';
-  activo: boolean;
-  subarrendadoBaigun: boolean;
+  metodoPago: IndiceMetodoPago | '';
+  /** Monto estimado/sugerido en pesos. Null si el servicio se paga
+   *  primariamente en USD (o si todavía no se cargó). */
+  montoEstimadoArs: number | null;
+  /** Monto estimado en USD (ej. alquileres en dólares). Null si
+   *  no aplica. */
+  montoEstimadoUsd: number | null;
+  /** Moneda primaria del servicio. Indica cuál de los dos montos es
+   *  el "canónico". Default 'ARS'. */
+  monedaDefault: IndiceMoneda;
+  /** Razón social / nombre del titular que factura. Ej "Lharmonie
+   *  SRL", "Martín Masri", "L'harmonie Resources SAS". */
+  titularNombre: string;
+  /** CUIT/CUIL del titular. Solo dígitos, sin guiones. */
+  titularCuit: string;
+  /** Número de cuenta cliente del servicio (ej # cliente Edenor,
+   *  # cuenta Aysa). */
+  cuentaNumero: string;
+  /** CBU/CVU/Alias para transferir o débito automático. */
   cbu: string;
+  /** Si va al subarriendo Baigun (típicamente LH5). */
+  subarrendadoBaigun: boolean;
+  /** % que va al cta cte de Baigun (0-100). Default 50 si
+   *  subarrendadoBaigun=true. Null si no aplica. */
+  baigunPct: number | null;
+  activo: boolean;
   notas: string;
 }
 
@@ -179,6 +221,47 @@ export function parseBool(v: string | undefined | null, fallback = false): boole
   return BOOL_TRUE.has(String(v).trim().toUpperCase());
 }
 
+/** Parsea un monto del Sheet. Acepta "$1.200.000", "1200000",
+ *  "1.200.000,50", "US$ 7,465", "1,400.00". Si no se puede parsear,
+ *  devuelve null. */
+export function parseMonto(v: string | undefined | null): number | null {
+  if (v === undefined || v === null) return null;
+  const raw = String(v).trim();
+  if (!raw) return null;
+  // Sacar $ US$ USD ARS espacios
+  const cleaned = raw.replace(/[$\sa-zA-Z]/g, '');
+  if (!cleaned) return null;
+  // Detectar separador decimal: el último entre "." y "," que aparezca
+  // y tenga 1-2 dígitos después es decimal. Resto se ignora (miles).
+  const lastDot = cleaned.lastIndexOf('.');
+  const lastComma = cleaned.lastIndexOf(',');
+  let decSep: string | null = null;
+  if (lastDot > -1 && lastComma > -1) {
+    decSep = lastDot > lastComma ? '.' : ',';
+  } else if (lastDot > -1 && cleaned.length - lastDot - 1 <= 2) {
+    decSep = '.';
+  } else if (lastComma > -1 && cleaned.length - lastComma - 1 <= 2) {
+    decSep = ',';
+  }
+  let normalized: string;
+  if (decSep === '.') {
+    normalized = cleaned.replace(/,/g, '');
+  } else if (decSep === ',') {
+    normalized = cleaned.replace(/\./g, '').replace(',', '.');
+  } else {
+    normalized = cleaned.replace(/[.,]/g, '');
+  }
+  const n = parseFloat(normalized);
+  return isNaN(n) ? null : n;
+}
+
+/** Convierte un número a string plano para el Sheet (sin formato
+ *  monetario, para que Sheets lo trate como número). Null/0 → "". */
+export function montoToSheet(n: number | null): string {
+  if (n === null || n === undefined || !isFinite(n)) return '';
+  return String(n);
+}
+
 export function indiceRowToObject(
   row: string[],
   rowIdx0: number,
@@ -193,18 +276,28 @@ export function indiceRowToObject(
   const localDisplay = (row[3] || '').trim();
   const diaStr = (row[4] || '').trim();
   const dia = diaStr ? parseInt(diaStr, 10) : NaN;
-  const metodoRaw = (row[5] || '').trim().toLowerCase() as IndiceMetodoPago;
-  const metodo: IndiceMetodoPago | '' = (
-    INDICE_METODO_PAGO as readonly string[]
-  ).includes(metodoRaw)
-    ? metodoRaw
-    : '';
-  const frecRaw = (row[6] || '').trim().toLowerCase() as IndiceFrecuencia;
+  const frecRaw = (row[5] || '').trim().toLowerCase() as IndiceFrecuencia;
   const frec: IndiceFrecuencia | '' = (
     INDICE_FRECUENCIA as readonly string[]
   ).includes(frecRaw)
     ? frecRaw
     : '';
+  const metodoRaw = (row[6] || '').trim().toLowerCase() as IndiceMetodoPago;
+  const metodo: IndiceMetodoPago | '' = (
+    INDICE_METODO_PAGO as readonly string[]
+  ).includes(metodoRaw)
+    ? metodoRaw
+    : '';
+  const montoArs = parseMonto(row[7]);
+  const montoUsd = parseMonto(row[8]);
+  const monedaRaw = (row[9] || 'ARS').trim().toUpperCase() as IndiceMoneda;
+  const moneda: IndiceMoneda = (INDICE_MONEDA as readonly string[]).includes(
+    monedaRaw,
+  )
+    ? monedaRaw
+    : 'ARS';
+  const baigunRaw = (row[15] || '').trim();
+  const baigunPct = baigunRaw ? parseFloat(baigunRaw.replace(/[%\s]/g, '')) : NaN;
   return {
     _row: rowIdx0 + 1,
     servicio,
@@ -212,12 +305,19 @@ export function indiceRowToObject(
     ancla,
     localDisplay,
     diaVencimiento: !isNaN(dia) && dia >= 1 && dia <= 31 ? dia : null,
-    metodoPago: metodo,
     frecuencia: frec,
-    activo: parseBool(row[7], true),
-    subarrendadoBaigun: parseBool(row[8], false),
-    cbu: (row[9] || '').trim(),
-    notas: (row[10] || '').trim(),
+    metodoPago: metodo,
+    montoEstimadoArs: montoArs,
+    montoEstimadoUsd: montoUsd,
+    monedaDefault: moneda,
+    titularNombre: (row[10] || '').trim(),
+    titularCuit: (row[11] || '').trim().replace(/[^\d]/g, ''),
+    cuentaNumero: (row[12] || '').trim(),
+    cbu: (row[13] || '').trim(),
+    subarrendadoBaigun: parseBool(row[14], false),
+    baigunPct: isNaN(baigunPct) ? null : baigunPct,
+    activo: parseBool(row[16], true),
+    notas: (row[17] || '').trim(),
   };
 }
 
@@ -228,11 +328,18 @@ export function indiceObjectToRow(s: Omit<IndiceServicio, '_row'>): string[] {
     s.ancla,
     s.localDisplay,
     s.diaVencimiento ? String(s.diaVencimiento) : '',
-    s.metodoPago,
     s.frecuencia,
-    s.activo ? 'TRUE' : 'FALSE',
-    s.subarrendadoBaigun ? 'TRUE' : 'FALSE',
+    s.metodoPago,
+    montoToSheet(s.montoEstimadoArs),
+    montoToSheet(s.montoEstimadoUsd),
+    s.monedaDefault,
+    s.titularNombre,
+    s.titularCuit,
+    s.cuentaNumero,
     s.cbu,
+    s.subarrendadoBaigun ? 'TRUE' : 'FALSE',
+    s.baigunPct !== null ? String(s.baigunPct) : '',
+    s.activo ? 'TRUE' : 'FALSE',
     s.notas,
   ];
 }

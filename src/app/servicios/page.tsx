@@ -26,6 +26,7 @@ import type {
   IndiceTipo as CatalogoTipo,
   IndiceMetodoPago as CatalogoMetodo,
   IndiceFrecuencia as CatalogoFrec,
+  IndiceMoneda as CatalogoMoneda,
 } from '@/lib/indice';
 import {
   INDICE_TIPOS,
@@ -34,6 +35,7 @@ import {
   INDICE_METODO_PAGO_LABELS,
   INDICE_FRECUENCIA,
   INDICE_FRECUENCIA_LABELS,
+  INDICE_MONEDA,
   localDisplayDefault,
 } from '@/lib/indice';
 
@@ -3092,6 +3094,27 @@ function CatalogoModal({
   const [subarrendadoBaigun, setSubarrendadoBaigun] = useState(
     initial?.subarrendadoBaigun ?? false,
   );
+  const [baigunPct, setBaigunPct] = useState(
+    initial?.baigunPct !== undefined && initial?.baigunPct !== null
+      ? String(initial.baigunPct)
+      : '',
+  );
+  const [montoEstimadoArs, setMontoEstimadoArs] = useState(
+    initial?.montoEstimadoArs !== undefined && initial?.montoEstimadoArs !== null
+      ? String(initial.montoEstimadoArs)
+      : '',
+  );
+  const [montoEstimadoUsd, setMontoEstimadoUsd] = useState(
+    initial?.montoEstimadoUsd !== undefined && initial?.montoEstimadoUsd !== null
+      ? String(initial.montoEstimadoUsd)
+      : '',
+  );
+  const [monedaDefault, setMonedaDefault] = useState<CatalogoMoneda>(
+    initial?.monedaDefault || 'ARS',
+  );
+  const [titularNombre, setTitularNombre] = useState(initial?.titularNombre || '');
+  const [titularCuit, setTitularCuit] = useState(initial?.titularCuit || '');
+  const [cuentaNumero, setCuentaNumero] = useState(initial?.cuentaNumero || '');
   const [cbu, setCbu] = useState(initial?.cbu || '');
   const [notas, setNotas] = useState(initial?.notas || '');
   const [saving, setSaving] = useState(false);
@@ -3116,17 +3139,30 @@ function CatalogoModal({
     }
     setSaving(true);
     try {
+      const parseMontoInput = (s: string): number | null => {
+        const cleaned = s.replace(/[$\s,]/g, '').trim();
+        if (!cleaned) return null;
+        const n = parseFloat(cleaned);
+        return isNaN(n) ? null : n;
+      };
       const body = {
         servicio: servicio.trim(),
         tipo,
         ancla,
         localDisplay: localDisplay.trim() || localDisplayDefault(ancla),
         diaVencimiento: diaVencimiento ? parseInt(diaVencimiento, 10) : null,
-        metodoPago,
         frecuencia,
-        activo,
-        subarrendadoBaigun,
+        metodoPago,
+        montoEstimadoArs: parseMontoInput(montoEstimadoArs),
+        montoEstimadoUsd: parseMontoInput(montoEstimadoUsd),
+        monedaDefault,
+        titularNombre: titularNombre.trim(),
+        titularCuit: titularCuit.replace(/[^\d]/g, ''),
+        cuentaNumero: cuentaNumero.trim(),
         cbu: cbu.trim(),
+        subarrendadoBaigun,
+        baigunPct: subarrendadoBaigun ? (parseFloat(baigunPct) || 50) : null,
+        activo,
         notas: notas.trim(),
       };
       const r = await fetch('/api/servicios/indice', {
@@ -3147,7 +3183,9 @@ function CatalogoModal({
     }
   }, [
     saving, servicio, tipo, ancla, localDisplay, diaVencimiento,
-    metodoPago, frecuencia, activo, subarrendadoBaigun, cbu, notas,
+    frecuencia, metodoPago, montoEstimadoArs, montoEstimadoUsd, monedaDefault,
+    titularNombre, titularCuit, cuentaNumero, cbu,
+    activo, subarrendadoBaigun, baigunPct, notas,
     isEdit, initial, onSaved, onError,
   ]);
 
@@ -3357,7 +3395,80 @@ function CatalogoModal({
               </select>
             </FieldL>
           </div>
-          {metodoPago === 'debito_automatico' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 110px', gap: 10 }}>
+            <FieldL label="Monto estimado ARS">
+              <input
+                type="text"
+                inputMode="decimal"
+                value={montoEstimadoArs}
+                onChange={(e) =>
+                  setMontoEstimadoArs(e.target.value.replace(/[^0-9.,]/g, ''))
+                }
+                placeholder="—"
+                className="input-pro tabular-nums-strict"
+                style={{ minHeight: 'var(--touch-min)' }}
+              />
+            </FieldL>
+            <FieldL label="Monto estimado USD">
+              <input
+                type="text"
+                inputMode="decimal"
+                value={montoEstimadoUsd}
+                onChange={(e) =>
+                  setMontoEstimadoUsd(e.target.value.replace(/[^0-9.,]/g, ''))
+                }
+                placeholder="—"
+                className="input-pro tabular-nums-strict"
+                style={{ minHeight: 'var(--touch-min)' }}
+              />
+            </FieldL>
+            <FieldL label="Moneda">
+              <select
+                value={monedaDefault}
+                onChange={(e) => setMonedaDefault(e.target.value as CatalogoMoneda)}
+                className="input-pro"
+                style={{ minHeight: 'var(--touch-min)' }}
+              >
+                {INDICE_MONEDA.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </FieldL>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 10 }}>
+            <FieldL label="Titular (razón social)">
+              <input
+                type="text"
+                value={titularNombre}
+                onChange={(e) => setTitularNombre(e.target.value)}
+                placeholder="Ej. Lharmonie SRL"
+                className="input-pro"
+                style={{ minHeight: 'var(--touch-min)' }}
+              />
+            </FieldL>
+            <FieldL label="CUIT (solo dígitos)">
+              <input
+                type="text"
+                inputMode="numeric"
+                value={titularCuit}
+                onChange={(e) => setTitularCuit(e.target.value.replace(/[^\d]/g, '').slice(0, 11))}
+                placeholder="30716239489"
+                className="input-pro tabular-nums-strict"
+                style={{ minHeight: 'var(--touch-min)' }}
+              />
+            </FieldL>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: 10 }}>
+            <FieldL label="Nº cuenta cliente">
+              <input
+                type="text"
+                value={cuentaNumero}
+                onChange={(e) => setCuentaNumero(e.target.value)}
+                placeholder="Ej. # Edenor"
+                className="input-pro"
+                style={{ minHeight: 'var(--touch-min)' }}
+              />
+            </FieldL>
             <FieldL label="CBU/CVU/Alias">
               <input
                 type="text"
@@ -3368,8 +3479,8 @@ function CatalogoModal({
                 style={{ minHeight: 'var(--touch-min)' }}
               />
             </FieldL>
-          )}
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+          </div>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
             <label
               style={{
                 display: 'flex',
@@ -3402,8 +3513,22 @@ function CatalogoModal({
                 onChange={(e) => setSubarrendadoBaigun(e.target.checked)}
                 style={{ width: 18, height: 18, accentColor: 'var(--accent)' }}
               />
-              Subarrendado Baigun (50% al cta cte)
+              Subarrendado Baigun
             </label>
+            {subarrendadoBaigun && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={baigunPct}
+                  onChange={(e) => setBaigunPct(e.target.value.replace(/[^0-9.]/g, '').slice(0, 5))}
+                  placeholder="50"
+                  className="input-pro tabular-nums-strict"
+                  style={{ width: 72, minHeight: 'var(--touch-min)', textAlign: 'center' }}
+                />
+                <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>% al cta cte</span>
+              </div>
+            )}
           </div>
           <FieldL label="Notas">
             <textarea
