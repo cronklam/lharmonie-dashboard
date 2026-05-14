@@ -37,14 +37,13 @@ import {
   localDisplayDefault,
 } from '@/lib/indice';
 
-type TabId = 'tabla' | 'calendario' | 'listado' | 'baigun' | 'catalogo';
+type TabId = 'tabla' | 'calendario' | 'listado' | 'baigun';
 
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: 'tabla', label: 'Tabla' },
   { id: 'calendario', label: 'Calendario' },
   { id: 'listado', label: 'Listado' },
   { id: 'baigun', label: 'Baigun' },
-  { id: 'catalogo', label: 'Catálogo' },
 ];
 
 const MESES = [
@@ -81,6 +80,25 @@ export default function ServiciosPage() {
     row: ServicioMesRow;
     ancla: Ancla;
   } | null>(null);
+  /** State para el modal de edición del Catálogo (Listado).
+   *  initial=null = crear nuevo, initial=IndiceServicio = editar uno. */
+  const [editingCatalog, setEditingCatalog] = useState<
+    | { mode: 'new'; servicio: ''; ancla: Ancla | null }
+    | { mode: 'edit'; entry: CatalogoServicio }
+    | null
+  >(null);
+
+  const refreshIndice = useCallback(async () => {
+    const r = await fetch('/api/servicios/indice', { cache: 'no-store' });
+    const d = await r.json();
+    if (d.ok) {
+      setIndice({
+        locales: d.locales || [],
+        servicios: d.servicios || [],
+        tabExiste: d.tabExiste,
+      });
+    }
+  }, []);
 
   useEffect(() => {
     if (loading || !user) return;
@@ -204,39 +222,32 @@ export default function ServiciosPage() {
             mesData={mesData}
             onAction={flashToast}
             onClickServicio={(s) => {
-              if (!mesData) return;
-              const all = [
-                ...mesData.filasLocales,
-                ...mesData.filasCronklam,
-                ...mesData.filasMyP,
-              ];
-              const row = all.find((r) => r.servicioRaw === s.servicioRaw);
-              if (row) setEditing({ row, ancla: s.ancla });
+              // Busca el entry del Catálogo que matchee (servicio, ancla).
+              // Si existe → editar. Si no → abrir modal de "nuevo" con
+              // defaults (eso pasa con huérfanos del Sheet que aún no
+              // están en el ÍNDICE).
+              const matched = indice.servicios.find(
+                (i) =>
+                  i.servicio.toUpperCase() === s.servicio.toUpperCase() &&
+                  i.ancla === s.ancla,
+              );
+              if (matched) {
+                setEditingCatalog({ mode: 'edit', entry: matched });
+              } else {
+                setEditingCatalog({
+                  mode: 'new',
+                  servicio: '',
+                  ancla: s.ancla,
+                });
+              }
             }}
+            onNuevo={() =>
+              setEditingCatalog({ mode: 'new', servicio: '', ancla: null })
+            }
           />
         )}
         {tab === 'baigun' && (
           <TabBaigun mesData={mesData} loading={mesLoading} />
-        )}
-        {tab === 'catalogo' && (
-          <TabCatalogo
-            servicios={indice.servicios}
-            tabExiste={indice.tabExiste}
-            onChanged={async () => {
-              // Re-fetch ÍNDICE para reflejar la edición
-              const r = await fetch('/api/servicios/indice', { cache: 'no-store' });
-              const d = await r.json();
-              if (d.ok) {
-                setIndice({
-                  locales: d.locales || [],
-                  servicios: d.servicios || [],
-                  tabExiste: d.tabExiste,
-                });
-              }
-              flashToast('Catálogo actualizado');
-            }}
-            onError={flashToast}
-          />
         )}
 
         <SeedIndiceButton onDone={flashToast} />
@@ -253,6 +264,21 @@ export default function ServiciosPage() {
             setEditing(null);
             flashToast(msg);
             await reloadMes();
+          }}
+          onError={flashToast}
+        />
+      )}
+
+      {editingCatalog && (
+        <CatalogoModal
+          initial={
+            editingCatalog.mode === 'edit' ? editingCatalog.entry : null
+          }
+          onClose={() => setEditingCatalog(null)}
+          onSaved={async () => {
+            setEditingCatalog(null);
+            await refreshIndice();
+            flashToast('Catálogo actualizado');
           }}
           onError={flashToast}
         />
@@ -1327,11 +1353,15 @@ interface ServicioEnLocal {
   cellMonto: number;
   cellEsUsd: boolean;
   cellRaw: string;
-  // Enrich del ÍNDICE
-  categoria: string;
-  periodicidad: string;
+  // Enrich del ÍNDICE (catálogo)
+  categoria: string;          // tipo (luz, agua, etc) — legacy field name
+  periodicidad: string;       // frecuencia
   diaVenc: number | null;
   notas: string;
+  metodoPago: string;         // efectivo/transferencia/debito_automatico/tarjeta o ''
+  subarrendadoBaigun: boolean;
+  activo: boolean;
+  enCatalogo: boolean;        // false si es huérfano (en pivot pero no en ÍNDICE)
 }
 
 function diasHastaVenc(diaVenc: number | null): number | null {
@@ -1349,11 +1379,14 @@ function TabListado({
   indice,
   mesData,
   onClickServicio,
+  onNuevo,
   onAction,
 }: {
   indice: { locales: IndiceLocal[]; servicios: IndiceServicio[]; tabExiste: boolean };
   mesData: ServicioMes | null;
   onClickServicio: (s: ServicioEnLocal) => void;
+  onNuevo: () => void;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   onAction: (m: string) => void;
 }) {
   const [view, setView] = useState<'local' | 'categoria'>('local');
@@ -1369,17 +1402,20 @@ function TabListado({
     );
   }
 
-  // Index ÍNDICE por nombre (case-insensitive) para enrich rápido
-  const indiceByNombre = useMemo(() => {
+  // Index ÍNDICE por (servicio, ancla) — clave única del catálogo.
+  // Cada (servicio, ancla) puede tener una entry distinta (ej ALQUILERES
+  // tiene una entry por LH1, LH2, ..., LH6).
+  const indiceByKey = useMemo(() => {
     const m = new Map<string, IndiceServicio>();
     for (const s of indice.servicios) {
-      m.set(s.servicio.trim().toLowerCase(), s);
+      const k = `${s.servicio.toUpperCase()}|${s.ancla}`;
+      m.set(k, s);
     }
     return m;
   }, [indice.servicios]);
 
   // Build serviciosEnLocal: para cada (servicio × ancla) donde la
-  // celda no es no_aplica → un entry.
+  // celda no es no_aplica → un entry, enriquecido con catálogo.
   const serviciosEnLocal: ServicioEnLocal[] = useMemo(() => {
     if (!mesData) return [];
     const all = [
@@ -1389,9 +1425,13 @@ function TabListado({
     ];
     const out: ServicioEnLocal[] = [];
     for (const row of all) {
-      const meta = indiceByNombre.get(row.servicio.trim().toLowerCase());
       for (const [ancla, cell] of Object.entries(row.porAncla)) {
         if (!cell || cell.estado === 'no_aplica') continue;
+        const key = `${row.servicio.toUpperCase()}|${ancla}`;
+        // También probamos con el nombre raw por si el canónico
+        // difiere del que está en el ÍNDICE.
+        const keyRaw = `${row.servicioRaw.toUpperCase()}|${ancla}`;
+        const meta = indiceByKey.get(key) || indiceByKey.get(keyRaw);
         out.push({
           servicio: row.servicio,
           servicioRaw: row.servicioRaw,
@@ -1404,11 +1444,15 @@ function TabListado({
           periodicidad: meta?.frecuencia || '',
           diaVenc: meta?.diaVencimiento ?? null,
           notas: meta?.notas || row.notas || '',
+          metodoPago: meta?.metodoPago || '',
+          subarrendadoBaigun: meta?.subarrendadoBaigun || false,
+          activo: meta?.activo ?? true,
+          enCatalogo: !!meta,
         });
       }
     }
     return out;
-  }, [mesData, indiceByNombre]);
+  }, [mesData, indiceByKey]);
 
   // Stats card
   const stats = useMemo(() => {
@@ -1596,24 +1640,20 @@ function TabListado({
 
       <button
         type="button"
-        onClick={() =>
-          onAction(
-            'Para sumar un servicio nuevo: edita el tab ÍNDICE del Sheet y agregá la fila. La app lo va a leer automático.',
-          )
-        }
+        onClick={onNuevo}
         className="press-feedback"
         style={{
           minHeight: 42,
           borderRadius: 'var(--radius-md)',
           padding: '10px 14px',
-          background: 'transparent',
-          color: 'var(--accent-hover)',
+          background: 'var(--accent)',
+          color: '#FDFBF8',
           fontWeight: 600,
           fontSize: 13,
-          border: '1px dashed var(--accent)',
+          border: 0,
         }}
       >
-        + Sumar servicio o local
+        + Nuevo servicio
       </button>
     </div>
   );
@@ -1818,6 +1858,16 @@ function ServicioRowCard({
     ? '#F59E0B'
     : 'transparent';
 
+  const metodoLabel = s.metodoPago
+    ? s.metodoPago === 'debito_automatico'
+      ? 'Auto'
+      : s.metodoPago === 'transferencia'
+      ? 'Transf.'
+      : s.metodoPago === 'tarjeta'
+      ? 'Tarjeta'
+      : 'Efectivo'
+    : '';
+
   return (
     <button
       type="button"
@@ -1832,6 +1882,7 @@ function ServicioRowCard({
         cursor: 'pointer',
         textAlign: 'left',
         display: 'block',
+        opacity: !s.activo && s.enCatalogo ? 0.55 : 1,
       }}
     >
       <div
@@ -1877,6 +1928,79 @@ function ServicioRowCard({
             >
               {s.servicio}
             </span>
+            {metodoLabel && (
+              <span
+                style={{
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                  padding: '2px 6px',
+                  borderRadius: 4,
+                  background:
+                    s.metodoPago === 'debito_automatico'
+                      ? 'rgba(15,118,110,0.10)'
+                      : 'var(--bg-subtle)',
+                  color:
+                    s.metodoPago === 'debito_automatico'
+                      ? '#0F766E'
+                      : 'var(--text-muted)',
+                  flexShrink: 0,
+                }}
+              >
+                {metodoLabel}
+              </span>
+            )}
+            {s.subarrendadoBaigun && (
+              <span
+                style={{
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                  padding: '2px 6px',
+                  borderRadius: 4,
+                  background: 'rgba(124,58,237,0.10)',
+                  color: '#7C3AED',
+                  flexShrink: 0,
+                }}
+              >
+                Baigun
+              </span>
+            )}
+            {!s.enCatalogo && (
+              <span
+                title="Huérfano: en pivot pero no en el ÍNDICE. Tocá para crear la entry del catálogo."
+                style={{
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                  padding: '2px 6px',
+                  borderRadius: 4,
+                  background: 'rgba(245,158,11,0.12)',
+                  color: '#A05A00',
+                  flexShrink: 0,
+                }}
+              >
+                Sin catálogo
+              </span>
+            )}
+            {!s.activo && s.enCatalogo && (
+              <span
+                style={{
+                  fontSize: 9,
+                  fontWeight: 700,
+                  color: 'var(--text-muted)',
+                  padding: '2px 6px',
+                  borderRadius: 4,
+                  background: 'var(--bg-subtle)',
+                  flexShrink: 0,
+                }}
+              >
+                Inactivo
+              </span>
+            )}
           </div>
           <div
             style={{
