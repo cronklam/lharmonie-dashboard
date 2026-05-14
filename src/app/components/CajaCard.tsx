@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { fmtMonto } from '@/lib/caja';
+import AnimatedNumber from './AnimatedNumber';
+import { fmtMoney } from './FacturasStore';
 import { useAuth } from './AuthProvider';
 
 // CajaCard — chip "CAJA GRANDE · OWNER", saldo serif grande,
@@ -185,7 +186,11 @@ export function CajaCard({
                 color: 'var(--text)',
               }}
             >
-              {fmtMonto(saldos.pesos, 'PESO')}
+              <AnimatedNumber
+                value={saldos.pesos}
+                duration={1100}
+                format={(n) => fmtMoney(n)}
+              />
               {saldos.dolares !== 0 && (
                 <span
                   className="importe"
@@ -195,7 +200,14 @@ export function CajaCard({
                     marginLeft: 10,
                   }}
                 >
-                  · {fmtMonto(saldos.dolares, 'DOLAR')}
+                  ·{' '}
+                  <AnimatedNumber
+                    value={saldos.dolares}
+                    duration={1100}
+                    format={(n) =>
+                      'US$ ' + Math.round(n).toLocaleString('es-AR')
+                    }
+                  />
                 </span>
               )}
             </div>
