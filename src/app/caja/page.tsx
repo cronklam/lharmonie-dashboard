@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../components/AuthProvider';
 import { PageHeader } from '../components/PageHeader';
@@ -1473,7 +1474,12 @@ function NuevoMovSheet({
     customCategoria, onSubmit, onClose,
   ]);
 
-  return (
+  // Portaleamos a document.body porque el wrapper de /caja tiene
+  // .page-enter con transform que crea un stacking context propio.
+  // Sin portal, no podemos subir arriba del BottomNav (z=110) que
+  // ya está portaleado al body.
+  if (typeof document === 'undefined') return null;
+  return createPortal(
     <>
       <div
         onClick={onClose}
@@ -1807,7 +1813,8 @@ function NuevoMovSheet({
           </button>
         </div>
       </div>
-    </>
+    </>,
+    document.body,
   );
 }
 
