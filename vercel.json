@@ -1,4 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "nextjs"
+  "framework": "nextjs",
+  "crons": [
+    {
+      "path": "/api/baigun/derivar-mes-cron",
+      "schedule": "0 12 5 * *"
+    }
+  ]
 }
