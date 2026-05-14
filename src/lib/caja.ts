@@ -48,6 +48,7 @@ export const TIPO_COLORS: Record<Tipo, { fg: string; bg: string }> = {
 // CA, queda como string libre pero no se acepta más como opción.
 export const CATEGORIAS = [
   'BISTRO',
+  'BISTROSOFT',
   'SUELDOS',
   'CAMBIO USD',
   'MYP',
@@ -63,6 +64,7 @@ export type Categoria = (typeof CATEGORIAS)[number];
 
 export const CATEGORIA_COLORS: Record<Categoria, { fg: string; bg: string }> = {
   BISTRO: { fg: '#7C3AED', bg: 'rgba(124,58,237,0.10)' },
+  BISTROSOFT: { fg: '#0F766E', bg: 'rgba(15,118,110,0.10)' },
   SUELDOS: { fg: '#1565C0', bg: 'rgba(21,101,192,0.10)' },
   'CAMBIO USD': { fg: '#0891B2', bg: 'rgba(8,145,178,0.10)' },
   MYP: { fg: 'var(--text-muted)', bg: 'var(--bg-subtle)' },
@@ -311,47 +313,49 @@ export interface SesionInput {
   notas: string;
 }
 
-/** Prefijo único de la sesión, base del agrupamiento al leer rows.
- *  Formato (mayo 2026):
- *    "S. {fechaControl} - {local} ({fechaAuditada}) - {turno}"
- *  donde:
- *    - fechaControl = cuando Iara hizo el control (hoy)
- *    - local = LH1..LH6
- *    - fechaAuditada = fecha de la caja que se controla
- *    - turno = "T COMPLETO" si turnoCompleto, sino texto libre (ej "T AM")
- */
-export function prefijoSesion(
-  fechaControl: string,
-  local: string,
-  fechaAuditada: string,
-  turnoSuffix: string,
-): string {
-  const fC = fechaToSheet(fechaControl) || fechaControl;
-  const fA = fechaToSheet(fechaAuditada) || fechaAuditada;
-  return `S. ${fC} - ${local} (${fA}) - ${turnoSuffix}`;
-}
-
 /** Suffix del turno para el prefijo. */
 export function turnoSuffix(turnoCompleto: boolean, turnoLabel: string): string {
   if (turnoCompleto) return 'T COMPLETO';
   return (turnoLabel || '').trim() || 'T PARCIAL';
 }
 
+/** ID de grupo de una sesión. Todas las filas que arranquen con
+ *  "SESION {fechaControl} - " (formato nuevo) o "S. {fechaControl} - "
+ *  (formato viejo de mayo 2026 inicial) o "SESION {fechaControl} - LH"
+ *  (formato más viejo) pertenecen a la misma sesión, sin importar
+ *  local/fecha/turno de cada fila.
+ *
+ *  Usamos `fechaControl` como identificador único: una sesión = un
+ *  día de control. Si Iara hace dos controles distintos el mismo
+ *  día, se ven como uno solo — ese caso es raro y el detalle expand
+ *  igual muestra todos los movs. */
+export function sesionGroupId(fechaControl: string): string {
+  const fC = fechaToSheet(fechaControl) || fechaControl;
+  return `SESION ${fC}`;
+}
+
 /** Descripción de un mov individual dentro de una sesión.
- *  Si la categoría fina existe se prepende al concepto: "Limpieza · concepto". */
+ *  Formato (mayo 2026, post-fix):
+ *    "SESION {fechaControl} - {mov.local} {mov.fecha} {turno}"
+ *  Cada mov de una sesión escribe SU propia local + SU propia fecha.
+ *  Eso permite que en una sola sesión Iara cargue retiros de LH5 11/05,
+ *  LH5 12/05, LH3 11/05, etc. Cada uno termina en una fila separada
+ *  con su info propia, y todas siguen agrupándose por fechaControl
+ *  (sesionGroupId).
+ *
+ *  Concepto + categoría fina se appendean opcionalmente con · al final
+ *  (solo para GASTOs — los retiros suelen ir sin concepto). */
 export function descripcionSesionMov(
   input: Pick<
     SesionInput,
-    'fechaControl' | 'fechaAuditada' | 'local' | 'turnoCompleto' | 'turnoLabel'
+    'fechaControl' | 'turnoCompleto' | 'turnoLabel'
   >,
   mov: SesionMovInput,
 ): string {
-  const base = prefijoSesion(
-    input.fechaControl,
-    input.local,
-    input.fechaAuditada,
-    turnoSuffix(input.turnoCompleto, input.turnoLabel),
-  );
+  const fC = fechaToSheet(input.fechaControl) || input.fechaControl;
+  const fM = fechaToSheet(mov.fecha) || mov.fecha;
+  const turno = turnoSuffix(input.turnoCompleto, input.turnoLabel);
+  const base = `SESION ${fC} - ${mov.local} ${fM} ${turno}`;
   const partes: string[] = [];
   if (mov.categoriaFina) partes.push(mov.categoriaFina);
   if (mov.concepto.trim()) partes.push(mov.concepto.trim());
@@ -359,22 +363,32 @@ export function descripcionSesionMov(
   return partes.length > 0 ? `${base} · ${partes.join(' · ')}` : base;
 }
 
+/** @deprecated formato pre-fix de mayo 2026. Conservado para compat
+ *  con sesiones viejas en el Sheet — no usar para nuevas. */
+export function prefijoSesion(
+  fechaControl: string,
+  local: string,
+  fechaAuditada: string,
+  turnoSfx: string,
+): string {
+  const fC = fechaToSheet(fechaControl) || fechaControl;
+  const fA = fechaToSheet(fechaAuditada) || fechaAuditada;
+  return `SESION ${fC} - ${local} ${fA} ${turnoSfx}`;
+}
+
 /** Mapea un mov de sesión a la CATEGORIA whitelist del Sheet.
- *  Reglas confirmadas con Martín (2026-05-12):
- *    - RETIRO          → siempre BISTRO.
+ *  Reglas confirmadas con Martín (2026-05-13):
+ *    - RETIRO          → BISTROSOFT (los retiros de las sesiones son
+ *                        plata que reportó Bistrosoft como ingreso del
+ *                        local. Antes era BISTRO, era bug).
  *    - GASTO           → depende de la categoríaFina elegida.
- *    - AJUSTE          → DIFERENCIA.
- *  El mapping de categoriaFina → Categoria:
- *    Servicios → SERVICIOS
- *    Personal  → SUELDOS
- *    resto     → BISTRO (Limpieza, Insumos, Bebidas, Mantenimiento,
- *                Mensajería, Papelería, Imprevistos, Otros, sin def). */
+ *    - AJUSTE          → DIFERENCIA. */
 export function categoriaSheetParaSesion(
   tipo: SesionTipoMov,
   categoriaFina?: SesionCategoriaGasto | '',
 ): Categoria {
   if (tipo === 'AJUSTE') return 'DIFERENCIA';
-  if (tipo === 'RETIRO') return 'BISTRO';
+  if (tipo === 'RETIRO') return 'BISTROSOFT';
   // GASTO — depende de la categoría fina
   if (categoriaFina === 'Servicios') return 'SERVICIOS';
   if (categoriaFina === 'Personal') return 'SUELDOS';
@@ -391,47 +405,66 @@ export function importeSignedSesion(mov: SesionMovInput, monto: number): number 
 }
 
 /** True si el row del Sheet es parte de una sesión.
- *  Acepta dos formatos:
- *    1. NUEVO (mayo 2026+): "S. DD/MM/YYYY - LHX (DD/MM/YYYY) - T XX"
- *    2. VIEJO (pre-mayo 2026): "SESION DD/MM/YYYY - LHX" */
+ *  Acepta tres formatos:
+ *    1. NUEVO post-fix (mayo 2026, 13+):
+ *       "SESION {fechaControl} - {local} {fechaMov} {turno}"
+ *    2. NUEVO pre-fix (mayo 2026, 12-13):
+ *       "S. {fechaControl} - {local} ({fechaAuditada}) - {turno}"
+ *    3. VIEJO (pre-mayo 2026):
+ *       "SESION {fechaControl} - {local}" */
 export function esRowDeSesion(desc: string): boolean {
   const t = desc.trim();
   return (
-    /^S\.\s+\d{1,2}\/\d{1,2}\/\d{4}\s+-\s+/.test(t) ||
-    /^SESION\s+\d{1,2}\/\d{1,2}\/\d{4}\s+-\s+/.test(t)
+    /^SESION\s+\d{1,2}\/\d{1,2}\/\d{4}\s+-\s+/.test(t) ||
+    /^S\.\s+\d{1,2}\/\d{1,2}\/\d{4}\s+-\s+/.test(t)
   );
 }
 
-/** Parsea el prefijo de un row de sesión. Soporta ambos formatos
- *  (nuevo "S." y viejo "SESION"). */
+/** Parsea el prefijo de un row de sesión. Soporta los tres formatos.
+ *  El identificador de agrupamiento es siempre fechaControl. */
 export function parsePrefijoSesion(desc: string): {
-  prefijo: string;
+  prefijo: string;           // identificador de la sesión (fechaControl)
   fechaControl: string;      // DD/MM/YYYY (cuando se hizo el control)
-  local: string;
-  fechaAuditada: string;     // DD/MM/YYYY si está; '' en formato viejo
-  turno: string;             // texto del suffix; '' en formato viejo
+  local: string;             // local del mov (per-mov en formato nuevo)
+  fechaAuditada: string;     // fecha del mov auditado (DD/MM/YYYY)
+  turno: string;             // texto del turno (T COMPLETO, T AM, etc)
 } | null {
   const t = desc.trim();
-  // Formato nuevo: "S. 12/05/2026 - LH2 (04/05/2026) - T COMPLETO"
-  const mNuevo = t.match(
-    /^(S\.\s+(\d{1,2}\/\d{1,2}\/\d{4})\s+-\s+(\S+)\s+\((\d{1,2}\/\d{1,2}\/\d{4})\)\s+-\s+([^·]+?))(?:\s+·|$)/,
+  // Formato nuevo post-fix:
+  // "SESION 12/05/2026 - LH5 11/05/2026 T COMPLETO" (con o sin · concepto)
+  const mNew = t.match(
+    /^SESION\s+(\d{1,2}\/\d{1,2}\/\d{4})\s+-\s+(\S+)\s+(\d{1,2}\/\d{1,2}\/\d{4})\s+([^·]+?)(?:\s+·|$)/,
   );
-  if (mNuevo) {
+  if (mNew) {
     return {
-      prefijo: mNuevo[1].trim(),
-      fechaControl: mNuevo[2],
-      local: mNuevo[3],
-      fechaAuditada: mNuevo[4],
-      turno: mNuevo[5].trim(),
+      prefijo: `SESION ${mNew[1]}`,
+      fechaControl: mNew[1],
+      local: mNew[2],
+      fechaAuditada: mNew[3],
+      turno: mNew[4].trim(),
     };
   }
-  // Formato viejo: "SESION 12/05/2026 - LH2"
-  const mViejo = t.match(/^(SESION\s+(\d{1,2}\/\d{1,2}\/\d{4})\s+-\s+(\S+))/);
+  // Formato nuevo pre-fix (mayo 12-13):
+  // "S. 13/05/2026 - LH2 (04/05/2026) - T COMPLETO"
+  const mIntermedio = t.match(
+    /^S\.\s+(\d{1,2}\/\d{1,2}\/\d{4})\s+-\s+(\S+)\s+\((\d{1,2}\/\d{1,2}\/\d{4})\)\s+-\s+([^·]+?)(?:\s+·|$)/,
+  );
+  if (mIntermedio) {
+    return {
+      prefijo: `S. ${mIntermedio[1]}`,
+      fechaControl: mIntermedio[1],
+      local: mIntermedio[2],
+      fechaAuditada: mIntermedio[3],
+      turno: mIntermedio[4].trim(),
+    };
+  }
+  // Formato viejo: "SESION 12/05/2026 - LH2 · ..."
+  const mViejo = t.match(/^SESION\s+(\d{1,2}\/\d{1,2}\/\d{4})\s+-\s+(\S+)/);
   if (mViejo) {
     return {
-      prefijo: mViejo[1],
-      fechaControl: mViejo[2],
-      local: mViejo[3],
+      prefijo: `SESION ${mViejo[1]}`,
+      fechaControl: mViejo[1],
+      local: mViejo[2],
       fechaAuditada: '',
       turno: '',
     };

@@ -392,6 +392,11 @@ export async function writeSesion(input: SesionInput): Promise<WriteSesionResult
       'Si el turno no es completo, hay que indicar el turno (ej "T AM" o "T PM").',
     );
   }
+  // El "prefijo" lógico de la sesión (para el cierre/diferencia y para
+  // futura referencia) usa el formato nuevo con local de sesión.
+  // El descripcionSesionMov de cada fila usa el local/fecha DE CADA mov,
+  // así que un retiro de LH3 11/05 y otro de LH5 12/05 quedan bien
+  // discriminados aunque pertenezcan a la misma sesión.
   const turnoTxt = input.turnoCompleto
     ? 'T COMPLETO'
     : input.turnoLabel.trim();
@@ -428,14 +433,18 @@ export async function writeSesion(input: SesionInput): Promise<WriteSesionResult
   const rowsToWrite: MovRow[] = [];
 
   for (const mov of input.movs) {
-    // Para que TODAS las filas de la sesión entren al mismo tab mensual
-    // (el del control, no el de cada mov), forzamos fecha de mov =
-    // fechaControl. La FECHA AUDITADA queda solo en la descripción.
+    // Cada fila usa el LOCAL y la FECHA del mov, no de la sesión.
+    // Eso permite que en una sola sesión Iara cargue retiros de
+    // distintos locales y/o distintos días — cada fila queda con
+    // su info real.
+    //
+    // Col A (FECHA) usa mov.fecha — la fecha del movimiento. Si Iara
+    // está controlando hoy retiros de hace 2 días, esa fila queda
+    // dateada hace 2 días. Eso mantiene la cronología real.
+    // El "cuando se controló" sigue dentro de la descripción.
     const desc = descripcionSesionMov(
       {
         fechaControl: input.fechaControl,
-        fechaAuditada: input.fechaAuditada,
-        local: input.local,
         turnoCompleto: input.turnoCompleto,
         turnoLabel: input.turnoLabel,
       },
@@ -444,7 +453,7 @@ export async function writeSesion(input: SesionInput): Promise<WriteSesionResult
     const cat = categoriaSheetParaSesion(mov.tipo, mov.categoriaFina);
     if (Math.abs(mov.montoArs) > 0) {
       rowsToWrite.push({
-        fecha: input.fechaControl,
+        fecha: mov.fecha,
         moneda: 'PESO',
         descripcion: desc,
         categoria: cat,
@@ -453,7 +462,7 @@ export async function writeSesion(input: SesionInput): Promise<WriteSesionResult
     }
     if (Math.abs(mov.montoUsd) > 0) {
       rowsToWrite.push({
-        fecha: input.fechaControl,
+        fecha: mov.fecha,
         moneda: 'DOLAR',
         descripcion: desc,
         categoria: cat,
@@ -665,7 +674,8 @@ export async function listSesiones(maxMonthsBack = 6): Promise<SesionResumen[]> 
 export async function deleteSesionByPrefix(prefijo: string): Promise<{
   borradas: number;
 }> {
-  if (!prefijo.trim().startsWith('SESION ')) {
+  const p = prefijo.trim();
+  if (!p.startsWith('SESION ') && !p.startsWith('S. ')) {
     throw new CajaError(400, 'Prefijo inválido');
   }
   const sheets = ensureConfigured();

@@ -185,12 +185,25 @@ export function SesionWizard({
         onError('Si no es turno completo, indicá el turno (ej "T AM", "T PM").');
         return;
       }
-      // Validar al menos 1 mov con monto > 0
-      const valido = movs.some(
-        (m) => m.concepto.trim() && m.monto > 0,
-      );
+      // Validar al menos 1 mov con monto > 0. Concepto es OPCIONAL —
+      // los retiros típicos no tienen concepto (el monto + local + fecha
+      // ya describen todo). Para gastos se sugiere pero no se exige.
+      const valido = movs.some((m) => m.monto > 0);
       if (!valido) {
-        onError('Agregá al menos un movimiento con monto y concepto');
+        onError('Agregá al menos un movimiento con monto.');
+        return;
+      }
+      // Para GASTO: si hay un gasto sin concepto ni categoría fina,
+      // pedir explicación porque sino el row va a quedar mudo.
+      const gastoSinInfo = movs.some(
+        (m) =>
+          m.tipo === 'GASTO' &&
+          m.monto > 0 &&
+          !m.concepto.trim() &&
+          !m.categoriaFina,
+      );
+      if (gastoSinInfo) {
+        onError('Hay un gasto sin concepto ni categoría. Cargá uno o el otro.');
         return;
       }
       setPaso(2);
@@ -210,9 +223,8 @@ export function SesionWizard({
     if (saving) return;
     setSaving(true);
     try {
-      const validMovs = movs.filter(
-        (m) => m.concepto.trim() && m.monto > 0,
-      );
+      // Solo filtramos por monto. Concepto puede ir vacío (retiros).
+      const validMovs = movs.filter((m) => m.monto > 0);
       const res = await fetch('/api/caja/sesion', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
