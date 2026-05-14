@@ -17,6 +17,7 @@ import {
   ANCLA_TO_LOCAL_COL,
 } from '@/lib/servicios-mes';
 import type { Ancla } from '@/lib/anclas';
+import { ANCLAS, ANCLA_LABELS } from '@/lib/anclas';
 import type {
   IndiceLocal,
   IndiceServicio,
@@ -1661,7 +1662,7 @@ function TabListado({
   );
 }
 
-const ANCLA_ORDER: Ancla[] = ['LH1', 'LH2', 'LH3', 'LH4', 'LH5', 'LH6', 'CRONKLAM', 'MyP'];
+const ANCLA_ORDER: Ancla[] = ['LH1', 'LH2', 'LH3', 'LH4', 'LH5', 'LH6', 'CRONKLAM', 'BAMBINA', 'MyP'];
 const ANCLA_LARGO: Record<Ancla, string> = {
   LH1: 'Lharmonie 1 (LH1)',
   LH2: 'Lharmonie Nicaragua (LH2)',
@@ -1670,6 +1671,7 @@ const ANCLA_LARGO: Record<Ancla, string> = {
   LH5: 'Lharmonie Libertador (LH5)',
   LH6: 'Lharmonie 6 (LH6)',
   CRONKLAM: 'Cronklam (empresa)',
+  BAMBINA: 'Bambina (personal)',
   MyP: 'Martín y Melanie',
 };
 
@@ -3332,13 +3334,11 @@ function CatalogoModal({
                 className="input-pro"
                 style={{ minHeight: 'var(--touch-min)' }}
               >
-                {(['LH1', 'LH2', 'LH3', 'LH4', 'LH5', 'LH6', 'CRONKLAM', 'MyP'] as Ancla[]).map(
-                  (a) => (
-                    <option key={a} value={a}>
-                      {a}
-                    </option>
-                  ),
-                )}
+                {ANCLAS.map((a) => (
+                  <option key={a} value={a}>
+                    {a} · {ANCLA_LABELS[a]}
+                  </option>
+                ))}
               </select>
             </FieldL>
           </div>

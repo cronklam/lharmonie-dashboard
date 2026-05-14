@@ -256,7 +256,8 @@ export const POST = withAuth(async (req, user) => {
       LH5: 4,
       LH6: 5,
       CRONKLAM: 6,
-      MyP: 7,
+      BAMBINA: 7,
+      MyP: 8,
     };
     seedUnique.sort((a, b) => {
       const t = tipoOrder[a.tipo] - tipoOrder[b.tipo];

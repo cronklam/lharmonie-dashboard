@@ -92,6 +92,7 @@ function derivarLocales(
     LH5: 'LIBERTADOR',
     LH6: 'NUÑEZ',
     CRONKLAM: 'BAMBINA',
+    BAMBINA: 'BAMBINA',
     MyP: 'CASA MEL Y MARTIN',
   };
   for (const s of servicios) {

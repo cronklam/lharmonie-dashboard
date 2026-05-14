@@ -86,12 +86,15 @@ export const LOCAL_TO_ANCLA: Record<string, Ancla | 'BAIGUN' | 'NOTAS'> = {
   'NUNEZ': 'LH6',
   'CASA MEL Y MARTIN': 'MyP',
   'CASA MEL Y MARTÍN': 'MyP',
-  'BAMBINA': 'CRONKLAM',
+  'BAMBINA': 'BAMBINA',
   'BAIGUN': 'BAIGUN',
 };
 
 // Reverse: ancla → nombre de columna canónico en el Sheet
 // (lo que recibe la API /api/servicios/celda como localCol)
+// CRONKLAM no tiene col física en el pivot mensual — los servicios
+// corporativos se cargan en col BAMBINA por compat retro (legado del
+// staff). Cuando se agreguen cols nuevas al pivot, separar.
 export const ANCLA_TO_LOCAL_COL: Record<Ancla, string> = {
   LH1: 'SEGUI',
   LH2: 'NICARAGUA',
@@ -100,6 +103,7 @@ export const ANCLA_TO_LOCAL_COL: Record<Ancla, string> = {
   LH5: 'LIBERTADOR',
   LH6: 'NUÑEZ',
   CRONKLAM: 'BAMBINA',
+  BAMBINA: 'BAMBINA',
   MyP: 'CASA MEL Y MARTIN',
 };
 
@@ -112,6 +116,7 @@ export const ANCLA_SHORT_LABEL: Record<Ancla, string> = {
   LH5: 'Libertador',
   LH6: 'Nuñez',
   CRONKLAM: 'Cronklam',
+  BAMBINA: 'Bambina',
   MyP: 'MyM',
 };
 
@@ -369,7 +374,8 @@ export function parseMesPivot(
       if (!esTotal) {
         const tieneData = estado === 'pagado' || estado === 'pendiente';
         if (tieneData) {
-          if (ancla === 'MyP') tieneMyP = true;
+          // MyP y BAMBINA son personales → agrupan en "myp" para la UI
+          if (ancla === 'MyP' || ancla === 'BAMBINA') tieneMyP = true;
           else if (ancla === 'CRONKLAM') tieneCronklam = true;
           else tieneLH = true;
         }

@@ -5,6 +5,10 @@
 // - LH1..LH6 → locales físicos
 // - CRONKLAM → empresa (gastos corporativos / impositivos sin local)
 // - MyP     → personal de los dueños (NO entra en métricas op)
+// - BAMBINA → propiedad personal con servicios (Telecom/Flow, Aysa,
+//   ABL, Edenor, Expensas). Hasta mayo 2026 los movimientos de la
+//   col BAMBINA del pivot se agrupaban bajo CRONKLAM; ahora es ancla
+//   propia para distinguir gastos corporativos de personales.
 
 export type Ancla =
   | 'LH1'
@@ -14,10 +18,11 @@ export type Ancla =
   | 'LH5'
   | 'LH6'
   | 'CRONKLAM'
+  | 'BAMBINA'
   | 'MyP';
 
 export const ANCLAS: Ancla[] = [
-  'LH1', 'LH2', 'LH3', 'LH4', 'LH5', 'LH6', 'CRONKLAM', 'MyP',
+  'LH1', 'LH2', 'LH3', 'LH4', 'LH5', 'LH6', 'CRONKLAM', 'BAMBINA', 'MyP',
 ];
 
 export const ANCLA_LABELS: Record<Ancla, string> = {
@@ -28,6 +33,7 @@ export const ANCLA_LABELS: Record<Ancla, string> = {
   LH5: 'Lharmonie Libertador (LH5)',
   LH6: 'Lharmonie 6 (LH6)',
   CRONKLAM: 'Cronklam (empresa)',
+  BAMBINA: 'Bambina (personal)',
   MyP: 'Martín y Melanie (personal)',
 };
 
@@ -39,6 +45,7 @@ export const ANCLA_SHORT: Record<Ancla, string> = {
   LH5: 'LH5 Libertador',
   LH6: 'LH6',
   CRONKLAM: 'Cronklam',
+  BAMBINA: 'Bambina',
   MyP: 'M&P',
 };
 
