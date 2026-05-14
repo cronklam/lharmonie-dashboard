@@ -262,6 +262,7 @@ export default function ServiciosPage() {
           ancla={editing.ancla}
           periodo={periodo}
           periodoLabel={mesData?.label || ''}
+          catalogo={indice.servicios}
           onClose={() => setEditing(null)}
           onSaved={async (msg) => {
             setEditing(null);
@@ -535,6 +536,7 @@ function TabTabla({
 
   return (
     <>
+      <KPICardsRow data={data} indice={indice} />
       <div
         style={{
           display: 'flex',
@@ -2402,6 +2404,7 @@ function RegistrarPagoModal({
   ancla,
   periodo,
   periodoLabel,
+  catalogo,
   onClose,
   onSaved,
   onError,
@@ -2410,6 +2413,7 @@ function RegistrarPagoModal({
   ancla: Ancla;
   periodo: string;
   periodoLabel: string;
+  catalogo?: CatalogoServicio[];
   onClose: () => void;
   onSaved: (msg: string) => Promise<void> | void;
   onError: (msg: string) => void;
@@ -2419,8 +2423,33 @@ function RegistrarPagoModal({
   const noAplica = cell?.estado === 'no_aplica';
   const localCol = ANCLA_TO_LOCAL_COL[ancla];
 
-  const [monto, setMonto] = useState('');
-  const [moneda, setMoneda] = useState<'ARS' | 'USD'>(cell?.esUsd ? 'USD' : 'ARS');
+  // Sugerir monto desde el LISTADO si encontramos servicio+ancla matching.
+  const sugerido = useMemo(() => {
+    if (!catalogo) return null;
+    const srvUp = row.servicio.trim().toLowerCase();
+    const rawUp = row.servicioRaw.trim().toLowerCase();
+    const match = catalogo.find(
+      (s) =>
+        s.ancla === ancla &&
+        (s.servicio.trim().toLowerCase() === srvUp ||
+          s.servicio.trim().toLowerCase() === rawUp),
+    );
+    if (!match) return null;
+    if (match.monedaDefault === 'USD' && match.montoEstimadoUsd) {
+      return { monto: match.montoEstimadoUsd, moneda: 'USD' as const };
+    }
+    if (match.montoEstimadoArs) {
+      return { monto: match.montoEstimadoArs, moneda: 'ARS' as const };
+    }
+    return null;
+  }, [catalogo, row.servicio, row.servicioRaw, ancla]);
+
+  const [monto, setMonto] = useState(
+    sugerido ? String(Math.round(sugerido.monto)) : '',
+  );
+  const [moneda, setMoneda] = useState<'ARS' | 'USD'>(
+    sugerido ? sugerido.moneda : cell?.esUsd ? 'USD' : 'ARS',
+  );
   const [saving, setSaving] = useState(false);
   const [confirmForzar, setConfirmForzar] = useState(false);
 
@@ -2962,6 +2991,21 @@ function CatalogoRow({
   onClick: () => void;
 }) {
   const inactive = !s.activo;
+  // Freshness indicator: dot verde si editedAt < 5 min
+  const [isFresh, setIsFresh] = useState(false);
+  useEffect(() => {
+    try {
+      const key = `${s.servicio.toLowerCase()}__${s.ancla}`;
+      const stash = JSON.parse(localStorage.getItem('lh-catalog-edits') || '{}');
+      const editedAt = stash[key] as number | undefined;
+      if (editedAt && Date.now() - editedAt < 5 * 60_000) {
+        setIsFresh(true);
+        const remaining = 5 * 60_000 - (Date.now() - editedAt);
+        const t = setTimeout(() => setIsFresh(false), remaining);
+        return () => clearTimeout(t);
+      }
+    } catch { /* ignore */ }
+  }, [s.servicio, s.ancla]);
   return (
     <button
       type="button"
@@ -2991,6 +3035,20 @@ function CatalogoRow({
             flexWrap: 'wrap',
           }}
         >
+          {isFresh && (
+            <span
+              aria-label="editado hace poco"
+              title="Editado hace menos de 5 minutos"
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                background: '#76C893',
+                boxShadow: '0 0 0 2px rgba(118,200,147,0.18)',
+                flexShrink: 0,
+              }}
+            />
+          )}
           <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>
             {s.servicio}
           </span>
@@ -3101,6 +3159,8 @@ function CatalogoModal({
       ? String(initial.baigunPct)
       : '',
   );
+  const [savedOk, setSavedOk] = useState(false);
+
   const [montoEstimadoArs, setMontoEstimadoArs] = useState(
     initial?.montoEstimadoArs !== undefined && initial?.montoEstimadoArs !== null
       ? String(initial.montoEstimadoArs)
@@ -3121,6 +3181,28 @@ function CatalogoModal({
   const [notas, setNotas] = useState(initial?.notas || '');
   const [saving, setSaving] = useState(false);
 
+  // Limpiar baigunPct si se desmarca subarrendado.
+  useEffect(() => {
+    if (!subarrendadoBaigun) setBaigunPct('');
+  }, [subarrendadoBaigun]);
+
+  // Validaciones inline
+  const diaNum = diaVencimiento ? parseInt(diaVencimiento, 10) : NaN;
+  const diaError =
+    diaVencimiento && (!isFinite(diaNum) || diaNum < 1 || diaNum > 31)
+      ? 'Día debe estar entre 1 y 31'
+      : '';
+  const baigunPctNum = baigunPct ? parseFloat(baigunPct) : NaN;
+  const baigunPctError =
+    subarrendadoBaigun && baigunPct && (!isFinite(baigunPctNum) || baigunPctNum < 0 || baigunPctNum > 100)
+      ? 'Porcentaje debe estar entre 0 y 100'
+      : '';
+  const cuitError =
+    titularCuit && titularCuit.length !== 11 && titularCuit.length !== 0
+      ? 'CUIT debe tener 11 dígitos'
+      : '';
+  const hayErrores = !!(diaError || baigunPctError);
+
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -3137,6 +3219,10 @@ function CatalogoModal({
     if (saving) return;
     if (!servicio.trim()) {
       onError('Falta nombre del servicio.');
+      return;
+    }
+    if (hayErrores) {
+      onError('Corregí los errores marcados en rojo antes de guardar.');
       return;
     }
     setSaving(true);
@@ -3174,6 +3260,16 @@ function CatalogoModal({
       });
       const d = await r.json();
       if (d.ok) {
+        // Marcar editedAt en localStorage para freshness indicator
+        try {
+          const key = `${(servicio.trim()).toLowerCase()}__${ancla}`;
+          const stash = JSON.parse(localStorage.getItem('lh-catalog-edits') || '{}');
+          stash[key] = Date.now();
+          localStorage.setItem('lh-catalog-edits', JSON.stringify(stash));
+        } catch { /* localStorage puede no estar disponible */ }
+        // Optimistic UI: mostrar checkmark verde 800ms antes de cerrar.
+        setSavedOk(true);
+        await new Promise((r) => setTimeout(r, 800));
         await onSaved();
       } else {
         onError(d.error || 'Error guardando');
@@ -3184,7 +3280,7 @@ function CatalogoModal({
       setSaving(false);
     }
   }, [
-    saving, servicio, tipo, ancla, localDisplay, diaVencimiento,
+    saving, hayErrores, servicio, tipo, ancla, localDisplay, diaVencimiento,
     frecuencia, metodoPago, montoEstimadoArs, montoEstimadoUsd, monedaDefault,
     titularNombre, titularCuit, cuentaNumero, cbu,
     activo, subarrendadoBaigun, baigunPct, notas,
@@ -3193,7 +3289,7 @@ function CatalogoModal({
 
   const desactivar = useCallback(async () => {
     if (!isEdit || saving) return;
-    if (!confirm('¿Desactivar este servicio? Queda en gris y no se sugiere en meses nuevos. Podés reactivarlo después.')) return;
+    if (!confirm('¿Eliminar este servicio del catálogo? Queda inactivo, no se borra.')) return;
     setSaving(true);
     try {
       const r = await fetch(`/api/servicios/indice?row=${initial!._row}`, {
@@ -3360,8 +3456,14 @@ function CatalogoModal({
                 onChange={(e) => setDiaVencimiento(e.target.value.replace(/[^0-9]/g, '').slice(0, 2))}
                 placeholder="—"
                 className="input-pro tabular-nums-strict"
-                style={{ minHeight: 'var(--touch-min)' }}
+                style={{
+                  minHeight: 'var(--touch-min)',
+                  borderColor: diaError ? '#C84F3F' : undefined,
+                }}
               />
+              {diaError && (
+                <span style={{ fontSize: 10.5, color: '#C84F3F', marginTop: 2 }}>{diaError}</span>
+              )}
             </FieldL>
             <FieldL label="Frecuencia">
               <select
@@ -3515,21 +3617,33 @@ function CatalogoModal({
               />
               Subarrendado Baigun
             </label>
-            {subarrendadoBaigun && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={baigunPct}
-                  onChange={(e) => setBaigunPct(e.target.value.replace(/[^0-9.]/g, '').slice(0, 5))}
-                  placeholder="50"
-                  className="input-pro tabular-nums-strict"
-                  style={{ width: 72, minHeight: 'var(--touch-min)', textAlign: 'center' }}
-                />
-                <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>% al cta cte</span>
-              </div>
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: subarrendadoBaigun ? 1 : 0.45 }}>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={baigunPct}
+                onChange={(e) => setBaigunPct(e.target.value.replace(/[^0-9.]/g, '').slice(0, 5))}
+                placeholder="50"
+                disabled={!subarrendadoBaigun}
+                className="input-pro tabular-nums-strict"
+                style={{
+                  width: 72,
+                  minHeight: 'var(--touch-min)',
+                  textAlign: 'center',
+                  background: subarrendadoBaigun ? undefined : 'var(--bg-subtle)',
+                  cursor: subarrendadoBaigun ? 'text' : 'not-allowed',
+                  borderColor: baigunPctError ? '#C84F3F' : undefined,
+                }}
+              />
+              <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>% al cta cte</span>
+            </div>
           </div>
+          {baigunPctError && (
+            <div style={{ fontSize: 10.5, color: '#C84F3F', marginTop: -8 }}>{baigunPctError}</div>
+          )}
+          {cuitError && (
+            <div style={{ fontSize: 10.5, color: '#C84F3F', marginTop: -8 }}>{cuitError}</div>
+          )}
           <FieldL label="Notas">
             <textarea
               value={notas}
@@ -3567,7 +3681,7 @@ function CatalogoModal({
                 cursor: 'pointer',
               }}
             >
-              Desactivar
+              Eliminar
             </button>
           )}
           <button
@@ -3592,23 +3706,41 @@ function CatalogoModal({
           <button
             type="button"
             onClick={submit}
-            disabled={saving}
+            disabled={saving || hayErrores}
             className="press-feedback"
             style={{
               flex: 2,
               height: 44,
               borderRadius: 'var(--radius-md)',
-              background: 'var(--accent)',
+              background: savedOk ? '#76C893' : 'var(--accent)',
               color: '#FDFBF8',
               fontWeight: 700,
               fontSize: 13.5,
               border: 0,
-              cursor: 'pointer',
-              opacity: saving ? 0.7 : 1,
+              cursor: hayErrores ? 'not-allowed' : 'pointer',
+              opacity: saving || hayErrores ? 0.7 : 1,
+              transition: 'background 0.2s',
             }}
           >
-            {saving ? 'Guardando…' : isEdit ? 'Guardar cambios' : 'Crear servicio'}
+            {savedOk
+              ? '✓ Guardado'
+              : saving
+              ? 'Guardando…'
+              : isEdit
+              ? 'Guardar cambios'
+              : 'Crear servicio'}
           </button>
+        </div>
+        <div
+          style={{
+            padding: '6px 16px 10px',
+            fontSize: 10.5,
+            color: 'var(--text-muted)',
+            textAlign: 'center',
+            opacity: 0.65,
+          }}
+        >
+          Sincronizado con el LISTADO del Sheet · cache 60s
         </div>
       </div>
     </>,
@@ -3638,6 +3770,176 @@ function FieldL({
       </span>
       {children}
     </label>
+  );
+}
+
+// ─── KPI cards (control de gastos) ────────────────────────────────
+function KPICardsRow({
+  data,
+  indice,
+}: {
+  data: ServicioMes;
+  indice: { servicios: CatalogoServicio[] };
+}) {
+  // Total ARS del mes (suma totalPorAncla, ya excluye no_aplica)
+  const totalMes = useMemo(
+    () => Object.values(data.totalPorAncla).reduce((s, v) => s + v, 0),
+    [data.totalPorAncla],
+  );
+
+  // Top categoría: agrupar por TIPO (desde catálogo joineado), sumar
+  const topCategoria = useMemo(() => {
+    const sumByTipo = new Map<string, number>();
+    const allRows = [...data.filasLocales, ...data.filasCronklam, ...data.filasMyP];
+    for (const row of allRows) {
+      const match = indice.servicios.find(
+        (s) => s.servicio.toUpperCase() === row.servicioRaw.toUpperCase(),
+      );
+      const tipo = match?.tipo || 'otro';
+      let sum = 0;
+      for (const c of Object.values(row.porAncla)) {
+        if (c.estado === 'pagado' && !c.esUsd) sum += c.monto;
+      }
+      sumByTipo.set(tipo, (sumByTipo.get(tipo) || 0) + sum);
+    }
+    let top: { tipo: string; monto: number } | null = null;
+    for (const [t, m] of sumByTipo.entries()) {
+      if (!top || m > top.monto) top = { tipo: t, monto: m };
+    }
+    return top;
+  }, [data, indice.servicios]);
+
+  // Top local: el ancla con mayor totalPorAncla
+  const topLocal = useMemo(() => {
+    let top: { ancla: string; monto: number } | null = null;
+    for (const [a, m] of Object.entries(data.totalPorAncla)) {
+      if (!top || m > top.monto) top = { ancla: a, monto: m };
+    }
+    return top;
+  }, [data.totalPorAncla]);
+
+  // Sin pagar: servicios activos del LISTADO que no tienen valor en el
+  // pivot para alguno de sus locales asignados.
+  const sinPagarCount = useMemo(() => {
+    let count = 0;
+    const allRows = [...data.filasLocales, ...data.filasCronklam, ...data.filasMyP];
+    for (const s of indice.servicios) {
+      if (!s.activo) continue;
+      const match = allRows.find(
+        (r) => r.servicioRaw.toUpperCase() === s.servicio.toUpperCase(),
+      );
+      if (!match) {
+        count++;
+        continue;
+      }
+      const cell = match.porAncla[s.ancla];
+      if (!cell || cell.estado === 'vacio' || cell.estado === 'pendiente') count++;
+    }
+    return count;
+  }, [data, indice.servicios]);
+
+  const fmt = (n: number) => `$${Math.round(n).toLocaleString('es-AR')}`;
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        gap: 8,
+        overflowX: 'auto',
+        paddingBottom: 4,
+        marginBottom: 4,
+      }}
+    >
+      <KPICard
+        label="Total del mes"
+        value={fmt(totalMes)}
+        hint={`${data.conteoPagados} pagado${data.conteoPagados !== 1 ? 's' : ''}`}
+      />
+      <KPICard
+        label="Top categoría"
+        value={topCategoria ? topCategoria.tipo.toUpperCase() : '—'}
+        hint={topCategoria ? fmt(topCategoria.monto) : ''}
+      />
+      <KPICard
+        label="Top local"
+        value={topLocal ? topLocal.ancla : '—'}
+        hint={topLocal ? fmt(topLocal.monto) : ''}
+      />
+      <KPICard
+        label="Sin pagar"
+        value={String(sinPagarCount)}
+        hint={sinPagarCount > 0 ? 'servicios pendientes' : 'todo al día'}
+        dotColor={sinPagarCount > 0 ? '#E0B341' : '#76C893'}
+      />
+    </div>
+  );
+}
+
+function KPICard({
+  label,
+  value,
+  hint,
+  dotColor,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+  dotColor?: string;
+}) {
+  return (
+    <div
+      style={{
+        flexShrink: 0,
+        minWidth: 140,
+        padding: '12px 14px',
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius-md)',
+        boxShadow: 'var(--shadow-card)',
+      }}
+    >
+      <div
+        style={{
+          fontSize: 9.5,
+          fontWeight: 700,
+          letterSpacing: '0.10em',
+          textTransform: 'uppercase',
+          color: 'var(--text-muted)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          marginBottom: 4,
+        }}
+      >
+        {dotColor && (
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              background: dotColor,
+              display: 'inline-block',
+            }}
+          />
+        )}
+        {label}
+      </div>
+      <div
+        className="tabular-nums-strict importe"
+        style={{
+          fontSize: 16,
+          fontWeight: 700,
+          color: 'var(--text)',
+          fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
+          lineHeight: 1.1,
+        }}
+      >
+        {value}
+      </div>
+      {hint && (
+        <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>{hint}</div>
+      )}
+    </div>
   );
 }
 

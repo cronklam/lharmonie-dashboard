@@ -154,10 +154,13 @@ Owner ve los 5 tabs; admin/viewer ven 4 (sin P&L).
 
 ### Anclas (taxonomía transversal)
 
-`lib/anclas.ts` define 8 anclas: `LH1 LH2 LH3 LH4 LH5 LH6` (locales),
-`CRONKLAM` (empresa, gastos corporativos / IVA / impositivo) y `MyP`
-(personal Martín y Melanie — NO entra en métricas operativas, solo
-owner ve/carga). Cada movimiento de Servicios y Caja se asigna a una.
+`lib/anclas.ts` define 9 anclas: `LH1 LH2 LH3 LH4 LH5 LH6` (locales),
+`CRONKLAM` (empresa, gastos corporativos / IVA / impositivo),
+`BAMBINA` (propiedad personal con servicios — Telecom/Flow, Aysa, ABL,
+Edenor, Expensas; hasta mayo 2026 los movs se agrupaban bajo CRONKLAM,
+ahora es ancla propia) y `MyP` (personal Martín y Melanie — NO entra en
+métricas operativas, solo owner ve/carga). Cada movimiento de Servicios
+y Caja se asigna a una.
 
 ### Caja Efectivo — schema del Sheet (REAL)
 
@@ -207,6 +210,70 @@ para mantener el patrón. Detección: `values.get` con
   pestaña + `mesesDisponibles` (todas las pestañas válidas).
 - `GET /api/caja/saldos` — suma de TODAS las pestañas mensuales
   agrupada por moneda (saldo total actual).
+
+### Módulo CTA CTE BAIGUN (cuenta corriente subarriendo LH5)
+
+Tab `CTA CTE BAIGUN` del `SERVICIOS_SHEET_ID` (schema preparado por otra
+instancia — **no se crea ni modifica desde el dashboard**, solo append y
+update de filas):
+
+```
+A id | B fecha DD/MM/YYYY | C mes_origen YYYY-MM | D tipo (cargo|pago|ajuste)
+E concepto | F servicio_ref | G monto (positivo) | H saldo_despues (signed)
+I metodo | J notas | K fuente (auto|manual) | L cargado_por | M created_at ISO
+N deleted_at ISO | '' = activo (soft delete)
+```
+
+**Lib helpers:** `src/lib/baigun-cta-cte.ts` (parser + types puro) +
+`src/lib/baigun-cta-cte-server.ts` (Sheet I/O con service account).
+
+**Endpoints** (todos owner-only salvo GET que también permite manager):
+- `GET /api/baigun/cta-cte?mes=&servicio=&tipo=` →
+  `{ items, saldoTotal, saldoMes }`.
+- `POST /api/baigun/cta-cte` body `{ fecha, tipo, concepto, monto,
+  metodo, notas, mesOrigen?, servicioRef? }` → append fila manual.
+- `PATCH /api/baigun/cta-cte` body `{ id, ...campos }` → update +
+  recalcula saldos en cascada.
+- `DELETE /api/baigun/cta-cte?id=X` → soft delete (col N) + recalcula
+  saldos.
+- `GET /api/baigun/cta-cte/export?formato=csv&mes=&servicio=&tipo=` →
+  CSV con headers en español + BOM UTF-8.
+- `POST /api/baigun/derivar-mes` body `{ mes: 'YYYY-MM' }` → genera
+  cargos auto idempotentes: por cada servicio del LISTADO con
+  `subarrendadoBaigun=true && activo=true` que tenga monto en col LH5
+  del pivot mensual, crea `tipo='cargo'` con monto `lh5 * baigunPct/100`.
+  Si ya existe mov auto con mismo `(mesOrigen, servicioRef)`, lo
+  actualiza si difiere el monto; si no, skip. Devuelve
+  `{ agregados, actualizados, sinCambios, sinPagar }`.
+- `GET /api/baigun/derivar-mes-cron` (sin sesión user; auth con
+  `Authorization: Bearer ${CRON_SECRET}`) → corre `derivar-mes` para
+  el mes actual. Configurado en `vercel.json` con cron `0 12 5 * *`
+  (día 5 de cada mes 12:00 UTC). Vercel Hobby permite 2 crons gratis.
+  Setear `CRON_SECRET` en Vercel env para producción.
+
+**Sign convention:** saldo > 0 = Baigun debe a Lharmonie. cargo suma,
+pago resta. Ajuste suma (puede ser + o - según interpretación).
+
+**UI** (`/baigun`): 3 vistas con segmented control (Resumen / Histórico
+/ Calendario). Resumen muestra hero saldo total + sub-cards mes +
+botón "+ Registrar pago" + "🔄 Generar cargos del mes" + tabla por
+servicio. Histórico = filtros + lista cronológica + export CSV + nuevo
+mov manual. Calendario = grid 7×N del mes con dots por día.
+
+### Convención al leer pivot mensual (marcar pagado)
+
+Cuando se escribe el monto en la celda mensual, el dashboard escribe
+**el monto exacto** (formato `$1.234`), no "OK". El form pre-rellena
+con `montoEstimadoArs` (o `montoEstimadoUsd`) del LISTADO como
+sugerencia editable. Lectura del Sheet:
+
+| Valor en celda | Estado parseado | Notas |
+|----------------|-----------------|-------|
+| número con `$` | `pagado` | monto se usa en sumas |
+| `OK` / `Ok` / `ok` | `pagado_sin_monto` | (legacy, se considera pagado; sumas usan fallback al `montoEstimadoArs` del LISTADO) |
+| `NO` | `no_aplica` | el local no tiene este servicio |
+| `TODAVIA NO` / `PENDIENTE` / `PAGAR` | `pendiente` | falta cargar este mes |
+| (vacío) | `vacio` | sin cargar |
 
 ### Servicios — TODO de configuración
 
@@ -381,7 +448,8 @@ procesado:'Procesado', imagen:'Imagen', mes:'Mes', anio:'Año'
 | `GOOGLE_CREDENTIALS` | JSON del service account | Necesario para escribir el tab "Usuarios", Servicios y Caja. Si falta, el sistema cae a la lista hardcoded de `AUTHORIZED_USERS` y los módulos Servicios/Caja devuelven error visible. Mismo service account del staff sirve. |
 | `SERVICIOS_SHEET_ID` | `1u6zH3X5MB1EyMQJ59YEkGFhbuQwzv7TsZbz2XZKZ_kM` | Sheet con tabs `Servicios Catalogo`, `Servicios Pagos`, `Baigun CtaCte`. Service account compartido como Editor. |
 | `CAJA_SHEET_ID` | `1Vx2aOlbf79GKSL-LaZUBYiluWnqiCv3EWaVv1oEej1Q` | Sheet con tabs `CajaChica_Movimientos`, `CajaChica_Sesiones`, `CajaGrande_Movimientos`. |
-| `SERVICIOS_CATALOGO_TAB`, `SERVICIOS_PAGOS_TAB`, `BAIGUN_CTA_CTE_TAB`, `CAJA_CHICA_MOV_TAB`, `CAJA_CHICA_SES_TAB`, `CAJA_GRANDE_TAB` | (overrides) | Defaults heredados del staff. Si los tabs reales tienen otros nombres, sobrescribir acá. NO se autocrean — el tab tiene que existir. |
+| `SERVICIOS_CATALOGO_TAB`, `SERVICIOS_PAGOS_TAB`, `BAIGUN_CTA_CTE_TAB`, `CAJA_CHICA_MOV_TAB`, `CAJA_CHICA_SES_TAB`, `CAJA_GRANDE_TAB` | (overrides) | Defaults heredados del staff. Si los tabs reales tienen otros nombres, sobrescribir acá. NO se autocrean — el tab tiene que existir. `BAIGUN_CTA_CTE_TAB` default es `'CTA CTE BAIGUN'`. |
+| `CRON_SECRET` | string secreto (opcional) | Si está set, `/api/baigun/derivar-mes-cron` requiere `Authorization: Bearer <CRON_SECRET>`. Vercel-cron lo envía automáticamente. Sin secret, el endpoint queda abierto (loguea warning). |
 
 `.env.example` tiene la plantilla local.
 
@@ -463,6 +531,17 @@ git checkout main && git merge --ff-only feat/<branch> && git push origin main
       del Sheet "Artículos" — eso lo hacía la API key del dash viejo
       contra el tab "Artículos" de Facturas. Ver si se quiere migrar
       esa data específica más adelante).
+- [ ] Setear `CRON_SECRET` en Vercel cuando se confirme el cron de
+      `/api/baigun/derivar-mes-cron`. Vercel Hobby permite 2 crons
+      gratis — si subimos a Pro podemos aumentar la frecuencia
+      (semanal/diaria) según necesidad.
+- [ ] **PARTE 3 (control de gastos) — MVP shippeado**: hay KPI cards
+      arriba del Tab Tabla en `/servicios` (Total mes, Top categoría,
+      Top local, Sin pagar). Falta: semáforos por servicio (delta vs
+      mediana 3m), banner alertas colapsable + endpoint
+      `/api/servicios/alertas`, forecast endpoint + toggle, flags
+      rojo/amarillo en Tab Calendario. Diseño definido, implementación
+      pendiente para próxima iteración.
 - [ ] **Servicios — sync con staff PENDIENTE**: el staff
       (`~/Desktop/lharmonie-staff/`) tiene su propio catálogo en
       `ENVIOS_SHEETS_ID` tab "Servicios Catalogo". El dashboard ahora
