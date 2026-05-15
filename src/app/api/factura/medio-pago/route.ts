@@ -31,12 +31,11 @@ export const POST = withAuth(async (req, user) => {
         : null;
     const medioPago = typeof body.medioPago === 'string' ? body.medioPago.trim() : '';
 
-    if (!filaExacta || filaExacta < 2) {
-      const detalle =
-        filaExacta === -1
-          ? 'Esta deuda viene del tab Proveedores. Cambiá el medio de pago editando esa fila en el Sheet.'
-          : 'Falta filaExacta (entero ≥ 2)';
-      return NextResponse.json({ ok: false, error: detalle }, { status: 400 });
+    if (!filaExacta) {
+      return NextResponse.json(
+        { ok: false, error: 'Falta filaExacta (entero ≥ 2)' },
+        { status: 400 },
+      );
     }
     if (!MEDIOS_VALIDOS.includes(medioPago)) {
       return NextResponse.json(
