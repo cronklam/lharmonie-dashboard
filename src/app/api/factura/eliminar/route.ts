@@ -25,11 +25,12 @@ export const POST = withAuth(async (req, user) => {
       typeof body.filaExacta === 'number' && Number.isFinite(body.filaExacta)
         ? body.filaExacta
         : null;
-    if (!filaExacta) {
-      return NextResponse.json(
-        { ok: false, error: 'Falta filaExacta (entero ≥ 2)' },
-        { status: 400 },
-      );
+    if (!filaExacta || filaExacta < 2) {
+      const detalle =
+        filaExacta === -1
+          ? 'Esta deuda viene del tab Proveedores. No se puede eliminar desde la app — editá la fila del Sheet directamente.'
+          : 'Falta filaExacta (entero ≥ 2)';
+      return NextResponse.json({ ok: false, error: detalle }, { status: 400 });
     }
     const result = await clearFacturaRow(filaExacta);
     if (!result.ok) {

@@ -81,8 +81,96 @@ function rowsToObjects(rows: string[][]): SheetRowWithMeta[] {
 }
 
 export async function getFacturasFromSheet() {
-  const rows = await fetchTab(FACTURAS_SHEET_ID, 'Facturas');
-  return rowsToObjects(rows);
+  // Mayo 2026 — el bot/flujo Bistrosoft dejó de cargar facturas al tab
+  // "Facturas" hace ~2 meses. Las cuentas a pagar pasaron a vivir en el
+  // tab "Proveedores" (1 fila por proveedor con Condición de Pago + Total
+  // Comprado acumulado). Para no romper /a-pagar leemos ambos tabs y
+  // emitimos pseudo-facturas a partir de las filas Proveedores con
+  // "A pagar". Las pseudo-facturas tienen `_origen: 'proveedores'` para
+  // que la UI sepa que no se pueden marcar como pagadas con el worker.
+  //
+  // NO se toca ningún tab del Sheet.
+  const [facturasRows, proveedoresRows] = await Promise.all([
+    fetchTab(FACTURAS_SHEET_ID, 'Facturas').catch(() => [] as string[][]),
+    fetchTab(FACTURAS_SHEET_ID, 'Proveedores').catch(() => [] as string[][]),
+  ]);
+
+  const facturas = rowsToObjects(facturasRows);
+  const pseudoFacturas = proveedoresAPseudoFacturas(proveedoresRows);
+  return [...facturas, ...pseudoFacturas];
+}
+
+// Convierte filas del tab "Proveedores" con Condición de Pago = "A pagar"
+// + Total Comprado > 0 en pseudo-facturas con el shape que espera el
+// frontend. _sheetRow se setea a -1 para evitar que /marcar-pagada
+// intente escribir a la fila equivocada del tab Facturas.
+function proveedoresAPseudoFacturas(rows: string[][]): SheetRowWithMeta[] {
+  if (!rows.length) return [];
+  // Tab Proveedores: header en row 0, datos en row 1+.
+  const headers = rows[0].map((h) => String(h).trim());
+  const idx = (name: string) => headers.findIndex((h) => h === name);
+  const iRazon = idx('Razón Social');
+  const iCUIT = idx('CUIT');
+  const iCBU = idx('Alias / CBU');
+  const iCond = idx('Condición de Pago');
+  const iCat = idx('Categoría');
+  const iUltima = idx('Última Compra');
+  const iTotal = idx('Total Comprado');
+  const iObs = idx('Observaciones');
+  if (iRazon < 0 || iCond < 0 || iTotal < 0) return [];
+
+  const parseNum = (s: string): number => {
+    const n = parseFloat(
+      String(s || '')
+        .replace(/\$/g, '')
+        .replace(/\./g, '')
+        .replace(',', '.')
+        .replace(/[^0-9.\-]/g, ''),
+    );
+    return isNaN(n) ? 0 : n;
+  };
+
+  const out: SheetRowWithMeta[] = [];
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i] || [];
+    const razon = (row[iRazon] || '').trim();
+    if (!razon) continue;
+    const cond = (row[iCond] || '').trim();
+    if (!cond.toLowerCase().includes('a pagar')) continue;
+    const total = parseNum(row[iTotal] || '');
+    if (total <= 0) continue;
+    const ultima = (row[iUltima] || '').trim();
+    const fechaFC = ultima || '';
+    out.push({
+      _sheetRow: -1,                  // marcador "virtual"
+      _origen: 'proveedores',          // flag para la UI
+      _proveedorRow: i + 1,            // fila real en tab Proveedores (1-indexed)
+      'Fecha FC': fechaFC,
+      'Semana': '',
+      'Mes': '',
+      'Año': '',
+      'Proveedor': razon,
+      'CUIT': iCUIT >= 0 ? (row[iCUIT] || '').trim() : '',
+      'Tipo Doc': 'Cuenta corriente',
+      '# PV': '',
+      '# Factura': '',
+      'Categoría': iCat >= 0 ? (row[iCat] || '').trim() : '',
+      'Local': '',
+      'Cajero': '',
+      'Importe Neto': '',
+      'IVA 21%': '',
+      'IVA 10.5%': '',
+      'Total': String(total),
+      'Medio de Pago': cond,
+      'Estado': cond,
+      'Fecha de Pago': '',
+      'Observaciones': iObs >= 0 ? (row[iObs] || '').trim() : '',
+      'Procesado': '',
+      'Imagen': '',
+      'CBU': iCBU >= 0 ? (row[iCBU] || '').trim() : '',
+    });
+  }
+  return out;
 }
 
 export async function getProveedoresFromSheet() {

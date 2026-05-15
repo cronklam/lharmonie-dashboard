@@ -16,11 +16,16 @@ export const POST = withAuth(async (req) => {
       typeof body.filaExacta === 'number' && Number.isFinite(body.filaExacta)
         ? body.filaExacta
         : null;
-    if (!filaExacta) {
-      return NextResponse.json(
-        { ok: false, error: 'Falta filaExacta (entero ≥ 2)' },
-        { status: 400 },
-      );
+    if (!filaExacta || filaExacta < 2) {
+      // Pseudo-facturas (origen tab Proveedores) llegan con filaExacta=-1.
+      // No se pueden marcar pagadas con este endpoint — son cuentas
+      // corrientes del proveedor, hay que editar el tab Proveedores en el
+      // Sheet directamente.
+      const detalle =
+        filaExacta === -1
+          ? 'Esta deuda viene del tab Proveedores (cuenta corriente). Editala desde el Sheet o el tab Proveedores.'
+          : 'Falta filaExacta (entero ≥ 2)';
+      return NextResponse.json({ ok: false, error: detalle }, { status: 400 });
     }
     const result = await markFacturaPagadaDirect(filaExacta);
     if (!result.ok) {
