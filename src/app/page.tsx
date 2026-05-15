@@ -308,8 +308,9 @@ export default function HomePage() {
           >
             <AnimatedNumber
               value={totalPend}
-              duration={1100}
+              duration={650}
               format={(n) => fmtMoney(n)}
+              reveal="hero"
             />
           </div>
           <div style={{ marginTop: 8, color: 'rgba(249,247,243,0.72)', fontSize: 13 }}>
@@ -488,8 +489,9 @@ export default function HomePage() {
         >
           <AnimatedNumber
             value={totalPeriodo}
-            duration={900}
+            duration={600}
             format={(n) => fmtMoney(n)}
+            reveal="hero"
           />
         </div>
         <div
@@ -516,24 +518,36 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Stats row */}
-      <section style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+      {/* Stats row — stagger entre las dos cards: index 0 y 1, delay
+          dado por --lh-stagger del padre (default 70ms). */}
+      <section
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: 10,
+          ['--lh-stagger' as string]: '110ms',
+        } as React.CSSProperties}
+      >
         <StatCard
           label="Pendientes"
+          revealIndex={0}
           value={
             <AnimatedNumber
               value={pendientes.length}
               format={(n) => Math.round(n).toString()}
+              index={0}
             />
           }
           sub="facturas a pagar"
         />
         <StatCard
           label="Cargadas hoy"
+          revealIndex={1}
           value={
             <AnimatedNumber
               value={hoyFacts.length}
               format={(n) => Math.round(n).toString()}
+              index={1}
             />
           }
           sub={hoyFacts.length ? fmtMoney(totalHoy) : 'ninguna hoy'}
@@ -600,9 +614,23 @@ export default function HomePage() {
         {provDeuda.length === 0 ? (
           <EmptyState icon="🎉" text="Sin deuda pendiente" />
         ) : (
-          <ul style={{ display: 'flex', flexDirection: 'column', gap: 8, listStyle: 'none', padding: 0, margin: 0 }}>
-            {provDeuda.slice(0, 8).map((d) => (
-              <li key={d.prov}>
+          <ul
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+              listStyle: 'none',
+              padding: 0,
+              margin: 0,
+              ['--lh-stagger' as string]: '70ms',
+            } as React.CSSProperties}
+          >
+            {provDeuda.slice(0, 8).map((d, i) => (
+              <li
+                key={d.prov}
+                className="lh-fx-reveal"
+                style={{ ['--i' as string]: i } as React.CSSProperties}
+              >
                 <Link
                   href={`/proveedores/${encodeURIComponent(d.prov)}`}
                   className="lh-prov-row spring-tap"
@@ -717,10 +745,15 @@ export default function HomePage() {
               display: 'flex',
               flexDirection: 'column',
               gap: 10,
-            }}
+              ['--lh-stagger' as string]: '80ms',
+            } as React.CSSProperties}
           >
-            {localesData.map((d) => (
-              <div key={d.loc}>
+            {localesData.map((d, i) => (
+              <div
+                key={d.loc}
+                className="lh-fx-reveal"
+                style={{ ['--i' as string]: i } as React.CSSProperties}
+              >
                 <div
                   style={{
                     display: 'flex',
@@ -979,19 +1012,26 @@ function StatCard({
   label,
   value,
   sub,
+  revealIndex,
 }: {
   label: string;
   value: React.ReactNode;
   sub: string;
+  /** Si está set, la card entera entra con fade-up + delay i*stagger. */
+  revealIndex?: number;
 }) {
   return (
     <div
+      className={revealIndex !== undefined ? 'lh-fx-reveal' : undefined}
       style={{
         background: 'var(--bg-card)',
         border: '1px solid var(--border)',
         borderRadius: 'var(--radius-lg)',
         padding: 14,
         boxShadow: 'var(--shadow-card)',
+        ...(revealIndex !== undefined
+          ? ({ ['--i' as string]: revealIndex } as React.CSSProperties)
+          : {}),
       }}
     >
       <div

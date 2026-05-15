@@ -1,9 +1,13 @@
 'use client';
 
-import { use, useMemo, useState } from 'react';
+import { use, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../components/AuthProvider';
 import { PageHeader } from '../../components/PageHeader';
+import {
+  RingPulseButton,
+  useSuccessBurst,
+} from '../../components/SuccessBurst';
 import {
   COL,
   esBistrosoft,
@@ -32,6 +36,11 @@ export default function FacturaDetailPage({
   const [savingMedio, setSavingMedio] = useState<string | null>(null);
   const [errMsg, setErrMsg] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
+  const confirmBtnRef = useRef<HTMLButtonElement>(null);
+  const { fire: fireBurst, Particles: BurstParticles } = useSuccessBurst({
+    count: 14,
+    radius: 70,
+  });
 
   const f = useMemo(
     () => facturas.find((x) => x._id === decodeURIComponent(id)),
@@ -98,9 +107,13 @@ export default function FacturaDetailPage({
     const res = await marcarPagada(f);
     setMarking(false);
     if (res.ok) {
+      // Celebración: burst de partículas doradas desde el botón
+      // confirmar. Vive ~600ms — el redirect a /pagadas es a 800ms,
+      // así que se ve completo antes de salir de la pantalla.
+      fireBurst(confirmBtnRef.current);
       setOkMsg('Factura marcada como pagada');
       setConfirmingPay(false);
-      setTimeout(() => router.replace('/pagadas'), 800);
+      setTimeout(() => router.replace('/pagadas'), 900);
     } else {
       // Bubble up el error real del Sheet API / server.
       setErrMsg(res.error || 'No se pudo marcar como pagada. Intentá de nuevo.');
@@ -249,9 +262,13 @@ export default function FacturaDetailPage({
             </div>
           )}
 
-          {/* Confirm: marcar pagada */}
+          {/* Confirm: marcar pagada — entra con spring de sheet
+              (overshoot leve + rebote), y el botón confirmar dispara
+              un ring expandiéndose al click + burst de partículas al
+              éxito (en handleMark). */}
           {confirmingPay && (
             <div
+              className="lh-fx-sheet-spring"
               style={{
                 background: 'var(--bg-card)',
                 border: '1px solid var(--green)',
@@ -286,9 +303,11 @@ export default function FacturaDetailPage({
                 >
                   Cancelar
                 </button>
-                <button
+                <RingPulseButton
+                  ref={confirmBtnRef}
                   onClick={handleMark}
                   disabled={marking}
+                  ringColor="var(--green)"
                   className="btn-glow-success spring-tap"
                   style={{
                     flex: 2,
@@ -299,7 +318,7 @@ export default function FacturaDetailPage({
                   }}
                 >
                   {marking ? 'Guardando…' : 'Sí, marcar pagada'}
-                </button>
+                </RingPulseButton>
               </div>
             </div>
           )}
@@ -307,6 +326,7 @@ export default function FacturaDetailPage({
           {/* Confirm: eliminar */}
           {confirmingDelete && (
             <div
+              className="lh-fx-sheet-spring"
               style={{
                 background: 'var(--red-bg)',
                 border: '1px solid #C84F3F',
@@ -544,6 +564,9 @@ export default function FacturaDetailPage({
           </a>
         )}
       </div>
+
+      {/* Portal de partículas — vive en body, no afecta layout. */}
+      <BurstParticles />
     </div>
   );
 }

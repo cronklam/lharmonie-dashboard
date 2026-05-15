@@ -2089,3 +2089,150 @@ button:hover .btn-trailing-icon-on-dark {
 @media (max-width: 339px) {
   .lh-topnav-name { display: none; }
 }
+
+/* ─────────────────────────────────────────────────────────────────
+   Production motion library — efectos de micro-interacción
+   Curvas tipo spring/expo nativas (sin Framer Motion).
+   Cada utility class arranca con `lh-fx-` para no chocar con el
+   resto del sistema.
+   ───────────────────────────────────────────────────────────────── */
+
+/* Springs y curvas reutilizables (las clásicas del proyecto se
+   mantienen arriba; estas son adicionales para los efectos nuevos). */
+:root {
+  --fx-spring-strong: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --fx-spring-medium: cubic-bezier(0.34, 1.40, 0.64, 1);
+  --fx-spring-soft:   cubic-bezier(0.34, 1.20, 0.64, 1);
+  --fx-expo-out:      cubic-bezier(0.22, 1.00, 0.36, 1);
+}
+
+/* === Staggered header entrance ================================== */
+@keyframes lhFxFromLeft {
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes lhFxFromRight {
+  from { opacity: 0; transform: translateX(10px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes lhFxFromBelow {
+  from { opacity: 0; transform: translateY(6px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes lhFxSpringPop {
+  from { opacity: 0; transform: scale(0.78) rotate(-6deg); }
+  to   { opacity: 1; transform: scale(1) rotate(0); }
+}
+
+.lh-fx-from-left  { animation: lhFxFromLeft 0.28s var(--fx-expo-out) both; }
+.lh-fx-from-right { animation: lhFxFromRight 0.28s var(--fx-expo-out) both; }
+.lh-fx-from-below { animation: lhFxFromBelow 0.28s var(--fx-spring-medium) both; }
+.lh-fx-spring-pop { animation: lhFxSpringPop 0.32s var(--fx-spring-strong) both; }
+
+/* === Press feedback en cards (mantenido, es barato) ============= */
+.lh-fx-press {
+  transition: transform 0.18s var(--fx-spring-strong);
+  will-change: transform;
+}
+.lh-fx-press:active {
+  transform: scale(0.965);
+  transition: transform 0.08s var(--ease-ios);
+}
+
+/* === Bottom sheet con spring (más rápido, menos overshoot) ====== */
+@keyframes lhFxSheetSpring {
+  0%   { transform: translateY(100%); opacity: 0.6; }
+  60%  { transform: translateY(-2%);  opacity: 1; }
+  100% { transform: translateY(0);    opacity: 1; }
+}
+.lh-fx-sheet-spring {
+  animation: lhFxSheetSpring 0.34s var(--fx-spring-soft) both;
+  will-change: transform, opacity;
+}
+
+/* === Ring pulse (feedback táctil al confirmar) ================== */
+@keyframes lhFxRingExpand {
+  0%   { transform: scale(1);   opacity: 0.55; }
+  100% { transform: scale(2.0); opacity: 0;    }
+}
+.lh-fx-ring {
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  border: 2px solid currentColor;
+  pointer-events: none;
+  animation: lhFxRingExpand 0.48s var(--ease-out-expo) forwards;
+}
+
+/* === Burst de partículas (celebración al pagar) ================= */
+@keyframes lhFxBurst {
+  0%   { transform: translate(0, 0) scale(1);   opacity: 1; }
+  100% { transform: translate(var(--bx), var(--by)) scale(0.2); opacity: 0; }
+}
+.lh-fx-burst-particle {
+  position: fixed;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 9999;
+  animation: lhFxBurst 0.62s cubic-bezier(0.2, 0, 0.8, 1) forwards;
+  will-change: transform, opacity;
+}
+
+/* === Number flip (cuando un valor cambia, micro pop) ============ */
+@keyframes lhFxNumPop {
+  0%   { transform: scale(0.6) translateY(3px); opacity: 0; }
+  55%  { transform: scale(1.12); }
+  100% { transform: scale(1) translateY(0);     opacity: 1; }
+}
+.lh-fx-num-pop {
+  animation: lhFxNumPop 0.26s var(--fx-spring-strong) both;
+  display: inline-block;
+}
+
+/* === Reveal up con stagger por CSS var =========================
+   Uso:
+     <ul style={{ '--lh-stagger': '80ms' }}>
+       <li className="lh-fx-reveal" style={{ '--i': 0 }}>…
+       <li className="lh-fx-reveal" style={{ '--i': 1 }}>…
+   Cada ítem entra con fade + 10px slide-up. Default stagger 80ms
+   (perceptible al ojo sin sentirse lento). Sin blur (era costoso
+   y casi imperceptible en mobile). */
+@keyframes lhFxRevealUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.lh-fx-reveal {
+  animation: lhFxRevealUp 0.32s var(--fx-expo-out) both;
+  animation-delay: calc(var(--i, 0) * var(--lh-stagger, 80ms));
+}
+/* Variante "hero" — un poco más de Y travel + escalita 0.96→1.
+   Para los números grandes. */
+@keyframes lhFxRevealHero {
+  0%   { opacity: 0; transform: translateY(14px) scale(0.96); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.lh-fx-reveal-hero {
+  animation: lhFxRevealHero 0.46s var(--fx-spring-soft) both;
+  animation-delay: calc(var(--i, 0) * var(--lh-stagger, 80ms));
+}
+
+/* === Accessibility: respeta usuarios con reduced motion ========= */
+@media (prefers-reduced-motion: reduce) {
+  .lh-fx-from-left,
+  .lh-fx-from-right,
+  .lh-fx-from-below,
+  .lh-fx-spring-pop,
+  .lh-fx-sheet-spring,
+  .lh-fx-num-pop,
+  .lh-fx-reveal,
+  .lh-fx-reveal-hero {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+  }
+  .lh-fx-press { transition-duration: 0.01ms !important; }
+  .lh-fx-ring,
+  .lh-fx-burst-particle { display: none !important; }
+}

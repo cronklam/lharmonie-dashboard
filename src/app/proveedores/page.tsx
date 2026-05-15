@@ -170,26 +170,37 @@ export default function ProveedoresPage() {
           </div>
         </div>
 
-        {/* KPIs */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+        {/* KPIs — entran cascadeadas en orden i=0,1,2. */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr 1fr',
+            gap: 8,
+            ['--lh-stagger' as string]: '100ms',
+          } as React.CSSProperties}
+        >
           <KPI
             label="Total gastado"
+            revealIndex={0}
             value={
               <AnimatedNumber
                 value={totalGastado}
-                duration={900}
+                duration={650}
                 format={(n) => fmtMoney(n)}
+                index={0}
               />
             }
             sub={`${ranking.length} proveedores`}
           />
           <KPI
             label="Mayor categoría"
+            revealIndex={1}
             value={topCat ? fmtMoney(topCat[1]) : '—'}
             sub={topCat?.[0] || '—'}
           />
           <KPI
             label="Top proveedor"
+            revealIndex={2}
             value={topProv ? fmtMoney(topProv.total) : '—'}
             sub={topProv?.prov || '—'}
           />
@@ -321,19 +332,25 @@ function KPI({
   label,
   value,
   sub,
+  revealIndex,
 }: {
   label: string;
   value: React.ReactNode;
   sub: string;
+  revealIndex?: number;
 }) {
   return (
     <div
+      className={revealIndex !== undefined ? 'lh-fx-reveal' : undefined}
       style={{
         background: 'var(--bg-card)',
         border: '1px solid var(--border)',
         borderRadius: 'var(--radius-md)',
         padding: 10,
         boxShadow: 'var(--shadow-card)',
+        ...(revealIndex !== undefined
+          ? ({ ['--i' as string]: revealIndex } as React.CSSProperties)
+          : {}),
       }}
     >
       <div
