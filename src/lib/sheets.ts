@@ -85,11 +85,6 @@ export async function getFacturasFromSheet() {
   return rowsToObjects(rows);
 }
 
-export async function getProveedoresFromSheet() {
-  const rows = await fetchTab(FACTURAS_SHEET_ID, 'Proveedores');
-  return rowsToObjects(rows);
-}
-
 export async function getArticulosFromSheet() {
   const rows = await fetchTab(FACTURAS_SHEET_ID, 'Artículos');
   return rowsToObjects(rows);
