@@ -60,18 +60,35 @@ export function shortLocal(s: string): string {
   return (s || '').replace(/Lharmonie\s+/i, 'LH ');
 }
 
+// Normaliza el string de Estado para matchear robusto:
+//   - NFKC (compone acentos / colapsa formas)
+//   - NBSP ( ) → espacio normal
+//   - colapsa whitespace múltiple
+//   - lowercase + trim
+// Sin esto, un Estado "A pagar — Transferencia" (NBSP entre A y
+// pagar, como suele pegar el bot/Sheet) no matcheaba `includes('a pagar')`.
+function normalizeEstado(s: string): string {
+  return (s || '')
+    .normalize('NFKC')
+    .replace(/ /g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
 export function esPagado(f: Factura): boolean {
-  const e = String(f[COL.estado] || '').toLowerCase();
+  const e = normalizeEstado(String(f[COL.estado] || ''));
   return (
     e.includes('previamente') ||
     e.includes('pagado') ||
     e.includes('pagada') ||
+    e.includes('pago realizado') ||
     e.includes('✅')
   );
 }
 
 export function esBistrosoft(f: Factura): boolean {
-  const e = String(f[COL.estado] || '').toLowerCase();
+  const e = normalizeEstado(String(f[COL.estado] || ''));
   const obs = String(f[COL.obs] || '').toLowerCase();
   const proc = String(f[COL.procesado] || '').toLowerCase();
   return (
@@ -83,14 +100,20 @@ export function esBistrosoft(f: Factura): boolean {
 
 export function esAPagar(f: Factura): boolean {
   if (esPagado(f)) return false;
-  const e = String(f[COL.estado] || '').toLowerCase();
-  return (
-    e.includes('a pagar') ||
-    e.trim() === 'pagar' ||
-    e.includes('transferencia') ||
-    (e.includes('efectivo') && !e.includes('pagado')) ||
-    e.includes('bistrosoft')
-  );
+  const e = normalizeEstado(String(f[COL.estado] || ''));
+  if (!e) return false;
+  // "pagar" como palabra: matchea "A pagar", "Por pagar", "Falta pagar",
+  // "Pagar" solo, "Pagar - Transferencia", etc. El word boundary evita
+  // matchear "pagar" como parte de "pagado"/"pagada" (que igual ya están
+  // excluidas por esPagado arriba).
+  if (/\bpagar\b/.test(e)) return true;
+  if (e.includes('pendiente')) return true;
+  // Heredado: status que solo nombran el medio de pago se interpretan
+  // como "a pagar por ese medio".
+  if (e.includes('transferencia')) return true;
+  if (e.includes('efectivo')) return true;
+  if (e.includes('bistrosoft')) return true;
+  return false;
 }
 
 export function parseFechaFC(str: string | undefined): Date | null {
