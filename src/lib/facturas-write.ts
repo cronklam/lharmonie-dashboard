@@ -51,9 +51,12 @@ function colLetter(idx: number): string {
   return letter;
 }
 
-/** Lee la fila de headers del tab Facturas. El Sheet a veces tiene
- *  una fila "LHARMONIE ..." en la fila 1 — en ese caso los headers
- *  están en la fila 2. Devuelve los headers + la fila donde están. */
+/** Lee la fila de headers del tab Facturas. Hay dos layouts:
+ *   (a) legacy: row 1 = title "LHARMONIE …", row 2 = headers.
+ *   (b) actual (mayo 2026+): row 1 tiene el title en col A Y los headers
+ *       reales en cols B+ (Semana, Mes, Año, Proveedor, ..., Estado, ...)
+ *       en la MISMA fila. Row 2 ya es la primera factura.
+ *  Espejo de la lógica de lectura en `lib/sheets.ts` rowsToObjects. */
 async function readHeaders(
   sheets: SheetsClient,
 ): Promise<{ headers: string[]; headerRow: number }> {
@@ -62,14 +65,32 @@ async function readHeaders(
     range: `'${TAB}'!A1:AZ2`,
   });
   const rows = res.data.values || [];
-  let headerRow = 1;
-  const first = rows[0];
-  if (first && first[0] && String(first[0]).toUpperCase().includes('LHARMONIE')) {
+  const row0 = (rows[0] || []) as string[];
+  const row1 = (rows[1] || []) as string[];
+  const row0Col0 = String(row0[0] || '').toUpperCase();
+  const tieneTitle = row0Col0.includes('LHARMONIE');
+  const otrasColsLlenasRow0 = row0
+    .slice(1)
+    .filter((c) => String(c || '').trim()).length;
+
+  let headerRow: number;
+  let headers: string[];
+  if (tieneTitle && otrasColsLlenasRow0 >= 5) {
+    // Caso (b): row 0 col A = title, cols B+ = headers reales. Renombramos
+    // col A → "Fecha FC" para coincidir con el COL mapping del cliente.
+    const fixed = [...row0];
+    fixed[0] = 'Fecha FC';
+    headers = fixed.map((h) => String(h).trim());
+    headerRow = 1;
+  } else if (tieneTitle) {
+    // Caso (a) legacy: title en row 0, headers en row 1.
+    headers = row1.map((h) => String(h).trim());
     headerRow = 2;
+  } else {
+    // Sin title: row 0 son los headers directos.
+    headers = row0.map((h) => String(h).trim());
+    headerRow = 1;
   }
-  const headers = ((rows[headerRow - 1] || []) as string[]).map((h) =>
-    String(h).trim(),
-  );
   return { headers, headerRow };
 }
 
