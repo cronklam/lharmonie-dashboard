@@ -61,11 +61,39 @@ type SheetRowWithMeta = Record<string, string | number>;
 
 function rowsToObjects(rows: string[][]): SheetRowWithMeta[] {
   if (!rows.length) return [];
+  // El Sheet de Facturas usa col A de la fila 0 como "title" mergeada
+  // ("LHARMONIE — REGISTRO DE FACTURAS Y COMPROBANTES"). El layout
+  // tiene 2 variantes:
+  //   (a) legacy: row 0 = solo title en col A, resto vacío; row 1 = headers
+  //   (b) actual (mayo 26+): row 0 = title en col A + headers reales en
+  //       cols B+ (Semana, Mes, Año, Proveedor, ..., Estado, ...) en la
+  //       MISMA fila; row 1 = primera factura.
+  // Detectamos el caso (b) viendo si row 0 tiene varias celdas llenas
+  // más allá de col A. Si sí, headers = row 0 con col A reemplazada por
+  // "Fecha FC" (lo que espera el COL mapping del cliente). Si no, hi=1
+  // como antes.
   let hi = 0;
-  if (rows[0][0] && String(rows[0][0]).toUpperCase().includes('LHARMONIE')) {
+  let headers: string[];
+  const row0 = rows[0] || [];
+  const row0Col0 = String(row0[0] || '').toUpperCase();
+  const tieneTitle = row0Col0.includes('LHARMONIE');
+  const otrasColsLlenasRow0 = row0
+    .slice(1)
+    .filter((c) => String(c || '').trim()).length;
+  if (tieneTitle && otrasColsLlenasRow0 >= 5) {
+    // Caso (b): headers en row 0, col A renombrada de title → "Fecha FC".
+    const fixed = [...row0];
+    fixed[0] = 'Fecha FC';
+    headers = fixed.map((h) => String(h).trim());
+    hi = 0;
+  } else if (tieneTitle) {
+    // Caso (a) legacy: title en row 0, headers en row 1.
     hi = 1;
+    headers = (rows[1] || []).map((h) => String(h).trim());
+  } else {
+    // Sin title; row 0 son los headers directos.
+    headers = row0.map((h) => String(h).trim());
   }
-  const headers = rows[hi].map((h) => String(h).trim());
   return rows
     .slice(hi + 1)
     .map((row, rowIdx) => {
