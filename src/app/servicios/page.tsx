@@ -202,6 +202,12 @@ export default function ServiciosPage() {
             loading={mesLoading}
             meses={meses}
             indice={indice}
+            periodo={periodo}
+            onMesActualizado={reloadMes}
+            flashToast={flashToast}
+            onAgregarServicio={() =>
+              setEditingCatalog({ mode: 'new', servicio: '', ancla: null })
+            }
             onClickCell={(row, ancla) => setEditing({ row, ancla })}
             onMesCreado={async (m) => {
               // Re-fetch meses list + switch al nuevo
@@ -502,11 +508,110 @@ function CrearMesButton({
   );
 }
 
+// Botón "Limpiar huérfanos" — solo aparece si hay filas en el pivot
+// que no matchean nombres del LISTADO. Tap 1 → dry-run para mostrar
+// los nombres en un confirm. Tap 2 → borra. Refresca mesData al éxito.
+function LimpiarHuerfanosButton({
+  periodo,
+  count,
+  onDone,
+  onError,
+  flashToast,
+}: {
+  periodo: string;
+  count: number;
+  onDone: () => void | Promise<void>;
+  onError: (m: string) => void;
+  flashToast: (m: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  const run = useCallback(async () => {
+    if (busy || !periodo) return;
+    // Dry-run primero para mostrar la lista exacta antes de confirmar.
+    setBusy(true);
+    try {
+      const dry = await fetch('/api/servicios/limpiar-huerfanos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ periodo, dryRun: true }),
+      });
+      const dryData = await dry.json();
+      if (!dryData.ok) {
+        onError(dryData.error || 'Error consultando huérfanos');
+        return;
+      }
+      const nombres: string[] = dryData.nombres || [];
+      if (nombres.length === 0) {
+        flashToast('No hay servicios huérfanos.');
+        return;
+      }
+      // Confirm nativo — sencillo y mobile-friendly. Si el user quiere
+      // un sheet con preview detallado lo agregamos más adelante.
+      const lista =
+        nombres.length <= 6
+          ? nombres.map((n) => `• ${n}`).join('\n')
+          : `${nombres.slice(0, 6).map((n) => `• ${n}`).join('\n')}\n  …y ${nombres.length - 6} más`;
+      const ok = window.confirm(
+        `Se van a borrar ${nombres.length} fila${nombres.length !== 1 ? 's' : ''} del pivot que no están en el catálogo:\n\n${lista}\n\nEl LISTADO no se toca. ¿Confirmás?`,
+      );
+      if (!ok) return;
+
+      const real = await fetch('/api/servicios/limpiar-huerfanos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ periodo, dryRun: false }),
+      });
+      const realData = await real.json();
+      if (realData.ok) {
+        flashToast(
+          `✓ Borradas ${realData.borradas} fila${realData.borradas !== 1 ? 's' : ''}`,
+        );
+        await onDone();
+      } else {
+        onError(realData.error || 'Error borrando huérfanos');
+      }
+    } catch {
+      onError('Error de red');
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, periodo, onDone, onError, flashToast]);
+
+  return (
+    <button
+      type="button"
+      onClick={run}
+      disabled={busy}
+      className="press-feedback"
+      style={{
+        flexShrink: 0,
+        minHeight: 32,
+        padding: '0 12px',
+        borderRadius: 999,
+        background: 'transparent',
+        color: '#C84F3F',
+        fontWeight: 600,
+        fontSize: 12,
+        border: '1px solid #C84F3F',
+        opacity: busy ? 0.7 : 1,
+        cursor: busy ? 'wait' : 'pointer',
+      }}
+    >
+      {busy ? 'Procesando…' : `Limpiar ${count} huérfano${count !== 1 ? 's' : ''}`}
+    </button>
+  );
+}
+
 function TabTabla({
   data,
   loading,
   meses,
   indice,
+  periodo,
+  onMesActualizado,
+  flashToast,
+  onAgregarServicio,
   onClickCell,
   onMesCreado,
   onError,
@@ -515,6 +620,10 @@ function TabTabla({
   loading: boolean;
   meses: ParsedPeriodo[];
   indice: { servicios: CatalogoServicio[] };
+  periodo: string;
+  onMesActualizado: () => void | Promise<void>;
+  flashToast: (m: string) => void;
+  onAgregarServicio: () => void;
   onClickCell: (row: ServicioMesRow, ancla: Ancla) => void;
   onMesCreado: (mes: ParsedPeriodo) => void;
   onError: (m: string) => void;
@@ -533,6 +642,17 @@ function TabTabla({
     );
   }
   if (!data) return null;
+
+  // Calculamos las filas huérfanas (en pivot pero no en catálogo) para
+  // mostrar el botón "Limpiar huérfanos" con count visible. Match es
+  // por nombre canónico, case-insensitive — exactamente la misma
+  // heurística que usa /api/servicios/limpiar-huerfanos.
+  const catalogoNames = new Set(
+    indice.servicios.map((s) => s.servicio.trim().toUpperCase()),
+  );
+  const huerfanasCount = data.filasLocales.filter(
+    (r) => !catalogoNames.has(r.servicioRaw.trim().toUpperCase()),
+  ).length;
 
   return (
     <>
@@ -561,6 +681,33 @@ function TabTabla({
           <span style={{ color: 'var(--accent)', fontWeight: 600 }}>Pagar</span> = pendiente ·{' '}
           <span style={{ color: 'var(--text-faint)' }}>—</span> = no aplica.
         </p>
+        {huerfanasCount > 0 && (
+          <LimpiarHuerfanosButton
+            periodo={periodo}
+            count={huerfanasCount}
+            onDone={onMesActualizado}
+            onError={onError}
+            flashToast={flashToast}
+          />
+        )}
+        <button
+          type="button"
+          onClick={onAgregarServicio}
+          className="press-feedback"
+          style={{
+            flexShrink: 0,
+            minHeight: 32,
+            padding: '0 12px',
+            borderRadius: 999,
+            background: 'var(--bg-card)',
+            color: 'var(--text)',
+            fontWeight: 600,
+            fontSize: 12,
+            border: '1px solid var(--border)',
+          }}
+        >
+          + Servicio
+        </button>
         <CrearMesButton
           meses={meses}
           onCreated={onMesCreado}
