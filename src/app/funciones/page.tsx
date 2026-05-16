@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useMemo } from 'react';
 import { useAuth } from '../components/AuthProvider';
-import { PageHeader } from '../components/PageHeader';
+import { PageShell } from '../components/PageShell';
 import EyebrowTag from '../components/EyebrowTag';
 import { useFacturasStore, esAPagar } from '../components/FacturasStore';
 import type { Capability } from '@/lib/users';
@@ -146,17 +146,16 @@ export default function FuncionesPage() {
   if (loading || !user) return null;
 
   return (
-    <div className="page-enter">
-      <PageHeader title="Todas las funciones" subtitle="Atajos de la app" showBack />
-      <div
-        className="px-4 pt-4 lh-inicio-stagger"
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 22,
-          paddingBottom: 'calc(var(--nav-height) + var(--safe-bottom) + 24px)',
-        }}
-      >
+    <PageShell
+      title="Todas las funciones"
+      subtitle="Atajos de la app"
+      showBack
+      gap={22}
+      contentClassName="lh-inicio-stagger"
+      contentStyle={{
+        paddingBottom: 'calc(var(--nav-height) + var(--safe-bottom) + 24px)',
+      }}
+    >
         {groups.map((g) => (
           <section key={g.title}>
             <div style={{ marginBottom: 10, paddingLeft: 4 }}>
@@ -175,8 +174,7 @@ export default function FuncionesPage() {
             </div>
           </section>
         ))}
-      </div>
-    </div>
+    </PageShell>
   );
 }
 

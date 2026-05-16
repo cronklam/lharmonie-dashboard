@@ -302,7 +302,7 @@ export default function HomePage() {
           <div
             className="importe"
             style={{
-              fontSize: 40,
+              fontSize: 36,
               color: '#F9F7F3',
             }}
           >
@@ -483,7 +483,7 @@ export default function HomePage() {
         <div
           className="importe"
           style={{
-            fontSize: 40,
+            fontSize: 36,
             color: 'var(--text)',
           }}
         >
@@ -655,10 +655,9 @@ export default function HomePage() {
                     </div>
                   </div>
                   <div
-                    className="tabular-nums-strict"
+                    className="numeric-display"
                     style={{
-                      fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
-                      fontWeight: 700,
+                      fontWeight: 600,
                       fontSize: 15,
                       color: 'var(--text)',
                     }}
@@ -766,9 +765,9 @@ export default function HomePage() {
                     {shortLocal(d.loc)}
                   </span>
                   <span
+                    className="numeric-display"
                     style={{
-                      fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
-                      fontWeight: 700,
+                      fontWeight: 600,
                       fontSize: 13.5,
                       color: 'var(--text)',
                     }}
@@ -896,9 +895,9 @@ export default function HomePage() {
                         </div>
                       </div>
                       <div
+                        className="numeric-display"
                         style={{
-                          fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
-                          fontWeight: 700,
+                          fontWeight: 600,
                           fontSize: 14.5,
                           color: 'var(--text)',
                         }}

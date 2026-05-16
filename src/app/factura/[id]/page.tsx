@@ -184,9 +184,9 @@ export default function FacturaDetailPage({
           <div
             className="importe"
             style={{
-              fontSize: 40,
+              fontSize: 34,
               color: 'var(--text)',
-              marginTop: 2,
+              marginTop: 4,
             }}
           >
             {fmtMoney(parseNum(f[COL.total]))}
@@ -598,6 +598,10 @@ function FieldRow({
     padding: '12px 14px',
     borderBottom: divider ? '1px solid var(--border)' : 'none',
   };
+  // Detección heurística: si el valor empieza con $ o son puros dígitos
+  // (con separadores), aplicamos numeric-display para tabular-nums y
+  // alineación columnar consistente con el resto de la app.
+  const isNumericish = /^[\$\d\s.,\-+/]+[a-zA-Z]?$/.test(value.trim());
   return (
     <>
       <dt
@@ -611,6 +615,7 @@ function FieldRow({
         {label}
       </dt>
       <dd
+        className={isNumericish ? 'numeric-display' : undefined}
         style={{
           ...cellStyle,
           margin: 0,
@@ -618,6 +623,7 @@ function FieldRow({
           color: 'var(--text)',
           textAlign: 'right',
           wordBreak: 'break-word',
+          fontWeight: isNumericish ? 500 : 400,
         }}
       >
         {value}

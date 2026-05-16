@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../components/AuthProvider';
-import { PageHeader } from '../components/PageHeader';
+import { PageShell } from '../components/PageShell';
 import {
   COL,
   fmtMoney,
@@ -56,9 +56,7 @@ export default function BuscarPage() {
   if (authLoading || !user) return null;
 
   return (
-    <div className="page-enter">
-      <PageHeader title="Buscar" showBack />
-      <div className="px-4 pt-4" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <PageShell title="Buscar" showBack>
         <input
           ref={inputRef}
           type="search"
@@ -214,8 +212,7 @@ export default function BuscarPage() {
               )}
           </>
         )}
-      </div>
-    </div>
+    </PageShell>
   );
 }
 

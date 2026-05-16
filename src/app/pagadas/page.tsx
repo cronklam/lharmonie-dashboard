@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { useAuth } from '../components/AuthProvider';
-import { PageHeader } from '../components/PageHeader';
+import { PageShell } from '../components/PageShell';
 import { FacturaCard } from '../components/FacturaCard';
 import {
   COL,
@@ -66,9 +66,7 @@ export default function PagadasPage() {
   if (authLoading || !user) return null;
 
   return (
-    <div className="page-enter">
-      <PageHeader title="Pagadas" subtitle={`${pagadas.length} historial`} />
-      <div className="px-4 pt-4" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <PageShell title="Pagadas" subtitle={`${pagadas.length} historial`}>
         {/* Stats */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <SmallCard label="Pagado esta semana" value={fmtMoney(totalSemana)} />
@@ -201,8 +199,7 @@ export default function PagadasPage() {
             </li>
           ))}
         </ul>
-      </div>
-    </div>
+    </PageShell>
   );
 }
 

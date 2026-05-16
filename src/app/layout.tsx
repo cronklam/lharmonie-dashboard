@@ -46,7 +46,8 @@ export default function RootLayout({
           type="font/woff2"
           crossOrigin="anonymous"
         />
-        <link rel="apple-touch-icon" href="/icon-192.png" />
+        {/* apple-touch-icon lo sirve Next.js automáticamente desde
+            src/app/apple-icon.tsx — no hace falta declararlo acá. */}
         <meta
           name="google-client-id"
           content={process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || ''}

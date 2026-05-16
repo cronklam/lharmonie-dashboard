@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../components/AuthProvider';
-import { PageHeader } from '../components/PageHeader';
+import { PageShell } from '../components/PageShell';
 import EyebrowTag from '../components/EyebrowTag';
 
 export default function PylPage() {
@@ -20,9 +20,7 @@ export default function PylPage() {
   if (!isOwner) return null;
 
   return (
-    <div className="page-enter">
-      <PageHeader title="P&L" subtitle="Análisis financiero — Admin" showBack />
-      <div className="px-4 pt-4" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <PageShell title="P&L" subtitle="Análisis financiero — Admin" showBack>
         <div style={{ marginTop: 12 }}>
           <EyebrowTag>Próximamente</EyebrowTag>
         </div>
@@ -82,9 +80,9 @@ export default function PylPage() {
             >
               <span>{row.l}</span>
               <span
+                className="numeric-display"
                 style={{
-                  fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
-                  fontWeight: 700,
+                  fontWeight: 600,
                   color: 'var(--text-muted)',
                 }}
               >
@@ -93,7 +91,6 @@ export default function PylPage() {
             </div>
           ))}
         </div>
-      </div>
-    </div>
+    </PageShell>
   );
 }

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useAuth } from '../components/AuthProvider';
-import { PageHeader } from '../components/PageHeader';
+import { PageShell } from '../components/PageShell';
 import EyebrowTag from '../components/EyebrowTag';
 
 // /perfil — patrón staff (secciones Administración / Cuenta) pero con
@@ -32,17 +32,15 @@ export default function PerfilPage() {
   if (loading || !user) return null;
 
   return (
-    <div className="page-enter">
-      <PageHeader title="Perfil" subtitle="Tu cuenta" />
-      <div
-        className="px-4 pt-4 lh-inicio-stagger"
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 22,
-          paddingBottom: 'calc(var(--nav-height) + var(--safe-bottom) + 24px)',
-        }}
-      >
+    <PageShell
+      title="Perfil"
+      subtitle="Tu cuenta"
+      gap={22}
+      contentClassName="lh-inicio-stagger"
+      contentStyle={{
+        paddingBottom: 'calc(var(--nav-height) + var(--safe-bottom) + 24px)',
+      }}
+    >
         {/* Greeting hero — serif, sin foto */}
         <section
           style={{
@@ -241,8 +239,7 @@ export default function PerfilPage() {
         >
           Lharmonie · Management · v1
         </div>
-      </div>
-    </div>
+    </PageShell>
   );
 }
 

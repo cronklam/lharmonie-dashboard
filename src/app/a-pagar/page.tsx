@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../components/AuthProvider';
-import { PageHeader } from '../components/PageHeader';
+import { PageShell } from '../components/PageShell';
 import { FacturaCard } from '../components/FacturaCard';
 import {
   COL,
@@ -161,13 +161,32 @@ export default function APagarPage() {
   if (authLoading || !user) return null;
 
   return (
-    <div className="page-enter">
-      <PageHeader
-        title="A pagar"
-        subtitle={`${filtered.length} factura${filtered.length !== 1 ? 's' : ''} · ${fmtMoney(total)}`}
-      />
-
-      <div className="px-4 pt-4" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <PageShell
+      title="A pagar"
+      subtitle={`${filtered.length} factura${filtered.length !== 1 ? 's' : ''} · ${fmtMoney(total)}`}
+      extras={
+        filtersOpen ? (
+          <FiltrosSheet
+            rango={rango}
+            setRango={setRango}
+            localFilter={localFilter}
+            setLocalFilter={setLocalFilter}
+            locales={locales}
+            catFilter={catFilter}
+            setCatFilter={setCatFilter}
+            categorias={categorias}
+            sort={sort}
+            setSort={setSort}
+            onClose={() => setFiltersOpen(false)}
+            onClearAll={() => {
+              clearFilters();
+              setFiltersOpen(false);
+            }}
+            resultsCount={filtered.length}
+          />
+        ) : null
+      }
+    >
         {/* Total animado */}
         <div className="lh-hero-total" style={{ padding: '18px 20px' }}>
           <div
@@ -456,29 +475,7 @@ export default function APagarPage() {
             </li>
           ))}
         </ul>
-      </div>
-
-      {filtersOpen && (
-        <FiltrosSheet
-          rango={rango}
-          setRango={setRango}
-          localFilter={localFilter}
-          setLocalFilter={setLocalFilter}
-          locales={locales}
-          catFilter={catFilter}
-          setCatFilter={setCatFilter}
-          categorias={categorias}
-          sort={sort}
-          setSort={setSort}
-          onClose={() => setFiltersOpen(false)}
-          onClearAll={() => {
-            clearFilters();
-            setFiltersOpen(false);
-          }}
-          resultsCount={filtered.length}
-        />
-      )}
-    </div>
+    </PageShell>
   );
 }
 

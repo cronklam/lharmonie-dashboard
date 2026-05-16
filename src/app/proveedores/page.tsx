@@ -307,10 +307,9 @@ export default function ProveedoresPage() {
                       </div>
                     </div>
                     <div
-                      className="tabular-nums-strict"
+                      className="numeric-display"
                       style={{
-                        fontFamily: "'Recoleta', 'Fraunces', Georgia, serif",
-                        fontWeight: 700,
+                        fontWeight: 600,
                         fontSize: 14.5,
                         color: 'var(--text)',
                       }}

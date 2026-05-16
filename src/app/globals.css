@@ -1282,22 +1282,21 @@ input:disabled {
 }
 
 /* ── .importe ── tipografía oficial para todos los montos.
-   Match exacto con el hero "Total a pagar" del home:
-   Recoleta serif · weight 700 · letter-spacing -0.025em · tabular nums.
-   El tamaño lo controla el contexto (heredado o fontSize inline).
-
-   FUERZA "lnum" (lining figures) ADEMÁS de "tnum" — Recoleta y Fraunces
-   tienen tanto old-style como lining figures, y por default algunos
-   contextos heredaban old-style (números con descendentes, más bajos).
-   El hero del home renderea como lining; queremos que TODOS los
-   importes (Caja, Gasto, etc.) hagan lo mismo. */
+   UNIFICADA con .numeric-display (mayo 2026): DM Sans tabular en
+   lugar de Recoleta serif. Razón: Martin pidió que los números sean
+   los mismos en toda la app — menos ruido visual, más legibilidad
+   en mobile. La voz editorial Lharmonie sigue siendo Recoleta pero
+   SOLO en headings de texto (títulos, brand, eyebrows), no en cifras.
+   Inspirado en cómo Robinhood / Mercury / Cash App usan una sola
+   familia numérica con jerarquía por tamaño y peso, no por fuente. */
 .importe {
-  font-family: 'Recoleta', 'Fraunces', 'Georgia', serif;
-  font-weight: 700;
-  letter-spacing: -0.025em;
+  font-family: "DM Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+    "Segoe UI", system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.018em;
   font-variant-numeric: tabular-nums lining-nums;
-  font-feature-settings: "tnum" 1, "lnum" 1, "onum" 0;
-  line-height: 1;
+  font-feature-settings: "tnum" 1, "lnum" 1, "ss01" 1;
+  line-height: 1.05;
 }
 
 /* ── numeric-display ──────────────────────────────────────────────
