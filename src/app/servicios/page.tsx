@@ -628,6 +628,8 @@ function TabTabla({
   onMesCreado: (mes: ParsedPeriodo) => void;
   onError: (m: string) => void;
 }) {
+  const [search, setSearch] = useState('');
+
   if (loading && !data) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -654,9 +656,73 @@ function TabTabla({
     (r) => !catalogoNames.has(r.servicioRaw.trim().toUpperCase()),
   ).length;
 
+  // Buscador client-side. Normalize tildes para que "luz" matchee
+  // "Luz" y "Telefónos" matchee "telefonos".
+  const normalize = (s: string) =>
+    s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const filterTerm = normalize(search.trim());
+  const filasVisibles = filterTerm
+    ? data.filasLocales.filter((r) =>
+        normalize(r.servicio).includes(filterTerm) ||
+        normalize(r.servicioRaw).includes(filterTerm),
+      )
+    : data.filasLocales;
+
   return (
     <>
       <KPICardsRow data={data} indice={indice} />
+
+      {/* Buscador inline. Filtra client-side por nombre del servicio.
+          Solo aparece si hay más de 5 filas — para no hacer ruido en
+          listas chicas. */}
+      {data.filasLocales.length > 5 && (
+        <div style={{ position: 'relative', padding: '0 2px' }}>
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar servicio…"
+            style={{
+              width: '100%',
+              height: 38,
+              padding: '0 36px 0 14px',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--border)',
+              background: 'var(--bg-card)',
+              color: 'var(--text)',
+              fontSize: 13.5,
+              outline: 'none',
+            }}
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              aria-label="Limpiar búsqueda"
+              style={{
+                position: 'absolute',
+                right: 6,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                width: 28,
+                height: 28,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'var(--bg-subtle)',
+                border: 0,
+                borderRadius: 999,
+                color: 'var(--text-muted)',
+                fontSize: 14,
+                cursor: 'pointer',
+              }}
+            >
+              ×
+            </button>
+          )}
+        </div>
+      )}
+
       <div
         style={{
           display: 'flex',
@@ -775,13 +841,9 @@ function TabTabla({
               </div>
             ))}
 
-            {/* Filas locales */}
-            {data.filasLocales.map((row, idx) => {
+            {/* Filas locales — filtradas por el buscador inline. */}
+            {filasVisibles.map((row, idx) => {
               const bg = idx % 2 === 0 ? 'var(--bg-card)' : 'var(--bg-card-alt)';
-              // JOIN con catálogo: por servicio canónico (case-insensitive).
-              // Tomamos cualquier entry del catálogo para ese servicio
-              // (preferimos uno activo); el día venc se asume el mismo
-              // para todas las anclas que pagan ese servicio.
               const matches = indice.servicios.filter(
                 (s) =>
                   s.servicio.toUpperCase() === row.servicioRaw.toUpperCase(),
@@ -802,6 +864,20 @@ function TabTabla({
                 />
               );
             })}
+            {/* Empty state cuando el filtro deja todo afuera. */}
+            {filterTerm && filasVisibles.length === 0 && (
+              <div
+                style={{
+                  gridColumn: `1 / span ${data.anclasOperativas.length + 1}`,
+                  padding: '32px 16px',
+                  textAlign: 'center',
+                  color: 'var(--text-muted)',
+                  fontSize: 13,
+                }}
+              >
+                Sin resultados para “{search}”.
+              </div>
+            )}
 
             {/* Fila TOTAL */}
             {data.filasLocales.length > 0 && (
@@ -2599,6 +2675,9 @@ function RegistrarPagoModal({
   );
   const [saving, setSaving] = useState(false);
   const [confirmForzar, setConfirmForzar] = useState(false);
+  /** Tracking del "tipo de write" en curso para que el spinner / loader
+   *  vaya en el botón correcto. */
+  const [savingKind, setSavingKind] = useState<'pago' | 'no-aplica' | null>(null);
 
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => {
@@ -2621,6 +2700,7 @@ function RegistrarPagoModal({
         return;
       }
       setSaving(true);
+      setSavingKind('pago');
       try {
         const valor =
           moneda === 'USD'
@@ -2649,10 +2729,45 @@ function RegistrarPagoModal({
         onError('Error de red');
       } finally {
         setSaving(false);
+        setSavingKind(null);
       }
     },
     [saving, monto, moneda, periodo, row.servicioRaw, localCol, onError, onSaved],
   );
+
+  // Marcar como "No aplica": escribe "NO" en la celda. Solo permitido
+  // cuando la celda NO tiene un pago hecho — para sobrescribir un pago
+  // existente Iara tiene que ir al Sheet manualmente (decisión consciente
+  // para evitar borrados accidentales).
+  const submitNoAplica = useCallback(async () => {
+    if (saving) return;
+    setSaving(true);
+    setSavingKind('no-aplica');
+    try {
+      const r = await fetch('/api/servicios/celda', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          periodo,
+          servicioRaw: row.servicioRaw,
+          localCol,
+          valor: 'NO',
+          forzar: false,
+        }),
+      });
+      const d = await r.json();
+      if (d.ok) {
+        onSaved('Marcado como "No aplica"');
+      } else {
+        onError(d.error || 'Error guardando');
+      }
+    } catch {
+      onError('Error de red');
+    } finally {
+      setSaving(false);
+      setSavingKind(null);
+    }
+  }, [saving, periodo, row.servicioRaw, localCol, onError, onSaved]);
 
   return (
     <div
@@ -2768,9 +2883,59 @@ function RegistrarPagoModal({
         )}
 
         {!noAplica && (
-          <>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              submit(confirmForzar);
+            }}
+          >
+            {/* Quick-pay con monto sugerido del LISTADO. Si lo hay, se
+                renderea como pill clicable arriba del input — un tap
+                completa el input y dispara submit en simultáneo. */}
+            {sugerido && !yaPagado && !confirmForzar && (
+              <button
+                type="button"
+                onClick={() => {
+                  const m = String(Math.round(sugerido.monto));
+                  setMonto(m);
+                  setMoneda(sugerido.moneda);
+                  // Submit con el monto fresco: pasamos directo en lugar
+                  // de esperar el setState (que es async).
+                  setTimeout(() => submit(false), 0);
+                }}
+                disabled={saving}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 10,
+                  padding: '10px 14px',
+                  marginBottom: 12,
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--accent-bg)',
+                  border: '1px solid var(--accent)',
+                  color: 'var(--accent-hover)',
+                  cursor: saving ? 'wait' : 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                <span style={{ fontSize: 11.5, fontWeight: 600, opacity: 0.85 }}>
+                  Pagar lo del catálogo
+                </span>
+                <span
+                  className="numeric-display"
+                  style={{ fontSize: 16, fontWeight: 700 }}
+                >
+                  {sugerido.moneda === 'USD'
+                    ? `US$ ${Math.round(sugerido.monto).toLocaleString('es-AR')}`
+                    : `$${Math.round(sugerido.monto).toLocaleString('es-AR')}`}
+                </span>
+              </button>
+            )}
+
             <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-              Monto
+              {sugerido && !yaPagado ? 'O cargá otro monto' : 'Monto'}
             </label>
             <div style={{ display: 'flex', gap: 8, marginTop: 6, marginBottom: 14 }}>
               <div style={{ display: 'flex', gap: 4 }}>
@@ -2802,7 +2967,7 @@ function RegistrarPagoModal({
                 value={monto}
                 onChange={(e) => setMonto(e.target.value)}
                 placeholder="0"
-                className="tabular-nums-strict"
+                className="numeric-display"
                 style={{
                   flex: 1,
                   height: 44,
@@ -2839,8 +3004,7 @@ function RegistrarPagoModal({
                 Cancelar
               </button>
               <button
-                type="button"
-                onClick={() => submit(confirmForzar)}
+                type="submit"
                 disabled={saving}
                 style={{
                   flex: 2,
@@ -2855,14 +3019,43 @@ function RegistrarPagoModal({
                   opacity: saving ? 0.7 : 1,
                 }}
               >
-                {saving
+                {saving && savingKind === 'pago'
                   ? 'Guardando…'
                   : confirmForzar
-                  ? 'Sí, sobrescribir'
-                  : 'Guardar pago'}
+                    ? 'Sí, sobrescribir'
+                    : 'Guardar pago'}
               </button>
             </div>
-          </>
+
+            {/* Acción secundaria: "No aplica" — marca la celda como "NO"
+                (este local no tiene este servicio). Solo visible cuando
+                la celda no tiene pago. Sin destructive: el endpoint la
+                escribe solo si está vacía / TODAVIA NO. */}
+            {!yaPagado && !confirmForzar && (
+              <button
+                type="button"
+                onClick={submitNoAplica}
+                disabled={saving}
+                style={{
+                  width: '100%',
+                  marginTop: 10,
+                  height: 38,
+                  borderRadius: 'var(--radius-md)',
+                  background: 'transparent',
+                  color: 'var(--text-muted)',
+                  fontWeight: 500,
+                  fontSize: 12.5,
+                  border: '1px dashed var(--border)',
+                  cursor: saving ? 'wait' : 'pointer',
+                  opacity: saving ? 0.6 : 1,
+                }}
+              >
+                {saving && savingKind === 'no-aplica'
+                  ? 'Marcando…'
+                  : 'Marcar "No aplica" (este local no tiene este servicio)'}
+              </button>
+            )}
+          </form>
         )}
       </div>
     </div>
