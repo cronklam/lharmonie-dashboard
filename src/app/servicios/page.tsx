@@ -630,43 +630,12 @@ function TabTabla({
 }) {
   const [search, setSearch] = useState('');
 
-  if (loading && !data) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div
-            key={i}
-            className="shimmer-modern"
-            style={{ height: 44, borderRadius: 10 }}
-          />
-        ))}
-      </div>
-    );
-  }
-  if (!data) return null;
-
-  // Calculamos las filas huérfanas (en pivot pero no en catálogo) para
-  // mostrar el botón "Limpiar huérfanos" con count visible. Match es
-  // por nombre canónico, case-insensitive — exactamente la misma
-  // heurística que usa /api/servicios/limpiar-huerfanos.
-  const catalogoNames = new Set(
-    indice.servicios.map((s) => s.servicio.trim().toUpperCase()),
-  );
-  const huerfanasCount = data.filasLocales.filter(
-    (r) => !catalogoNames.has(r.servicioRaw.trim().toUpperCase()),
-  ).length;
-
   // FUENTE = LISTADO. Construimos las filas de la tabla a partir del
-  // catálogo, no del pivot mensual. Así:
-  //   - Servicios del LISTADO que no aparecen en el pivot del mes →
-  //     se muestran igual con celdas "vacías" (pendientes este mes).
-  //   - Servicios del pivot que no están en el LISTADO (huérfanos) no
-  //     aparecen acá; se ven solo via el contador "Limpiar huérfanos".
-  //   - Celdas (servicio × ancla) donde el LISTADO no tiene entry se
-  //     fuerzan a "no_aplica" (—): ese local no usa ese servicio.
-  // La fila virtual reusa el shape ServicioMesRow para que FilaTabla
-  // siga funcionando sin tocar el render.
+  // catálogo, no del pivot mensual.
+  // IMPORTANTE: useMemo va ANTES de cualquier early return — rules of
+  // hooks (no condicionales antes de hooks).
   const filasFromListado = useMemo(() => {
+    if (!data) return [];
     // Lookup rápido de fila real del pivot por nombre (canónico + raw).
     const allRows = [
       ...data.filasLocales,
@@ -747,6 +716,30 @@ function TabTabla({
     );
     return out;
   }, [indice.servicios, data]);
+
+  if (loading && !data) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div
+            key={i}
+            className="shimmer-modern"
+            style={{ height: 44, borderRadius: 10 }}
+          />
+        ))}
+      </div>
+    );
+  }
+  if (!data) return null;
+
+  // Calculamos las filas huérfanas (en pivot pero no en catálogo) para
+  // mostrar el botón "Limpiar huérfanos" con count visible.
+  const catalogoNames = new Set(
+    indice.servicios.map((s) => s.servicio.trim().toUpperCase()),
+  );
+  const huerfanasCount = data.filasLocales.filter(
+    (r) => !catalogoNames.has(r.servicioRaw.trim().toUpperCase()),
+  ).length;
 
   // Buscador client-side. Normalize tildes para que "luz" matchee
   // "Luz" y "Telefónos" matchee "telefonos".
