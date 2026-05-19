@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useAuth } from './components/AuthProvider';
 import {
   COL,
@@ -29,6 +29,167 @@ const PERIOD_OPTIONS: { id: Periodo; label: string }[] = [
   { id: 'pasado', label: 'Mes pasado' },
   { id: 'todo', label: 'Todo' },
 ];
+
+// ─── Catálogo de funciones disponibles para Acceso Rápido ─────────
+// Cada usuario elige cuáles ve en el home (persisted en localStorage).
+// `isDefault` = se muestra si el user nunca editó su selección.
+// `ownerOnly` = solo se ofrece si isOwner.
+// `adminOnly` = solo se ofrece si isAdmin.
+// `badge` = 'pending' inyecta el count de pendientes en runtime.
+
+interface QuickFn {
+  id: string;
+  href: string;
+  label: string;
+  iconBg: string;
+  iconColor: string;
+  icon: ReactNode;
+  isDefault?: boolean;
+  ownerOnly?: boolean;
+  adminOnly?: boolean;
+  badge?: 'pending';
+}
+
+const ALL_QUICK_FUNCIONES: QuickFn[] = [
+  {
+    id: 'a-pagar',
+    href: '/a-pagar',
+    label: 'A pagar',
+    iconBg: 'rgba(217,95,78,0.10)',
+    iconColor: '#C84F3F',
+    badge: 'pending',
+    isDefault: true,
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.7" />
+        <path d="M12 7v5l3 2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
+    id: 'pagadas',
+    href: '/pagadas',
+    label: 'Pagadas',
+    iconBg: 'var(--green-bg)',
+    iconColor: 'var(--green)',
+    isDefault: true,
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.7" />
+        <path d="m8 12 3 3 5-6" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
+    id: 'proveedores',
+    href: '/proveedores',
+    label: 'Proveedores',
+    iconBg: 'rgba(78,52,46,0.10)',
+    iconColor: '#4E342E',
+    isDefault: true,
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+        <path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h2m2 0h2m-6 4h2m2 0h2m-6 4h2m2 0h2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
+    id: 'productos',
+    href: '/productos',
+    label: 'Productos',
+    iconBg: 'rgba(21,101,192,0.10)',
+    iconColor: '#1565C0',
+    isDefault: true,
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+        <path d="M21 8 12 3 3 8v8l9 5 9-5V8z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+        <path d="M3.3 8.3 12 13l8.7-4.7M12 22V13" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
+    id: 'servicios',
+    href: '/servicios',
+    label: 'Servicios',
+    iconBg: 'var(--warn-strong-bg)',
+    iconColor: 'var(--warn-strong)',
+    ownerOnly: true,
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+        <path d="m13 2-3 9h5l-7 11v-9H3l10-11z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
+    id: 'caja',
+    href: '/caja',
+    label: 'Caja',
+    iconBg: 'var(--secure-bg)',
+    iconColor: 'var(--secure)',
+    ownerOnly: true,
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+        <rect x="3" y="6" width="18" height="13" rx="2" stroke="currentColor" strokeWidth="1.7" />
+        <circle cx="12" cy="12.5" r="2.5" stroke="currentColor" strokeWidth="1.7" />
+      </svg>
+    ),
+  },
+  {
+    id: 'buscar',
+    href: '/buscar',
+    label: 'Buscar',
+    iconBg: 'var(--accent-bg)',
+    iconColor: 'var(--accent)',
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+        <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.7" />
+        <path d="m21 21-4.3-4.3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
+    id: 'baigun',
+    href: '/baigun',
+    label: 'Baigun',
+    iconBg: 'rgba(78,52,46,0.10)',
+    iconColor: '#4E342E',
+    ownerOnly: true,
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+        <path d="M4 4h16v16H4z M8 8h8m-8 4h8m-8 4h5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
+    id: 'pyl',
+    href: '/pyl',
+    label: 'P&L',
+    iconBg: 'rgba(124,58,237,0.10)',
+    iconColor: '#7C3AED',
+    ownerOnly: true,
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+        <path d="M3 20h18M5 17V8m5 9v-6m5 6V5m5 12v-9" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
+    id: 'usuarios',
+    href: '/perfil/usuarios',
+    label: 'Usuarios',
+    iconBg: 'var(--accent-bg)',
+    iconColor: 'var(--accent)',
+    adminOnly: true,
+    icon: (
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+        <circle cx="9" cy="9" r="3.5" stroke="currentColor" strokeWidth="1.7" />
+        <path d="M3.5 19c1-3 3-4.5 5.5-4.5s4.5 1.5 5.5 4.5M17 11a3 3 0 1 0 0-6m4 14c-.7-2-2-3.2-4-3.7" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+];
+
+const QUICK_STORAGE_KEY = (email: string) => `lh-quickaccess-${email}`;
 
 function filterByPeriod(facturas: Factura[], id: Periodo): Factura[] {
   if (id === 'todo') return facturas;
@@ -96,9 +257,63 @@ function todayKey(): { ddmm: string; ddmmyyyy: string } {
 }
 
 export default function HomePage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, isOwner, isAdmin } = useAuth();
   const { facturas, loading, slowLoad, error, refresh } = useFacturasStore();
   const [periodo, setPeriodo] = useState<Periodo>('mes');
+
+  // Acceso rápido editable por usuario. Persistido en localStorage
+  // con key lh-quickaccess-${email}. Si no hay nada guardado, usar
+  // los `isDefault: true` del catálogo.
+  const [quickIds, setQuickIds] = useState<string[]>([]);
+  const [editingQuick, setEditingQuick] = useState(false);
+
+  useEffect(() => {
+    if (!user?.email) return;
+    if (typeof window === 'undefined') return;
+    const saved = window.localStorage.getItem(QUICK_STORAGE_KEY(user.email));
+    if (saved) {
+      try {
+        const arr = JSON.parse(saved);
+        if (Array.isArray(arr) && arr.every((x) => typeof x === 'string')) {
+          setQuickIds(arr);
+          return;
+        }
+      } catch {
+        // fall through a defaults
+      }
+    }
+    setQuickIds(ALL_QUICK_FUNCIONES.filter((f) => f.isDefault).map((f) => f.id));
+  }, [user?.email]);
+
+  const saveQuickIds = useCallback(
+    (next: string[]) => {
+      setQuickIds(next);
+      if (user?.email && typeof window !== 'undefined') {
+        window.localStorage.setItem(
+          QUICK_STORAGE_KEY(user.email),
+          JSON.stringify(next),
+        );
+      }
+    },
+    [user?.email],
+  );
+
+  // Funciones disponibles para mostrar (filtradas por permisos del rol).
+  const availableQuickFns = useMemo(
+    () =>
+      ALL_QUICK_FUNCIONES.filter((f) => {
+        if (f.ownerOnly && !isOwner) return false;
+        if (f.adminOnly && !isAdmin) return false;
+        return true;
+      }),
+    [isOwner, isAdmin],
+  );
+
+  // Funciones VISIBLES en acceso rápido = intersección selectedIds × available.
+  const visibleQuickFns = useMemo(
+    () => availableQuickFns.filter((f) => quickIds.includes(f.id)),
+    [availableQuickFns, quickIds],
+  );
 
   // Pendientes / pagadas (sin filtro de periodo — el "Total a pagar"
   // siempre suma TODAS las pendientes, no se filtra por periodo).
@@ -358,75 +573,69 @@ export default function HomePage() {
           fecha del último control de Iara. Tap → /caja. */}
       <CajaCard />
 
-      {/* Acceso rápido — atajos a las funciones más usadas. Mantenido fijo
-          (4 items) para mantener el scope acotado; futuro: configurable
-          via localStorage como hace staff. */}
+      {/* Acceso rápido — atajos editables por usuario. La selección
+          se guarda en localStorage. Tap "Editar" abre el modal para
+          elegir qué funciones aparecen acá. */}
       <section>
         <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 4 }}>
           <EyebrowTag>Acceso rápido</EyebrowTag>
-          <Link
-            href="/funciones"
+          <button
+            type="button"
+            onClick={() => setEditingQuick(true)}
             className="spring-tap"
             style={{
               fontSize: 11,
               fontWeight: 600,
               color: 'var(--accent)',
-              textDecoration: 'none',
+              background: 'transparent',
+              border: 0,
+              cursor: 'pointer',
+              padding: 0,
             }}
           >
-            Ver todas →
-          </Link>
+            Editar →
+          </button>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-          <QuickTile
-            href="/a-pagar"
-            label="A pagar"
-            iconBg="rgba(217,95,78,0.10)"
-            iconColor="#C84F3F"
-            badge={pendientes.length}
-            icon={
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.7" />
-                <path d="M12 7v5l3 2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            }
-          />
-          <QuickTile
-            href="/pagadas"
-            label="Pagadas"
-            iconBg="var(--green-bg)"
-            iconColor="var(--green)"
-            icon={
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.7" />
-                <path d="m8 12 3 3 5-6" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            }
-          />
-          <QuickTile
-            href="/proveedores"
-            label="Proveedores"
-            iconBg="rgba(78,52,46,0.10)"
-            iconColor="#4E342E"
-            icon={
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                <path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h2m2 0h2m-6 4h2m2 0h2m-6 4h2m2 0h2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            }
-          />
-          <QuickTile
-            href="/productos"
-            label="Productos"
-            iconBg="rgba(21,101,192,0.10)"
-            iconColor="#1565C0"
-            icon={
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                <path d="M21 8 12 3 3 8v8l9 5 9-5V8z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
-                <path d="M3.3 8.3 12 13l8.7-4.7M12 22V13" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
-              </svg>
-            }
-          />
-        </div>
+        {visibleQuickFns.length === 0 ? (
+          <button
+            type="button"
+            onClick={() => setEditingQuick(true)}
+            className="spring-tap"
+            style={{
+              width: '100%',
+              padding: '14px 12px',
+              background: 'var(--bg-card)',
+              border: '1px dashed var(--border)',
+              borderRadius: 'var(--radius-md)',
+              color: 'var(--text-muted)',
+              fontSize: 13,
+              fontWeight: 500,
+              cursor: 'pointer',
+            }}
+          >
+            + Elegí qué funciones querés en tu acceso rápido
+          </button>
+        ) : (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${Math.min(4, visibleQuickFns.length)}, 1fr)`,
+              gap: 8,
+            }}
+          >
+            {visibleQuickFns.map((fn) => (
+              <QuickTile
+                key={fn.id}
+                href={fn.href}
+                label={fn.label}
+                iconBg={fn.iconBg}
+                iconColor={fn.iconColor}
+                badge={fn.badge === 'pending' ? pendientes.length : undefined}
+                icon={fn.icon}
+              />
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Period chips */}
@@ -912,6 +1121,17 @@ export default function HomePage() {
         </section>
       )}
 
+      {editingQuick && (
+        <EditQuickAccessModal
+          available={availableQuickFns}
+          selected={quickIds}
+          onSave={(ids) => {
+            saveQuickIds(ids);
+            setEditingQuick(false);
+          }}
+          onClose={() => setEditingQuick(false)}
+        />
+      )}
     </div>
   );
 }
@@ -1099,6 +1319,254 @@ function EmptyState({ icon, text }: { icon: string; text: string }) {
     >
       <div style={{ fontSize: 24, marginBottom: 6 }}>{icon}</div>
       {text}
+    </div>
+  );
+}
+
+// ─── Edit Quick Access Modal ──────────────────────────────────────
+// Bottom sheet con grid de todas las funciones disponibles. Toggle
+// por tap. Footer con botones Cancelar / Guardar. Esc + tap fondo
+// cierran sin guardar.
+
+function EditQuickAccessModal({
+  available,
+  selected,
+  onSave,
+  onClose,
+}: {
+  available: QuickFn[];
+  selected: string[];
+  onSave: (ids: string[]) => void;
+  onClose: () => void;
+}) {
+  const [draft, setDraft] = useState<Set<string>>(new Set(selected));
+
+  useEffect(() => {
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onEsc);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onEsc);
+      document.body.style.overflow = prev;
+    };
+  }, [onClose]);
+
+  const toggle = (id: string) => {
+    setDraft((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(13,8,5,0.55)',
+        backdropFilter: 'blur(4px)',
+        zIndex: 200,
+        display: 'flex',
+        alignItems: 'flex-end',
+        justifyContent: 'center',
+        animation: 'fadeIn 0.22s var(--ease-ios) both',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="lh-fx-sheet-spring"
+        style={{
+          width: '100%',
+          maxWidth: 520,
+          background: 'var(--bg-card)',
+          borderTopLeftRadius: 22,
+          borderTopRightRadius: 22,
+          padding: '8px 0 0',
+          maxHeight: '88vh',
+          display: 'flex',
+          flexDirection: 'column',
+          paddingBottom: 'var(--safe-bottom)',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0 4px' }}>
+          <div
+            style={{
+              width: 38,
+              height: 4,
+              borderRadius: 999,
+              background: 'var(--border-strong)',
+              opacity: 0.5,
+            }}
+          />
+        </div>
+        <div style={{ padding: '6px 20px 14px' }}>
+          <div
+            style={{
+              fontSize: 9.5,
+              fontWeight: 700,
+              letterSpacing: '0.18em',
+              textTransform: 'uppercase',
+              color: 'var(--accent-hover)',
+            }}
+          >
+            Acceso rápido
+          </div>
+          <h2
+            className="font-brand"
+            style={{
+              fontSize: 22,
+              fontWeight: 700,
+              letterSpacing: '-0.022em',
+              marginTop: 2,
+              color: 'var(--text)',
+            }}
+          >
+            Editar accesos rápidos
+          </h2>
+          <p
+            style={{
+              fontSize: 12.5,
+              color: 'var(--text-muted)',
+              marginTop: 4,
+              lineHeight: 1.5,
+            }}
+          >
+            Elegí qué funciones querés ver en el home. Se guarda para
+            tu cuenta.
+          </p>
+        </div>
+
+        <div
+          style={{
+            flex: 1,
+            overflowY: 'auto',
+            padding: '0 16px 16px',
+            display: 'grid',
+            gridTemplateColumns: 'repeat(4, 1fr)',
+            gap: 8,
+          }}
+        >
+          {available.map((fn) => {
+            const on = draft.has(fn.id);
+            return (
+              <button
+                key={fn.id}
+                type="button"
+                onClick={() => toggle(fn.id)}
+                className="spring-tap"
+                aria-pressed={on}
+                style={{
+                  position: 'relative',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '12px 6px',
+                  background: on ? 'var(--accent-bg)' : 'var(--bg-card-alt)',
+                  border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
+                  borderRadius: 'var(--radius-md)',
+                  color: 'var(--text)',
+                  textAlign: 'center',
+                  minHeight: 88,
+                  cursor: 'pointer',
+                  transition: 'background 0.18s var(--ease-ios), border 0.18s var(--ease-ios)',
+                }}
+              >
+                <div
+                  aria-hidden
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 14,
+                    background: fn.iconBg,
+                    color: fn.iconColor,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {fn.icon}
+                </div>
+                <span style={{ fontSize: 11, fontWeight: 600, lineHeight: 1.15 }}>
+                  {fn.label}
+                </span>
+                {on && (
+                  <span
+                    aria-hidden
+                    style={{
+                      position: 'absolute',
+                      top: 6,
+                      right: 6,
+                      width: 18,
+                      height: 18,
+                      borderRadius: 999,
+                      background: 'var(--accent)',
+                      color: '#FDFBF8',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: 11,
+                      fontWeight: 700,
+                    }}
+                  >
+                    ✓
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <div
+          style={{
+            display: 'flex',
+            gap: 8,
+            padding: '12px 20px 16px',
+            borderTop: '1px solid var(--border)',
+          }}
+        >
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              flex: 1,
+              height: 44,
+              borderRadius: 'var(--radius-md)',
+              background: 'var(--bg-subtle)',
+              color: 'var(--text)',
+              fontWeight: 600,
+              fontSize: 13.5,
+              border: '1px solid var(--border)',
+              cursor: 'pointer',
+            }}
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={() => onSave(Array.from(draft))}
+            style={{
+              flex: 2,
+              height: 44,
+              borderRadius: 'var(--radius-md)',
+              background: 'var(--accent)',
+              color: '#FDFBF8',
+              fontWeight: 700,
+              fontSize: 13.5,
+              border: 0,
+              cursor: 'pointer',
+            }}
+          >
+            Guardar
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
