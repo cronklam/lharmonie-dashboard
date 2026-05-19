@@ -1698,6 +1698,7 @@ function TabListado({
   const [view, setView] = useState<'local' | 'categoria'>('local');
   const [openAncla, setOpenAncla] = useState<string | null>(null);
   const [openTipo, setOpenTipo] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
   if (!indice.tabExiste) {
     return (
@@ -1738,13 +1739,15 @@ function TabListado({
       rowByName.set(row.servicio.trim().toUpperCase(), row);
       rowByName.set(row.servicioRaw.trim().toUpperCase(), row);
     }
+    // 1:1 con el Sheet: TODA fila del LISTADO se incluye, sin filtrar
+    // por activo/pivot. Inactivos se marcan con el flag `activo: false`
+    // para que la UI los muestre con un badge "Inactivo".
+    // El estado de la celda viene del pivot del mes para enriquecer
+    // (pagado/pendiente/vacío/no_aplica), pero NO se usa para filtrar.
     const out: ServicioEnLocal[] = [];
     for (const meta of indice.servicios) {
-      if (!meta.activo) continue;
       const row = rowByName.get(meta.servicio.trim().toUpperCase());
       const cell = row?.porAncla[meta.ancla];
-      // Si el pivot afirma "no aplica" para este local, respetar.
-      if (cell?.estado === 'no_aplica') continue;
       out.push({
         servicio: meta.servicio,
         servicioRaw: row?.servicioRaw || meta.servicio,
@@ -1765,6 +1768,23 @@ function TabListado({
     }
     return out;
   }, [indice.servicios, mesData]);
+
+  // Filtro por buscador (client-side, normalize tildes).
+  const filteredServicios = useMemo(() => {
+    const term = search
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '');
+    if (!term) return serviciosEnLocal;
+    return serviciosEnLocal.filter((s) => {
+      const hay = `${s.servicio} ${s.servicioRaw} ${s.categoria} ${s.ancla}`
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, '');
+      return hay.includes(term);
+    });
+  }, [serviciosEnLocal, search]);
 
   // Stats card
   const stats = useMemo(() => {
@@ -1933,17 +1953,81 @@ function TabListado({
         })}
       </div>
 
+      {/* Buscador inline. Solo aparece si hay >5 servicios en el LISTADO
+          (para no hacer ruido cuando el catálogo es chico). Normalize
+          tildes — "telefonos" matchea "Telefónos". */}
+      {serviciosEnLocal.length > 5 && (
+        <div style={{ position: 'relative' }}>
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar en el catálogo…"
+            style={{
+              width: '100%',
+              height: 38,
+              padding: '0 36px 0 14px',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--border)',
+              background: 'var(--bg-card)',
+              color: 'var(--text)',
+              fontSize: 13.5,
+              outline: 'none',
+            }}
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              aria-label="Limpiar búsqueda"
+              style={{
+                position: 'absolute',
+                right: 6,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                width: 28,
+                height: 28,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'var(--bg-subtle)',
+                border: 0,
+                borderRadius: 999,
+                color: 'var(--text-muted)',
+                fontSize: 14,
+                cursor: 'pointer',
+              }}
+            >
+              ×
+            </button>
+          )}
+          {search && filteredServicios.length === 0 && (
+            <div
+              style={{
+                marginTop: 8,
+                padding: '8px 12px',
+                fontSize: 12.5,
+                color: 'var(--text-muted)',
+                fontStyle: 'italic',
+              }}
+            >
+              Sin resultados para “{search}”
+            </div>
+          )}
+        </div>
+      )}
+
       {view === 'local' ? (
         <ListadoPorLocal
           locales={indice.locales}
-          serviciosEnLocal={serviciosEnLocal}
+          serviciosEnLocal={filteredServicios}
           openAncla={openAncla}
           onToggle={(a) => setOpenAncla((p) => (p === a ? null : a))}
           onClickServicio={onClickServicio}
         />
       ) : (
         <ListadoPorCategoria
-          serviciosEnLocal={serviciosEnLocal}
+          serviciosEnLocal={filteredServicios}
           openTipo={openTipo}
           onToggle={(t) => setOpenTipo((p) => (p === t ? null : t))}
           onClickServicio={onClickServicio}
