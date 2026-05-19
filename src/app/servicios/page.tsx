@@ -1630,57 +1630,63 @@ function TabListado({
     );
   }
 
-  // Index ÍNDICE por (servicio, ancla) — clave única del catálogo.
-  // Cada (servicio, ancla) puede tener una entry distinta (ej ALQUILERES
-  // tiene una entry por LH1, LH2, ..., LH6).
-  const indiceByKey = useMemo(() => {
-    const m = new Map<string, IndiceServicio>();
-    for (const s of indice.servicios) {
-      const k = `${s.servicio.toUpperCase()}|${s.ancla}`;
-      m.set(k, s);
-    }
-    return m;
-  }, [indice.servicios]);
-
-  // Build serviciosEnLocal: para cada (servicio × ancla) donde la
-  // celda no es no_aplica → un entry, enriquecido con catálogo.
+  // Build serviciosEnLocal:
+  // FUENTE = LISTADO (indice.servicios). Antes iterábamos sobre el
+  // pivot mensual y enriquecíamos con catálogo — eso "perdía" entries
+  // del catálogo que no aparecían en el mes y mostraba huérfanos del
+  // pivot que no tenían lugar en el LISTADO. Ahora al revés:
+  //   1. Iterar (servicio × ancla) del LISTADO (filtrando inactivos).
+  //   2. Para cada uno, buscar la celda correspondiente en el pivot
+  //      del mes (por nombre, case-insensitive).
+  //   3. Si la celda dice "no_aplica" → saltar (este local no tiene
+  //      este servicio).
+  //   4. Si no hay celda (fila no existe en el pivot, o porAncla está
+  //      vacío) → estado "vacio" — entry visible como pendiente sin
+  //      cargar todavía este mes.
+  // Resultado: el LISTADO es la fuente única de verdad; huérfanos del
+  // pivot dejan de mostrarse acá.
   const serviciosEnLocal: ServicioEnLocal[] = useMemo(() => {
-    if (!mesData) return [];
-    const all = [
-      ...mesData.filasLocales,
-      ...mesData.filasCronklam,
-      ...mesData.filasMyP,
-    ];
+    if (!indice.servicios.length) return [];
+    // Lookup rápido de filas del pivot por nombre (canónico y raw).
+    const allRows = mesData
+      ? [
+          ...mesData.filasLocales,
+          ...mesData.filasCronklam,
+          ...mesData.filasMyP,
+        ]
+      : [];
+    const rowByName = new Map<string, (typeof allRows)[number]>();
+    for (const row of allRows) {
+      rowByName.set(row.servicio.trim().toUpperCase(), row);
+      rowByName.set(row.servicioRaw.trim().toUpperCase(), row);
+    }
     const out: ServicioEnLocal[] = [];
-    for (const row of all) {
-      for (const [ancla, cell] of Object.entries(row.porAncla)) {
-        if (!cell || cell.estado === 'no_aplica') continue;
-        const key = `${row.servicio.toUpperCase()}|${ancla}`;
-        // También probamos con el nombre raw por si el canónico
-        // difiere del que está en el ÍNDICE.
-        const keyRaw = `${row.servicioRaw.toUpperCase()}|${ancla}`;
-        const meta = indiceByKey.get(key) || indiceByKey.get(keyRaw);
-        out.push({
-          servicio: row.servicio,
-          servicioRaw: row.servicioRaw,
-          ancla: ancla as Ancla,
-          cellEstado: cell.estado,
-          cellMonto: cell.monto,
-          cellEsUsd: cell.esUsd,
-          cellRaw: cell.raw,
-          categoria: meta?.tipo || '',
-          periodicidad: meta?.frecuencia || '',
-          diaVenc: meta?.diaVencimiento ?? null,
-          notas: meta?.notas || row.notas || '',
-          metodoPago: meta?.metodoPago || '',
-          subarrendadoBaigun: meta?.subarrendadoBaigun || false,
-          activo: meta?.activo ?? true,
-          enCatalogo: !!meta,
-        });
-      }
+    for (const meta of indice.servicios) {
+      if (!meta.activo) continue;
+      const row = rowByName.get(meta.servicio.trim().toUpperCase());
+      const cell = row?.porAncla[meta.ancla];
+      // Si el pivot afirma "no aplica" para este local, respetar.
+      if (cell?.estado === 'no_aplica') continue;
+      out.push({
+        servicio: meta.servicio,
+        servicioRaw: row?.servicioRaw || meta.servicio,
+        ancla: meta.ancla,
+        cellEstado: cell?.estado || 'vacio',
+        cellMonto: cell?.monto || 0,
+        cellEsUsd: cell?.esUsd || false,
+        cellRaw: cell?.raw || '',
+        categoria: meta.tipo,
+        periodicidad: meta.frecuencia || '',
+        diaVenc: meta.diaVencimiento ?? null,
+        notas: meta.notas || row?.notas || '',
+        metodoPago: meta.metodoPago,
+        subarrendadoBaigun: meta.subarrendadoBaigun,
+        activo: meta.activo,
+        enCatalogo: true,
+      });
     }
     return out;
-  }, [mesData, indiceByKey]);
+  }, [indice.servicios, mesData]);
 
   // Stats card
   const stats = useMemo(() => {
