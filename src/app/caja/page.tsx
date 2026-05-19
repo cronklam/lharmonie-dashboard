@@ -1588,10 +1588,17 @@ function NuevoMovSheet({
             gap: 14,
           }}
         >
-          {/* Fecha */}
+          {/* Fecha — por default asume hoy. El help text cambia según
+              si el usuario dejó la fecha en hoy o la cambió a otra:
+              en el primer caso le recordamos que puede modificarla;
+              en el segundo le mostramos a qué tab del Sheet va a ir. */}
           <FieldLabel
             label="Fecha"
-            help={`Va al tab "${mesTabFromISO(fecha.slice(0, 7) + '-01') || ''}"`}
+            help={
+              fecha === todayISO()
+                ? 'Hoy. Si el movimiento no es de hoy, modificá esta fecha.'
+                : `Va al tab "${mesTabFromISO(fecha.slice(0, 7) + '-01') || ''}"`
+            }
           >
             <input
               type="date"
