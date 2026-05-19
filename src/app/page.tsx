@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from './components/AuthProvider';
 import {
   COL,
@@ -1363,7 +1364,13 @@ function EditQuickAccessModal({
     });
   };
 
-  return (
+  // IMPORTANTE: portaleamos a document.body. El home page renderea
+  // dentro de un wrapper con .page-enter que aplica transform, lo cual
+  // crea un stacking context propio Y rompe position:fixed (el modal
+  // queda confinado al rect del wrapper, no cubre el viewport).
+  // Mismo patrón que BottomNav y los sheets de /caja.
+  if (typeof document === 'undefined') return null;
+  return createPortal(
     <div
       onClick={onClose}
       style={{
@@ -1371,6 +1378,8 @@ function EditQuickAccessModal({
         inset: 0,
         background: 'rgba(13,8,5,0.55)',
         backdropFilter: 'blur(4px)',
+        WebkitBackdropFilter: 'blur(4px)',
+        // BottomNav usa zIndex 110, así que 200 lo cubre.
         zIndex: 200,
         display: 'flex',
         alignItems: 'flex-end',
@@ -1389,9 +1398,13 @@ function EditQuickAccessModal({
           borderTopRightRadius: 22,
           padding: '8px 0 0',
           maxHeight: '88vh',
+          // overflow:hidden + flex column es lo que permite que el grid
+          // interno con overflow:auto funcione sin colapsar.
+          overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
           paddingBottom: 'var(--safe-bottom)',
+          boxShadow: '0 -16px 40px rgba(0,0,0,0.18)',
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0 4px' }}>
@@ -1567,6 +1580,7 @@ function EditQuickAccessModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

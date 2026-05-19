@@ -514,9 +514,17 @@ git checkout main && git merge --ff-only feat/<branch> && git push origin main
 6. **Sheets API rate limits (429):** `next: { revalidate: 60 }` para
    Facturas y `300` para Recetario. Si el dashboard hace muchas
    refresh, se cachea correctamente del lado de Next.
-7. **Bottom nav portal:** el BottomTabBar del staff usa `createPortal`
-   a `document.body` para escapar `transform` de wrappers que rompen
-   `position: fixed`. Replicado igual.
+7. **Modales / sheets / popups → SIEMPRE `createPortal(node, document.body)`.**
+   Cada page se envuelve en `.page-enter`, que aplica `transform`
+   durante la animación. Un ancestro con `transform` crea un stacking
+   context propio Y rompe `position: fixed` — el modal queda
+   confinado al rect del wrapper en lugar de cubrir el viewport.
+   Síntoma típico: el overlay con `backdrop-filter` se ve, pero el
+   contenido del modal aparece invisible o fuera de pantalla. Aplica a
+   `BottomNav`, los sheets de `/caja`, `EditQuickAccessModal` del home,
+   y cualquier futuro overlay con `position: fixed`. Guard SSR con
+   `if (typeof document === 'undefined') return null;` antes del
+   `createPortal`. z-index: 110 (BottomNav), 115+ para modales.
 
 ---
 
