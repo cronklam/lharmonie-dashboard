@@ -656,17 +656,109 @@ function TabTabla({
     (r) => !catalogoNames.has(r.servicioRaw.trim().toUpperCase()),
   ).length;
 
+  // FUENTE = LISTADO. Construimos las filas de la tabla a partir del
+  // catálogo, no del pivot mensual. Así:
+  //   - Servicios del LISTADO que no aparecen en el pivot del mes →
+  //     se muestran igual con celdas "vacías" (pendientes este mes).
+  //   - Servicios del pivot que no están en el LISTADO (huérfanos) no
+  //     aparecen acá; se ven solo via el contador "Limpiar huérfanos".
+  //   - Celdas (servicio × ancla) donde el LISTADO no tiene entry se
+  //     fuerzan a "no_aplica" (—): ese local no usa ese servicio.
+  // La fila virtual reusa el shape ServicioMesRow para que FilaTabla
+  // siga funcionando sin tocar el render.
+  const filasFromListado = useMemo(() => {
+    // Lookup rápido de fila real del pivot por nombre (canónico + raw).
+    const allRows = [
+      ...data.filasLocales,
+      ...data.filasCronklam,
+      ...data.filasMyP,
+    ];
+    const rowByName = new Map<string, ServicioMesRow>();
+    for (const row of allRows) {
+      rowByName.set(row.servicio.trim().toUpperCase(), row);
+      rowByName.set(row.servicioRaw.trim().toUpperCase(), row);
+    }
+    // Agrupar el LISTADO por nombre canónico de servicio.
+    type Grupo = { servicio: string; entries: Map<Ancla, CatalogoServicio> };
+    const grupos = new Map<string, Grupo>();
+    for (const meta of indice.servicios) {
+      if (!meta.activo) continue;
+      // Solo nos interesan anclas operativas (LH1-LH6) en la tabla.
+      if (!data.anclasOperativas.includes(meta.ancla)) continue;
+      const key = meta.servicio.trim().toUpperCase();
+      if (!grupos.has(key)) {
+        grupos.set(key, { servicio: meta.servicio, entries: new Map() });
+      }
+      grupos.get(key)!.entries.set(meta.ancla, meta);
+    }
+    // Por cada grupo: armar la fila virtual.
+    const out: {
+      row: ServicioMesRow;
+      meta: CatalogoServicio | null;
+      baigunAnclas: Set<Ancla>;
+    }[] = [];
+    for (const [key, grupo] of grupos) {
+      const realRow = rowByName.get(key);
+      // Base: fila del pivot si existe, sino objeto vacío.
+      const baseRow: ServicioMesRow = realRow || {
+        servicio: grupo.servicio,
+        servicioRaw: grupo.servicio,
+        fila: -1,
+        porAncla: {},
+        baigun: '',
+        baigunMonto: 0,
+        notas: '',
+        esTotal: false,
+        grupo: 'locales',
+      };
+      // Enriquecer porAncla: si el LISTADO no tiene la (servicio, ancla),
+      // forzar no_aplica para que se renderee como "—".
+      const porAncla: Record<string, CeldaServicio> = { ...baseRow.porAncla };
+      for (const a of data.anclasOperativas) {
+        if (!grupo.entries.has(a)) {
+          porAncla[a] = {
+            raw: '',
+            monto: 0,
+            esUsd: false,
+            estado: 'no_aplica',
+          };
+        } else if (!porAncla[a]) {
+          // Está en el catálogo pero el pivot no tiene celda → vacío.
+          porAncla[a] = {
+            raw: '',
+            monto: 0,
+            esUsd: false,
+            estado: 'vacio',
+          };
+        }
+      }
+      const row: ServicioMesRow = { ...baseRow, porAncla };
+      const firstMeta = Array.from(grupo.entries.values())[0];
+      const baigunAnclas = new Set<Ancla>(
+        Array.from(grupo.entries.entries())
+          .filter(([, m]) => m.subarrendadoBaigun)
+          .map(([a]) => a),
+      );
+      out.push({ row, meta: firstMeta, baigunAnclas });
+    }
+    // Ordenar alfabético por nombre (catálogo no garantiza orden).
+    out.sort((a, b) =>
+      a.row.servicio.toLowerCase().localeCompare(b.row.servicio.toLowerCase(), 'es'),
+    );
+    return out;
+  }, [indice.servicios, data]);
+
   // Buscador client-side. Normalize tildes para que "luz" matchee
   // "Luz" y "Telefónos" matchee "telefonos".
   const normalize = (s: string) =>
     s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   const filterTerm = normalize(search.trim());
   const filasVisibles = filterTerm
-    ? data.filasLocales.filter((r) =>
-        normalize(r.servicio).includes(filterTerm) ||
-        normalize(r.servicioRaw).includes(filterTerm),
+    ? filasFromListado.filter((f) =>
+        normalize(f.row.servicio).includes(filterTerm) ||
+        normalize(f.row.servicioRaw).includes(filterTerm),
       )
-    : data.filasLocales;
+    : filasFromListado;
 
   return (
     <>
@@ -675,7 +767,7 @@ function TabTabla({
       {/* Buscador inline. Filtra client-side por nombre del servicio.
           Solo aparece si hay más de 5 filas — para no hacer ruido en
           listas chicas. */}
-      {data.filasLocales.length > 5 && (
+      {filasFromListado.length > 5 && (
         <div style={{ position: 'relative', padding: '0 2px' }}>
           <input
             type="search"
@@ -841,25 +933,18 @@ function TabTabla({
               </div>
             ))}
 
-            {/* Filas locales — filtradas por el buscador inline. */}
-            {filasVisibles.map((row, idx) => {
+            {/* Filas — gobernadas por el LISTADO. Cada item ya trae su
+                row virtual + meta + baigunAnclas pre-calculados. */}
+            {filasVisibles.map((f, idx) => {
               const bg = idx % 2 === 0 ? 'var(--bg-card)' : 'var(--bg-card-alt)';
-              const matches = indice.servicios.filter(
-                (s) =>
-                  s.servicio.toUpperCase() === row.servicioRaw.toUpperCase(),
-              );
-              const meta = matches.find((m) => m.activo) || matches[0] || null;
-              const baigunAnclas = new Set(
-                matches.filter((m) => m.subarrendadoBaigun).map((m) => m.ancla),
-              );
               return (
                 <FilaTabla
-                  key={`${row.servicio}-${idx}`}
-                  row={row}
+                  key={`${f.row.servicio}-${idx}`}
+                  row={f.row}
                   anclas={data.anclasOperativas}
                   bg={bg}
-                  meta={meta}
-                  baigunAnclas={baigunAnclas}
+                  meta={f.meta}
+                  baigunAnclas={f.baigunAnclas}
                   onClickCell={onClickCell}
                 />
               );
