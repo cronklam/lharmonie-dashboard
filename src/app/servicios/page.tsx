@@ -144,6 +144,26 @@ export default function ServiciosPage() {
     reloadMes();
   }, [reloadMes]);
 
+  // Auto-refresh cuando la pestaña vuelve al foco: si Iara editó el
+  // Sheet directo en otra pestaña, al volver a la app refrescamos
+  // automáticamente LISTADO + mes para que matchee. Evitamos hacer
+  // poll continuo (costo Sheets API) — solo on focus / visibilitychange.
+  useEffect(() => {
+    if (!isOwner) return;
+    function onVisible() {
+      if (document.visibilityState === 'visible') {
+        refreshIndice();
+        reloadMes();
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, [isOwner, refreshIndice, reloadMes]);
+
   useEffect(() => {
     if (loading || !user || !isOwner) return;
     fetch('/api/servicios/indice')
@@ -178,6 +198,53 @@ export default function ServiciosPage() {
             : 'Cargando…'
         }
         showBack
+        rightSlot={
+          <button
+            type="button"
+            onClick={() => {
+              refreshIndice();
+              reloadMes();
+            }}
+            disabled={mesLoading}
+            aria-label="Actualizar desde el Sheet"
+            title="Actualizar desde el Sheet"
+            className="press-feedback"
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 999,
+              background: 'var(--bg-subtle)',
+              border: 0,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: mesLoading ? 'wait' : 'pointer',
+              opacity: mesLoading ? 0.5 : 1,
+            }}
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="var(--text)"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{
+                transition: 'transform 0.4s var(--ease-ios)',
+                animation: mesLoading
+                  ? 'spinnerRotate 0.9s linear infinite'
+                  : undefined,
+              }}
+            >
+              <path d="M3 12a9 9 0 0 1 15.5-6.3L21 8" />
+              <path d="M21 3v5h-5" />
+              <path d="M21 12a9 9 0 0 1-15.5 6.3L3 16" />
+              <path d="M3 21v-5h5" />
+            </svg>
+          </button>
+        }
       />
       <div
         className="px-4 pt-4 lh-inicio-stagger"
@@ -633,12 +700,28 @@ function TabTabla({
 }) {
   const [search, setSearch] = useState('');
 
-  // FUENTE = LISTADO. Construimos las filas de la tabla a partir del
-  // catálogo, no del pivot mensual.
+  // FUENTE = LISTADO en TODAS las vistas (tabla principal + secciones
+  // CRONKLAM/MyP). Antes solo la tabla LH1-LH6 usaba LISTADO, las
+  // SplitSection seguían leyendo del pivot mensual → desconexión visible
+  // (ej. Listado mostraba "Yeshurun" en MyP pero la Tabla mostraba
+  // "Ajdut" que era lo cargado en el tab del mes).
+  // Construimos un objeto con 3 buckets:
+  //   - principales (LH1-LH6) → render en el grid pivot
+  //   - cronklam (anclas CRONKLAM + BAMBINA) → SplitSection
+  //   - myp (ancla MyP) → SplitSection
   // IMPORTANTE: useMemo va ANTES de cualquier early return — rules of
   // hooks (no condicionales antes de hooks).
-  const filasFromListado = useMemo(() => {
-    if (!data) return [];
+  const filasBuckets = useMemo(() => {
+    const empty = {
+      principales: [] as {
+        row: ServicioMesRow;
+        meta: CatalogoServicio | null;
+        baigunAnclas: Set<Ancla>;
+      }[],
+      cronklam: [] as { row: ServicioMesRow; meta: CatalogoServicio | null }[],
+      myp: [] as { row: ServicioMesRow; meta: CatalogoServicio | null }[],
+    };
+    if (!data) return empty;
     // Lookup rápido de fila real del pivot por nombre (canónico + raw).
     const allRows = [
       ...data.filasLocales,
@@ -650,28 +733,40 @@ function TabTabla({
       rowByName.set(row.servicio.trim().toUpperCase(), row);
       rowByName.set(row.servicioRaw.trim().toUpperCase(), row);
     }
-    // Agrupar el LISTADO por nombre canónico de servicio.
+
+    // Agrupar el LISTADO por nombre canónico de servicio, separando
+    // por bucket según ancla.
     type Grupo = { servicio: string; entries: Map<Ancla, CatalogoServicio> };
-    const grupos = new Map<string, Grupo>();
+    const principalesMap = new Map<string, Grupo>();
+    const cronklamMap = new Map<string, Grupo>();
+    const mypMap = new Map<string, Grupo>();
+
+    const isPrincipal = (a: Ancla) => data.anclasOperativas.includes(a);
+    const isCronklam = (a: Ancla) => a === 'CRONKLAM' || a === 'BAMBINA';
+    const isMyP = (a: Ancla) => a === 'MyP';
+
     for (const meta of indice.servicios) {
       if (!meta.activo) continue;
-      // Solo nos interesan anclas operativas (LH1-LH6) en la tabla.
-      if (!data.anclasOperativas.includes(meta.ancla)) continue;
       const key = meta.servicio.trim().toUpperCase();
-      if (!grupos.has(key)) {
-        grupos.set(key, { servicio: meta.servicio, entries: new Map() });
+      const target = isPrincipal(meta.ancla)
+        ? principalesMap
+        : isCronklam(meta.ancla)
+          ? cronklamMap
+          : isMyP(meta.ancla)
+            ? mypMap
+            : null;
+      if (!target) continue; // ancla desconocida → ignorar
+      if (!target.has(key)) {
+        target.set(key, { servicio: meta.servicio, entries: new Map() });
       }
-      grupos.get(key)!.entries.set(meta.ancla, meta);
+      target.get(key)!.entries.set(meta.ancla, meta);
     }
-    // Por cada grupo: armar la fila virtual.
-    const out: {
-      row: ServicioMesRow;
-      meta: CatalogoServicio | null;
-      baigunAnclas: Set<Ancla>;
-    }[] = [];
-    for (const [key, grupo] of grupos) {
+
+    // Helper: armar fila virtual desde un grupo y un set de anclas a
+    // forzar. realAncla = ancla concreta para SplitSection (CRONKLAM/MyP).
+    function buildRow(grupo: Grupo): ServicioMesRow {
+      const key = grupo.servicio.trim().toUpperCase();
       const realRow = rowByName.get(key);
-      // Base: fila del pivot si existe, sino objeto vacío.
       const baseRow: ServicioMesRow = realRow || {
         servicio: grupo.servicio,
         servicioRaw: grupo.servicio,
@@ -683,8 +778,17 @@ function TabTabla({
         esTotal: false,
         grupo: 'locales',
       };
-      // Enriquecer porAncla: si el LISTADO no tiene la (servicio, ancla),
-      // forzar no_aplica para que se renderee como "—".
+      const porAncla: Record<string, CeldaServicio> = { ...baseRow.porAncla };
+      // Solo para la tabla principal forzamos no_aplica en anclas
+      // operativas no presentes en el LISTADO. Para las SplitSection
+      // solo necesitamos UNA ancla, así que no aplica.
+      return { ...baseRow, porAncla };
+    }
+
+    // Buckets principales — necesita el patrón completo (LH1-LH6).
+    const principales: typeof empty.principales = [];
+    for (const [, grupo] of principalesMap) {
+      const baseRow = buildRow(grupo);
       const porAncla: Record<string, CeldaServicio> = { ...baseRow.porAncla };
       for (const a of data.anclasOperativas) {
         if (!grupo.entries.has(a)) {
@@ -695,7 +799,6 @@ function TabTabla({
             estado: 'no_aplica',
           };
         } else if (!porAncla[a]) {
-          // Está en el catálogo pero el pivot no tiene celda → vacío.
           porAncla[a] = {
             raw: '',
             monto: 0,
@@ -711,14 +814,52 @@ function TabTabla({
           .filter(([, m]) => m.subarrendadoBaigun)
           .map(([a]) => a),
       );
-      out.push({ row, meta: firstMeta, baigunAnclas });
+      principales.push({ row, meta: firstMeta, baigunAnclas });
     }
-    // Ordenar alfabético por nombre (catálogo no garantiza orden).
-    out.sort((a, b) =>
+    principales.sort((a, b) =>
       a.row.servicio.toLowerCase().localeCompare(b.row.servicio.toLowerCase(), 'es'),
     );
-    return out;
+
+    // Helper para SplitSection: una entry por (servicio, ancla
+    // concreta) — porque cada servicio puede tener varias anclas en
+    // este bucket (ej. CRONKLAM Y BAMBINA).
+    function expandToEntries(
+      groupMap: Map<string, Grupo>,
+    ): { row: ServicioMesRow; meta: CatalogoServicio | null }[] {
+      const result: { row: ServicioMesRow; meta: CatalogoServicio | null }[] =
+        [];
+      for (const [, grupo] of groupMap) {
+        const row = buildRow(grupo);
+        for (const [ancla, meta] of grupo.entries) {
+          // Asegurar que porAncla tiene la celda real o vacío.
+          if (!row.porAncla[ancla]) {
+            row.porAncla[ancla] = {
+              raw: '',
+              monto: 0,
+              esUsd: false,
+              estado: 'vacio',
+            };
+          }
+          result.push({ row: { ...row }, meta });
+        }
+      }
+      result.sort((a, b) =>
+        a.row.servicio
+          .toLowerCase()
+          .localeCompare(b.row.servicio.toLowerCase(), 'es'),
+      );
+      return result;
+    }
+
+    return {
+      principales,
+      cronklam: expandToEntries(cronklamMap),
+      myp: expandToEntries(mypMap),
+    };
   }, [indice.servicios, data]);
+
+  // Backwards-compat alias para el render existente del grid principal.
+  const filasFromListado = filasBuckets.principales;
 
   if (loading && !data) {
     return (
@@ -1008,31 +1149,29 @@ function TabTabla({
         </div>
       </div>
 
-      {/* Cronklam + MyP split 50/50 */}
-      {(data.filasCronklam.length > 0 || data.filasMyP.length > 0) && (
+      {/* Cronklam + MyP split — ahora desde el LISTADO, no del pivot.
+          Si Iara editó el LISTADO con un servicio MyP="Yeshurun",
+          acá aparece "Yeshurun" (no "Ajdut" del mes anterior). */}
+      {(filasBuckets.cronklam.length > 0 || filasBuckets.myp.length > 0) && (
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: data.filasMyP.length > 0 ? '1fr 1fr' : '1fr',
+            gridTemplateColumns: filasBuckets.myp.length > 0 ? '1fr 1fr' : '1fr',
             gap: 8,
             marginTop: 4,
           }}
         >
-          {data.filasCronklam.length > 0 && (
+          {filasBuckets.cronklam.length > 0 && (
             <SplitSection
               label="Cronklam (corporativo)"
-              count={data.filasCronklam.length}
-              filas={data.filasCronklam}
-              ancla="CRONKLAM"
+              entries={filasBuckets.cronklam}
               onClickCell={onClickCell}
             />
           )}
-          {data.filasMyP.length > 0 && (
+          {filasBuckets.myp.length > 0 && (
             <SplitSection
               label="Martín y Melanie"
-              count={data.filasMyP.length}
-              filas={data.filasMyP}
-              ancla="MyP"
+              entries={filasBuckets.myp}
               onClickCell={onClickCell}
             />
           )}
@@ -1207,17 +1346,17 @@ function CeldaTabla({ cell }: { cell?: CeldaServicio }) {
 
 function SplitSection({
   label,
-  count,
-  filas,
-  ancla,
+  entries,
   onClickCell,
 }: {
   label: string;
-  count: number;
-  filas: ServicioMesRow[];
-  ancla: 'CRONKLAM' | 'MyP';
+  /** Cada entry trae su propia ancla (CRONKLAM, BAMBINA o MyP) porque
+   *  un bucket puede mezclarlas (ej. Cronklam (corporativo) incluye
+   *  ambas anclas). */
+  entries: { row: ServicioMesRow; meta: CatalogoServicio | null }[];
   onClickCell: (row: ServicioMesRow, ancla: Ancla) => void;
 }) {
+  const count = entries.length;
   return (
     <div
       style={{
@@ -1247,13 +1386,14 @@ function SplitSection({
         <span style={{ color: 'var(--text-muted)' }}>{count}</span>
       </div>
       <div>
-        {filas.map((row, i) => {
-          const cell = row.porAncla[ancla];
+        {entries.map((entry, i) => {
+          const ancla = (entry.meta?.ancla || 'CRONKLAM') as Ancla;
+          const cell = entry.row.porAncla[ancla];
           return (
             <button
-              key={`${row.servicio}-${i}`}
+              key={`${entry.row.servicio}-${ancla}-${i}`}
               type="button"
-              onClick={() => onClickCell(row, ancla as Ancla)}
+              onClick={() => onClickCell(entry.row, ancla)}
               className="press-feedback"
               style={{
                 width: '100%',
@@ -1261,7 +1401,7 @@ function SplitSection({
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                borderBottom: i < filas.length - 1 ? '1px solid var(--border)' : 0,
+                borderBottom: i < count - 1 ? '1px solid var(--border)' : 0,
                 fontSize: 13,
                 background: 'transparent',
                 border: 0,
@@ -1270,10 +1410,10 @@ function SplitSection({
               }}
             >
               <span style={{ color: 'var(--text)', fontWeight: 500 }}>
-                {row.servicio}
+                {entry.row.servicio}
               </span>
               <span
-                className="tabular-nums-strict"
+                className="numeric-display"
                 style={{
                   fontWeight: cell?.estado === 'pagado' ? 700 : 600,
                   color:
