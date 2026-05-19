@@ -273,7 +273,10 @@ export default function ServiciosPage() {
           onSaved={async (msg) => {
             setEditing(null);
             flashToast(msg);
-            await reloadMes();
+            // Recargamos ambos: el pivot del mes (para mostrar el pago
+            // recién registrado) y el LISTADO (por si la acción fue
+            // desactivar fila/columna).
+            await Promise.all([reloadMes(), refreshIndice()]);
           }}
           onError={flashToast}
         />
@@ -2845,7 +2848,9 @@ function RegistrarPagoModal({
   const [confirmForzar, setConfirmForzar] = useState(false);
   /** Tracking del "tipo de write" en curso para que el spinner / loader
    *  vaya en el botón correcto. */
-  const [savingKind, setSavingKind] = useState<'pago' | 'no-aplica' | null>(null);
+  const [savingKind, setSavingKind] = useState<
+    'pago' | 'no-aplica' | 'eliminar-fila' | 'eliminar-columna' | null
+  >(null);
 
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => {
@@ -2901,6 +2906,51 @@ function RegistrarPagoModal({
       }
     },
     [saving, monto, moneda, periodo, row.servicioRaw, localCol, onError, onSaved],
+  );
+
+  // Desactivar bulk en el LISTADO. scope='fila' borra TODAS las anclas
+  // de este servicio (= "este servicio para todos los locales").
+  // scope='columna' borra TODOS los servicios de esta ancla (= "todo
+  // este local"). Soft-delete (activo=FALSE) en el Sheet — la fila
+  // queda como referencia histórica.
+  const submitDesactivar = useCallback(
+    async (scope: 'fila' | 'columna') => {
+      if (saving) return;
+      const mensaje =
+        scope === 'fila'
+          ? `Esto va a marcar como inactivos TODOS los locales que pagan "${row.servicio}" en el catálogo. ¿Estás segura?`
+          : `Esto va a marcar como inactivos TODOS los servicios del local "${ANCLA_SHORT_LABEL[ancla]}" en el catálogo. ¿Estás segura?`;
+      const ok = window.confirm(mensaje);
+      if (!ok) return;
+      setSaving(true);
+      setSavingKind(scope === 'fila' ? 'eliminar-fila' : 'eliminar-columna');
+      try {
+        const body =
+          scope === 'fila' ? { servicio: row.servicio } : { ancla };
+        const r = await fetch('/api/servicios/indice/desactivar-bulk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const d = await r.json();
+        if (d.ok) {
+          const n = d.desactivadas as number;
+          onSaved(
+            n === 0
+              ? 'No había entries activas para desactivar'
+              : `Desactivadas ${n} ${n === 1 ? 'entry' : 'entries'} del catálogo`,
+          );
+        } else {
+          onError(d.error || 'Error desactivando');
+        }
+      } catch {
+        onError('Error de red');
+      } finally {
+        setSaving(false);
+        setSavingKind(null);
+      }
+    },
+    [saving, row.servicio, ancla, onError, onSaved],
   );
 
   // Marcar como "No aplica": escribe "NO" en la celda. Solo permitido
@@ -3222,6 +3272,82 @@ function RegistrarPagoModal({
                   ? 'Marcando…'
                   : 'Marcar "No aplica" (este local no tiene este servicio)'}
               </button>
+            )}
+
+            {/* Acciones destructivas — eliminar fila/columna del LISTADO.
+                Cada una pide confirm nativo antes de ejecutar. Soft-
+                delete (activo=FALSE). Solo visibles si no estamos en el
+                medio de un confirm de sobrescribir. */}
+            {!confirmForzar && (
+              <div
+                style={{
+                  marginTop: 14,
+                  paddingTop: 12,
+                  borderTop: '1px solid var(--border)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 6,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    letterSpacing: '0.12em',
+                    textTransform: 'uppercase',
+                    color: 'var(--text-muted)',
+                    marginBottom: 2,
+                  }}
+                >
+                  Eliminar del catálogo
+                </div>
+                <button
+                  type="button"
+                  onClick={() => submitDesactivar('fila')}
+                  disabled={saving}
+                  style={{
+                    width: '100%',
+                    height: 38,
+                    borderRadius: 'var(--radius-md)',
+                    background: 'transparent',
+                    color: '#C84F3F',
+                    fontWeight: 600,
+                    fontSize: 12.5,
+                    border: '1px solid rgba(200,79,63,0.35)',
+                    cursor: saving ? 'wait' : 'pointer',
+                    opacity: saving ? 0.6 : 1,
+                    textAlign: 'left',
+                    padding: '0 12px',
+                  }}
+                >
+                  {saving && savingKind === 'eliminar-fila'
+                    ? 'Eliminando…'
+                    : `🗑 Quitar "${row.servicio}" de TODOS los locales`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => submitDesactivar('columna')}
+                  disabled={saving}
+                  style={{
+                    width: '100%',
+                    height: 38,
+                    borderRadius: 'var(--radius-md)',
+                    background: 'transparent',
+                    color: '#C84F3F',
+                    fontWeight: 600,
+                    fontSize: 12.5,
+                    border: '1px solid rgba(200,79,63,0.35)',
+                    cursor: saving ? 'wait' : 'pointer',
+                    opacity: saving ? 0.6 : 1,
+                    textAlign: 'left',
+                    padding: '0 12px',
+                  }}
+                >
+                  {saving && savingKind === 'eliminar-columna'
+                    ? 'Eliminando…'
+                    : `🗑 Quitar TODOS los servicios del local "${ANCLA_SHORT_LABEL[ancla]}"`}
+                </button>
+              </div>
             )}
           </form>
         )}
