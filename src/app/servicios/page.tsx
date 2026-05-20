@@ -15,6 +15,7 @@ import {
   ANCLAS_OPERATIVAS,
   ANCLA_SHORT_LABEL,
   ANCLA_TO_LOCAL_COL,
+  nombreCanonico,
 } from '@/lib/servicios-mes';
 import type { Ancla } from '@/lib/anclas';
 import { ANCLAS, ANCLA_LABELS } from '@/lib/anclas';
@@ -747,7 +748,11 @@ function TabTabla({
 
     for (const meta of indice.servicios) {
       if (!meta.activo) continue;
-      const key = meta.servicio.trim().toUpperCase();
+      // Key por nombre canónico: "Alquiler Seguí", "Alquiler Maure" y
+      // "Alquiler Nuñez" colapsan a "ALQUILER" → una sola fila con
+      // columnas por local. Mismo patrón que el Sheet de Iara.
+      const canon = nombreCanonico(meta.servicio);
+      const key = (canon || meta.servicio).trim().toUpperCase();
       const target = isPrincipal(meta.ancla)
         ? principalesMap
         : isCronklam(meta.ancla)
@@ -757,7 +762,7 @@ function TabTabla({
             : null;
       if (!target) continue; // ancla desconocida → ignorar
       if (!target.has(key)) {
-        target.set(key, { servicio: meta.servicio, entries: new Map() });
+        target.set(key, { servicio: canon || meta.servicio, entries: new Map() });
       }
       target.get(key)!.entries.set(meta.ancla, meta);
     }
