@@ -291,8 +291,9 @@ export default function CajaPage() {
               ),
             );
           }
-          flashToast(data.error || 'No se pudo guardar');
-          return false;
+          const errMsg = data.error || 'No se pudo guardar';
+          flashToast(errMsg);
+          return errMsg;
         }
         // Refetch para traer la fila real (con saldoCol) + saldos.
         if (inCurrentView) {
@@ -310,8 +311,9 @@ export default function CajaPage() {
             ),
           );
         }
-        flashToast('Error de red');
-        return false;
+        const errMsg = 'Error de red';
+        flashToast(errMsg);
+        return errMsg;
       }
     },
     [mes, refreshMes, refreshSaldos, flashToast],
@@ -1397,7 +1399,7 @@ function NuevoMovSheet({
     categoria: Categoria;
     descripcion: string;
     importeAbs: number;
-  }) => Promise<boolean>;
+  }) => Promise<boolean | string>;
 }) {
   const [fecha, setFecha] = useState(defaultFecha);
   const [moneda, setMoneda] = useState<Moneda>('PESO');
@@ -1459,7 +1461,7 @@ function NuevoMovSheet({
       return;
     }
     setSaving(true);
-    const ok = await onSubmit({
+    const result = await onSubmit({
       tipo,
       fecha,
       moneda,
@@ -1468,7 +1470,13 @@ function NuevoMovSheet({
       importeAbs: Math.abs(importeNum),
     });
     setSaving(false);
-    if (ok) onClose();
+    if (result === true) {
+      onClose();
+    } else if (typeof result === 'string') {
+      // El parent devolvió un mensaje de error → mostrarlo acá adentro
+      // del modal así el user lo ve sin tener que mirar el toast.
+      setError(result);
+    }
   }, [
     saving, descripcion, importeNum, fecha, tipo, moneda, categoria,
     customCategoria, onSubmit, onClose,

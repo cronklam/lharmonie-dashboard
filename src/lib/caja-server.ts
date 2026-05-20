@@ -13,7 +13,6 @@ import 'server-only';
 import { google } from 'googleapis';
 import type { sheets_v4 } from 'googleapis';
 import {
-  CATEGORIAS,
   MONEDAS,
   categoriaSheetParaSesion,
   descripcionSesionMov,
@@ -21,7 +20,6 @@ import {
   fechaFromSheet,
   fechaToSheet,
   importeSignedSesion,
-  isCategoria,
   isMonthTab,
   isoMesFromTab,
   mesTabFromISO,
@@ -155,7 +153,8 @@ function parseRow(rowIdx: number, row: string[]): MovimientoCaja | null {
     monedaRaw === 'DOLAR' || monedaRaw === 'DÓLAR' || monedaRaw === 'USD'
       ? 'DOLAR'
       : 'PESO';
-  const categoria = isCategoria(catRaw) ? (catRaw as Categoria) : '';
+  // Aceptamos cualquier categoría — las custom se preservan tal cual.
+  const categoria = (catRaw.trim().toUpperCase() || '') as Categoria;
   const importe = parseNum(impRaw);
   const saldoNum = saldoRaw ? parseNum(saldoRaw) : null;
 
@@ -272,8 +271,11 @@ export async function appendMovimiento(input: AppendInput): Promise<AppendResult
   if (!MONEDAS.includes(input.moneda)) {
     throw new CajaError(400, 'Moneda inválida');
   }
-  if (!CATEGORIAS.includes(input.categoria)) {
-    throw new CajaError(400, 'Categoría inválida');
+  // Categoría: libre (no whitelist). El API route ya sanea entrada
+  // (trim, uppercase, max 40 chars, sin newlines). Esto permite sumar
+  // categorías nuevas como "PRESTAMO", "VEP IIBB", etc. sin tocar code.
+  if (!input.categoria || !input.categoria.trim()) {
+    throw new CajaError(400, 'Falta categoría');
   }
   if (!input.descripcion.trim()) {
     throw new CajaError(400, 'Descripción vacía');
