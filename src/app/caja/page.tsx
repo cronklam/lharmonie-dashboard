@@ -1694,7 +1694,7 @@ function NuevoMovSheet({
               </span>
               <input
                 type="text"
-                inputMode="numeric"
+                inputMode="text"
                 pattern="[0-9\-.,]*"
                 value={importeRaw}
                 onChange={(e) => setImporteRaw(formatMontoLive(e.target.value))}
