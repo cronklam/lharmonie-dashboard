@@ -167,7 +167,7 @@ export default function ServiciosPage() {
 
   useEffect(() => {
     if (loading || !user || !isOwner) return;
-    fetch('/api/servicios/indice')
+    fetch('/api/servicios/indice', { cache: 'no-store' })
       .then((r) => r.json())
       .then((d) => {
         if (d.ok) {
@@ -801,6 +801,7 @@ function TabTabla({
       principales: [] as {
         row: ServicioMesRow;
         meta: CatalogoServicio | null;
+        metaPorAncla: Map<Ancla, CatalogoServicio>;
         baigunAnclas: Set<Ancla>;
       }[],
       cronklam: [] as { row: ServicioMesRow; meta: CatalogoServicio | null }[],
@@ -903,7 +904,9 @@ function TabTabla({
           .filter(([, m]) => m.subarrendadoBaigun)
           .map(([a]) => a),
       );
-      principales.push({ row, meta: firstMeta, baigunAnclas });
+      // Map per-ancla del LISTADO → cada celda sabe su monto sugerido.
+      const metaPorAncla = new Map<Ancla, CatalogoServicio>(grupo.entries);
+      principales.push({ row, meta: firstMeta, metaPorAncla, baigunAnclas });
     }
     principales.sort((a, b) =>
       a.row.servicio.toLowerCase().localeCompare(b.row.servicio.toLowerCase(), 'es'),
@@ -1180,6 +1183,7 @@ function TabTabla({
                   anclas={data.anclasOperativas}
                   bg={bg}
                   meta={f.meta}
+                  metaPorAncla={f.metaPorAncla}
                   baigunAnclas={f.baigunAnclas}
                   onClickCell={onClickCell}
                 />
@@ -1285,6 +1289,7 @@ function FilaTabla({
   anclas,
   bg,
   meta,
+  metaPorAncla,
   baigunAnclas,
   onClickCell,
 }: {
@@ -1292,6 +1297,7 @@ function FilaTabla({
   anclas: Ancla[];
   bg: string;
   meta: CatalogoServicio | null;
+  metaPorAncla?: Map<Ancla, CatalogoServicio>;
   baigunAnclas: Set<Ancla>;
   onClickCell: (row: ServicioMesRow, ancla: Ancla) => void;
 }) {
@@ -1336,6 +1342,7 @@ function FilaTabla({
       {anclas.map((a) => {
         const cell = row.porAncla[a];
         const esBaigun = baigunAnclas.has(a);
+        const cellMeta = metaPorAncla?.get(a);
         // Highlight rojo si vencido + celda no pagada
         const vencidoSinPago =
           vencido &&
@@ -1361,7 +1368,7 @@ function FilaTabla({
               position: 'relative',
             }}
           >
-            <CeldaTabla cell={cell} />
+            <CeldaTabla cell={cell} cellMeta={cellMeta} />
             {esBaigun &&
               cell &&
               (cell.estado === 'pagado' || cell.estado === 'pendiente') && (
@@ -1387,20 +1394,62 @@ function FilaTabla({
   );
 }
 
-function CeldaTabla({ cell }: { cell?: CeldaServicio }) {
+function CeldaTabla({
+  cell,
+  cellMeta,
+}: {
+  cell?: CeldaServicio;
+  cellMeta?: CatalogoServicio;
+}) {
+  // Monto sugerido desde el LISTADO (montoEstimadoArs / Usd) — se
+  // muestra como hint pequeño cuando la celda está pendiente.
+  const sugerido = (() => {
+    if (!cellMeta) return null;
+    if (cellMeta.monedaDefault === 'USD' && cellMeta.montoEstimadoUsd) {
+      return `≈ US$ ${Math.round(cellMeta.montoEstimadoUsd).toLocaleString('es-AR')}`;
+    }
+    if (cellMeta.montoEstimadoArs) {
+      return `≈ $${Math.round(cellMeta.montoEstimadoArs).toLocaleString('es-AR')}`;
+    }
+    return null;
+  })();
+
   if (!cell || cell.estado === 'vacio') {
     return (
       <span
         style={{
-          color: 'var(--accent)',
-          fontWeight: 600,
-          fontSize: 11,
-          letterSpacing: '0.02em',
-          textTransform: 'uppercase',
-          opacity: 0.7,
+          display: 'inline-flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 1,
+          lineHeight: 1.1,
         }}
       >
-        Pagar
+        <span
+          style={{
+            color: 'var(--accent)',
+            fontWeight: 600,
+            fontSize: 11,
+            letterSpacing: '0.02em',
+            textTransform: 'uppercase',
+            opacity: 0.7,
+          }}
+        >
+          Pagar
+        </span>
+        {sugerido && (
+          <span
+            className="tabular-nums-strict"
+            style={{
+              color: 'var(--text-faint)',
+              fontSize: 9.5,
+              fontWeight: 500,
+              letterSpacing: '0.02em',
+            }}
+          >
+            {sugerido}
+          </span>
+        )}
       </span>
     );
   }
@@ -1411,14 +1460,37 @@ function CeldaTabla({ cell }: { cell?: CeldaServicio }) {
     return (
       <span
         style={{
-          color: '#C84F3F',
-          fontSize: 11,
-          fontWeight: 700,
-          letterSpacing: '0.02em',
-          textTransform: 'uppercase',
+          display: 'inline-flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 1,
+          lineHeight: 1.1,
         }}
       >
-        Pagar
+        <span
+          style={{
+            color: '#C84F3F',
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: '0.02em',
+            textTransform: 'uppercase',
+          }}
+        >
+          Pagar
+        </span>
+        {sugerido && (
+          <span
+            className="tabular-nums-strict"
+            style={{
+              color: 'var(--text-faint)',
+              fontSize: 9.5,
+              fontWeight: 500,
+              letterSpacing: '0.02em',
+            }}
+          >
+            {sugerido}
+          </span>
+        )}
       </span>
     );
   }

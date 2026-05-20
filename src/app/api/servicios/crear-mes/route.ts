@@ -202,15 +202,13 @@ export const POST = withAuth(async (req, user) => {
         const prevVal = (r[c] || '').trim();
         const upper = prevVal.toUpperCase();
         if (upper === 'NO') {
+          // Preservar marca "NO aplica" del local — estructura del mes.
           nueva.push('NO');
-        } else if (
-          prevVal.includes('$') ||
-          /\d/.test(prevVal)
-        ) {
-          // Copiar el monto como sugerido
-          nueva.push(prevVal);
         } else {
-          // Vacío para "TODAVIA NO", vacío original o texto raro
+          // Mes nuevo: todas las celdas arrancan vacías = "A pagar".
+          // El monto sugerido se lee del LISTADO (montoEstimadoArs) y se
+          // muestra como hint debajo del label "Pagar" en la UI, no se
+          // pre-llena en el Sheet.
           nueva.push('');
         }
       }
