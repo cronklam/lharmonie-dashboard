@@ -287,6 +287,18 @@ export default function ServiciosPage() {
                 flashToast(`Mes ${m.label} creado`);
               }
             }}
+            onMesEliminado={async (periodoEliminado) => {
+              // Re-fetch meses + switch al más reciente disponible
+              const r = await fetch('/api/servicios/meses', { cache: 'no-store' });
+              const d = await r.json();
+              if (d.ok && d.meses?.length) {
+                setMeses(d.meses);
+                if (periodo === periodoEliminado) {
+                  setPeriodo(d.meses[0].periodo);
+                }
+                flashToast('Mes eliminado');
+              }
+            }}
             onError={flashToast}
           />
         )}
@@ -528,6 +540,10 @@ function CrearMesButton({
 
   const run = useCallback(async () => {
     if (busy) return;
+    const ok = window.confirm(
+      `¿Crear el mes "${next.label}"?\n\nSe copia la estructura del último mes y los montos sugeridos.`,
+    );
+    if (!ok) return;
     setBusy(true);
     try {
       const r = await fetch('/api/servicios/crear-mes', {
@@ -575,6 +591,72 @@ function CrearMesButton({
       }}
     >
       {busy ? 'Creando…' : `+ Crear ${next.label}`}
+    </button>
+  );
+}
+
+// Botón "Eliminar mes" — borra el tab del mes actual. Owner-only,
+// pide confirm. Si es el único mes disponible, el endpoint rechaza.
+function EliminarMesButton({
+  periodo,
+  label,
+  onDeleted,
+  onError,
+}: {
+  periodo: string;
+  label: string;
+  onDeleted: (periodoEliminado: string) => void | Promise<void>;
+  onError: (m: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  const run = useCallback(async () => {
+    if (busy || !periodo) return;
+    const ok = window.confirm(
+      `¿Eliminar el mes "${label}"?\n\nSe borra el tab completo del Sheet — toda la data cargada de ese mes se pierde.\n\nEsto es irreversible.`,
+    );
+    if (!ok) return;
+    setBusy(true);
+    try {
+      const r = await fetch('/api/servicios/eliminar-mes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ periodo }),
+      });
+      const d = await r.json();
+      if (d.ok) {
+        await onDeleted(periodo);
+      } else {
+        onError(d.error || 'Error eliminando mes');
+      }
+    } catch {
+      onError('Error de red');
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, periodo, label, onDeleted, onError]);
+
+  return (
+    <button
+      type="button"
+      onClick={run}
+      disabled={busy}
+      className="press-feedback"
+      style={{
+        flexShrink: 0,
+        minHeight: 32,
+        padding: '0 12px',
+        borderRadius: 999,
+        background: 'transparent',
+        color: '#C84F3F',
+        fontWeight: 600,
+        fontSize: 12,
+        border: '1px solid rgba(200,79,63,0.35)',
+        opacity: busy ? 0.7 : 1,
+        cursor: busy ? 'wait' : 'pointer',
+      }}
+    >
+      {busy ? 'Eliminando…' : '🗑 Eliminar mes'}
     </button>
   );
 }
@@ -685,6 +767,7 @@ function TabTabla({
   onAgregarServicio,
   onClickCell,
   onMesCreado,
+  onMesEliminado,
   onError,
 }: {
   data: ServicioMes | null;
@@ -697,6 +780,7 @@ function TabTabla({
   onAgregarServicio: () => void;
   onClickCell: (row: ServicioMesRow, ancla: Ancla) => void;
   onMesCreado: (mes: ParsedPeriodo) => void;
+  onMesEliminado: (periodoEliminado: string) => void | Promise<void>;
   onError: (m: string) => void;
 }) {
   const [search, setSearch] = useState('');
@@ -1013,6 +1097,16 @@ function TabTabla({
           onCreated={onMesCreado}
           onError={onError}
         />
+        {meses.length > 1 && periodo && (
+          <EliminarMesButton
+            periodo={periodo}
+            label={
+              meses.find((m) => m.periodo === periodo)?.label || periodo
+            }
+            onDeleted={onMesEliminado}
+            onError={onError}
+          />
+        )}
       </div>
 
       <div
