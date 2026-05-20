@@ -742,7 +742,7 @@ function TabTabla({
     const mypMap = new Map<string, Grupo>();
 
     const isPrincipal = (a: Ancla) => data.anclasOperativas.includes(a);
-    const isCronklam = (a: Ancla) => a === 'CRONKLAM' || a === 'BAMBINA';
+    const isCronklam = (a: Ancla) => a === 'CRONKLAM';
     const isMyP = (a: Ancla) => a === 'MyP';
 
     for (const meta of indice.servicios) {
@@ -3646,7 +3646,7 @@ function TabCatalogo({
             onClick={() => setFilterAncla('todos')}
             label="Todos"
           />
-          {(['LH1', 'LH2', 'LH3', 'LH4', 'LH5', 'LH6', 'CRONKLAM', 'MyP'] as Ancla[]).map(
+          {(['LH1', 'LH2', 'LH3', 'LH4', 'LH5', 'LH6', 'BAMBINA', 'CRONKLAM', 'MyP'] as Ancla[]).map(
             (a) => (
               <Chip
                 key={a}

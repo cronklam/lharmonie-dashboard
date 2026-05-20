@@ -13,7 +13,7 @@
 //   F LIBERTADOR       → LH5
 //   G NUÑEZ            → LH6
 //   H CASA MEL Y MARTIN → MyP (gasto personal Martín y Melanie)
-//   I BAMBINA          → CRONKLAM (proyecto adicional, gastos corp)
+//   I BAMBINA          → BAMBINA (propiedad personal — ahora columna operativa)
 //   J BAIGUN           → cta cte subarriendo (no es local)
 //   K (notas)          → notas sueltas
 //
@@ -121,7 +121,7 @@ export const ANCLA_SHORT_LABEL: Record<Ancla, string> = {
 };
 
 // Orden visual fijo para columnas operativas
-export const ANCLAS_OPERATIVAS: Ancla[] = ['LH1', 'LH2', 'LH3', 'LH4', 'LH5', 'LH6'];
+export const ANCLAS_OPERATIVAS: Ancla[] = ['LH1', 'LH2', 'LH3', 'LH4', 'LH5', 'LH6', 'BAMBINA'];
 
 // ─── Canonicalización de nombre de servicio ───────────────────────
 // Ported del staff (ServiciosTablaMensual.tsx). Convierte el nombre
@@ -374,8 +374,9 @@ export function parseMesPivot(
       if (!esTotal) {
         const tieneData = estado === 'pagado' || estado === 'pendiente';
         if (tieneData) {
-          // MyP y BAMBINA son personales → agrupan en "myp" para la UI
-          if (ancla === 'MyP' || ancla === 'BAMBINA') tieneMyP = true;
+          // MyP personal → agrupa en "myp". BAMBINA pasa a ser columna
+          // operativa (como un local más).
+          if (ancla === 'MyP') tieneMyP = true;
           else if (ancla === 'CRONKLAM') tieneCronklam = true;
           else tieneLH = true;
         }
